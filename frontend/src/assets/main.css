@@ -1,0 +1,48 @@
+@import 'tailwindcss';
+
+/*
+ * Design tokens — ดึงจาก Figma "กล้องอัจฉริยะบางมด - Smart Attendance Camera"
+ * (file key trDEGo7h5I6RBVGNCQR6Xs, Variables 14 ตัว ดึงเมื่อ 2026-11-21)
+ * ชื่อ token ใน Figma → ชื่อ Tailwind:
+ *   primary/blue → primary · text/primary → ink · text/secondary → muted · text/on-dark → on-dark
+ *   bg/page → page · bg/surface → surface · bg/dark → dark · border/default → line
+ *   status/success|warning|danger (+ -bg) → success|warning|danger (+ -bg)
+ * Figma ไม่มี text style จึงอ่านฟอนต์จาก layer: Inter (Regular 400, Medium 500, SemiBold 600, Bold 700)
+ * Inter ไม่มีอักษรไทย → ใช้ Noto Sans Thai เป็นฟอนต์สำรอง (self-host ผ่าน @fontsource ไม่เรียก Google Fonts)
+ */
+@theme {
+  --color-primary: #2563eb;
+  --color-ink: #0f172a;
+  --color-muted: #64748b;
+  --color-on-dark: #ffffff;
+
+  --color-page: #f5f7fa;
+  --color-surface: #ffffff;
+  --color-dark: #0f172a;
+  --color-line: #e2e8f0;
+
+  --color-success: #16a34a;
+  --color-success-bg: #dcfce7;
+  --color-warning: #d97706;
+  --color-warning-bg: #fef3c7;
+  --color-danger: #dc2626;
+  --color-danger-bg: #fee2e2;
+
+  --font-sans: 'Inter Variable', 'Noto Sans Thai Variable', ui-sans-serif, system-ui, sans-serif;
+
+  /* ค่ามุมโค้งและเงาที่ Figma ใช้ซ้ำ (การ์ด 18 · ปุ่ม 10 · ช่องกรอก 8) */
+  --radius-card: 18px;
+  --radius-button: 10px;
+  --radius-field: 8px;
+  --shadow-card: 0 8px 24px 0 rgb(15 23 41 / 0.08);
+}
+
+@layer base {
+  html {
+    @apply bg-page text-ink font-sans antialiased;
+  }
+
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-primary;
+  }
+}

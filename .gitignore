@@ -1,0 +1,22 @@
+# OS / editor
+.DS_Store
+.idea/
+*.swp
+
+# env ที่มีความลับ (ไฟล์ .env.<mode> ของ frontend ไม่มีความลับ จึง commit ได้)
+*.local
+.env.secret*
+
+# Node
+node_modules/
+dist/
+coverage/
+.eslintcache
+
+# Java / Python (สำหรับ backend, ai-service)
+target/
+build/
+.gradle/
+__pycache__/
+*.pyc
+.venv/

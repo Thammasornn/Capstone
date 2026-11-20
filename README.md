@@ -1,0 +1,28 @@
+# Capstone — Bangmod Smart Attendance (CP26MS3)
+
+ระบบเช็คชื่อนักศึกษาอัตโนมัติด้วยกล้อง (Face Recognition) · โครงงานจบ IT, SIT KMUTT ปีการศึกษา 2569
+
+## โครงสร้าง repo (monorepo)
+
+| โฟลเดอร์ | เนื้อหา | สถานะ |
+|---|---|---|
+| [`frontend/`](frontend/) | Vue 3 + Vite (JavaScript) · Tailwind v4 · Pinia · MSW | Release 1 scaffold |
+| [`backend/`](backend/) | Spring Boot REST + SSE · PostgreSQL | รอย้ายโค้ดเข้ามา |
+| [`ai-service/`](ai-service/) | Python · OpenCV → YOLOv8 → OpenCV SFace | รอย้ายโค้ดเข้ามา |
+| [`devops/`](devops/) | K3s manifests (namespace `prod` / `uat`), Ingress, MediaMTX | รอทำ |
+| [`docs/`](docs/) | เอกสารประกอบ (API guide, PDPA, ฯลฯ) | — |
+
+```
+[Raspberry Pi Camera] --RTSPS--> [MediaMTX] --RTSP--> [AI Service]
+[Browser] --HTTPS (REST + SSE)--> [NGINX + Vue] --> [Spring Boot] --> [PostgreSQL]
+```
+
+Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/uat/` แยก namespace
+
+## สมาชิก
+
+- นายจักรพงษ์ สุขสมบรูณ์ — 66130500013
+- นายทัตพล สีล้ง — 66130500036
+- นายธรรมสรณ์ ฉัตรชยานุสรณ — 66130500041
+
+อาจารย์ที่ปรึกษา: อ.มนตรี สุภัททธรรม
