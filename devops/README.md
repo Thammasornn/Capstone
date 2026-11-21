@@ -1,6 +1,8 @@
 # devops
 
-Deploy บน Faculty VM ด้วย **K3s** · 2 namespace: `prod` → `http://<VM>/prod/` และ `uat` → `http://<VM>/uat/`
+Deploy บน Faculty VM ด้วย **K3s** · 2 namespace: `prod` → `http://cp26ms3.sit.kmutt.ac.th/prod/` และ `uat` → `http://cp26ms3.sit.kmutt.ac.th/uat/`
+
+โดเมน `cp26ms3.sit.kmutt.ac.th` ชี้ไปที่ VM `10.4.56.69` (DNS ของคณะ) · Ingress ไม่ผูก host จึงเข้าด้วย IP ได้เหมือนกัน
 
 ```
 Browser ──▶ Traefik (Ingress K3s) ──/prod/*──▶ frontend (NGINX)
@@ -34,7 +36,7 @@ sudo mkdir -p /opt/bangmod/models   # ใส่ yolov8n-face-pose.pt และ f
 
 # 2) ความลับ (แยกค่าระหว่าง prod กับ uat)
 cp devops/k8s/overlays/uat/secret.env.example devops/k8s/overlays/uat/secret.env
-#    แก้ค่าใน secret.env · แก้ MEDIA_BASE_URL ใน overlays/uat/kustomization.yaml เป็น host ของ VM
+#    แก้ค่าใน secret.env (MEDIA_BASE_URL ตั้งเป็น http://cp26ms3.sit.kmutt.ac.th:8889 ใน overlays แล้ว ไม่ต้องแก้)
 
 # 3) apply + ใส่ schema
 kubectl apply -k devops/k8s/overlays/uat
@@ -42,7 +44,7 @@ kubectl apply -k devops/k8s/overlays/uat
 
 # 4) ตรวจ
 kubectl -n uat get pods
-curl http://<VM>/uat/api/auth/login -H 'Content-Type: application/json' \
+curl http://cp26ms3.sit.kmutt.ac.th/uat/api/auth/login -H 'Content-Type: application/json' \
   -d '{"email":"admin@sit.kmutt.ac.th","password":"Password@123"}'
 ```
 
@@ -57,6 +59,12 @@ curl http://<VM>/uat/api/auth/login -H 'Content-Type: application/json' \
 - ไม่มี HTTPS ใน manifest ชุดนี้ (Traefik รับ HTTP) — กล้องในเบราว์เซอร์ (หน้าลงทะเบียนใบหน้า) ต้องใช้ HTTPS ยกเว้น localhost
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-22 — ใช้โดเมน `cp26ms3.sit.kmutt.ac.th` แทน IP
+- **ทำอะไร:** ตั้ง `MEDIA_BASE_URL=http://cp26ms3.sit.kmutt.ac.th:8889` ใน overlay `prod` และ `uat` (เดิมเป็น `CHANGE-ME-VM-HOST` ที่ต้องแก้เองบน VM) · เปลี่ยนตัวอย่าง URL ใน README, คอมเมนต์ overlay และรายการตรวจใน `CLAUDE.md` เป็นโดเมน
+- **ไฟล์ที่เกี่ยวข้อง:** `k8s/overlays/prod/kustomization.yaml`, `k8s/overlays/uat/kustomization.yaml`, `README.md`, `../CLAUDE.md`
+- **เหตุผล:** DNS ของคณะชี้ `cp26ms3.sit.kmutt.ac.th` ไปที่ VM `10.4.56.69` แล้ว ใช้โดเมนแทน IP และ VM ไม่ต้องมีไฟล์ที่แก้ค้างไว้โดยไม่ commit
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** Ingress ยังไม่ผูก host (เข้าด้วย IP ได้ด้วย) · ยังเป็น HTTP — หน้าลงทะเบียนใบหน้าต้องใช้ HTTPS (ต้องขอ certificate ของ `cp26ms3.sit.kmutt.ac.th` จากคณะ)
 
 ### 2026-11-22 — บังคับโปรไฟล์ `prod` บน server
 - **ทำอะไร:** เพิ่ม `SPRING_PROFILES_ACTIVE=prod` ใน ConfigMap `app-config` ของ overlay `prod` และ `uat` (image ของ backend ก็ตั้งค่านี้เป็นค่าเริ่มต้น)

@@ -76,6 +76,12 @@ Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/uat/` แยก 
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-22 — ใช้โดเมน `cp26ms3.sit.kmutt.ac.th` บน VM
+- **ทำอะไร:** ตั้ง URL ภาพสด (`MEDIA_BASE_URL`) และเอกสาร deploy ให้ใช้โดเมน `cp26ms3.sit.kmutt.ac.th` แทน IP / ค่าที่ต้องแก้เอง
+- **ไฟล์ที่เกี่ยวข้อง:** `devops/k8s/overlays/*/kustomization.yaml`, `devops/README.md`, `CLAUDE.md`
+- **เหตุผล:** DNS ของคณะชี้โดเมนนี้ไปที่ VM แล้ว
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** เว็บ uat: `http://cp26ms3.sit.kmutt.ac.th/uat/` · HTTPS ยังไม่มี (ดู `devops/README.md`)
+
 ### 2026-11-22 — กฎการ deploy ใน `CLAUDE.md`
 - **ทำอะไร:** เพิ่มหัวข้อ "กฎการ deploy (K3s บน VM)" ใน `CLAUDE.md`: ตรวจเครื่องก่อน, uat ก่อนแล้วรอยืนยันค่อยทำ prod, ห้าม seed prod, ห้ามลบ namespace / PVC / ข้อมูลโดยไม่ถาม, ห้าม commit จาก VM, จัดการ `secret.env` (โดยเฉพาะ `FACE_EMBEDDING_KEY`), รายการตรวจหลัง deploy และข้อมูลเริ่มต้นของ prod
 - **ไฟล์ที่เกี่ยวข้อง:** `CLAUDE.md`, `README.md`
