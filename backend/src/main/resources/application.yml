@@ -5,11 +5,13 @@ server:
 
 spring:
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/postgres}
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/bangmod_attendance}   # สร้างด้วย backend/db/00_create_database.sql
     username: ${DB_USER:postgres}
     password: ${DB_PASSWORD:postgres}
   flyway:
-    enabled: true
+    # schema มาจาก backend/db/*.sql (รันด้วย psql ตาม backend/db/README.md และ CI database.yml)
+    # ถ้าจะให้ Flyway ดูแล: copy 01_schema.sql เป็น db/migration/V1__init_schema.sql แล้วตั้ง FLYWAY_ENABLED=true
+    enabled: ${FLYWAY_ENABLED:false}
   servlet:
     multipart:
       max-file-size: 5MB      # Face Register: ภาพละไม่เกิน 5MB
@@ -26,5 +28,7 @@ app:
   jwt:
     secret: ${JWT_SECRET:AhA9z4d9QF3Vb0dXNOYAL4eYEEKLnl6tgz4usl8xNTX6TBm/DjszGZaEfdEwdMwe}          # บังคับตั้ง ยาว >= 32 ตัวอักษร เช่น openssl rand -base64 48
     expires-minutes: 480
+  face:
+    embedding-key: ${FACE_EMBEDDING_KEY:}   # บังคับตั้ง: base64 ของ 32 ไบต์ (openssl rand -base64 32) ใช้เข้ารหัส face_embeddings
   cors:
     allowed-origins: ${CORS_ORIGINS:http://localhost:5173}   # คั่นด้วย , ได้หลายโดเมน
