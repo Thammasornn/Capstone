@@ -1,0 +1,32 @@
+# namespace uat · เว็บอยู่ที่ http://<VM>/uat/ · ใส่ข้อมูล mock ได้ (init-db.sh uat --seed)
+#   kubectl apply -k devops/k8s/overlays/uat
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: uat
+resources:
+  - namespace.yaml
+  - ../../base
+images:
+  - name: bangmod-frontend
+    newTag: uat
+patches:
+  - target: { kind: Ingress, name: web }
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/http/paths/0/path
+        value: /uat
+configMapGenerator:
+  - name: app-config
+    literals:
+      - DB_URL=jdbc:postgresql://postgres:5432/bangmod_attendance
+      - DB_USER=postgres
+      - AI_SERVICE_URL=http://ai-service:8080
+      # FE เรียกผ่าน NGINX (same origin) จึงไม่ต้องใช้ CORS · ใส่ไว้เผื่อเปิด FE จากโดเมนอื่น
+      - CORS_ORIGINS=http://localhost:5173
+      # B2: URL ที่เบราว์เซอร์เปิดภาพจาก MediaMTX · แก้เป็น IP / โดเมนของ VM
+      - MEDIA_BASE_URL=http://CHANGE-ME-VM-HOST:8889
+# ความลับ: copy secret.env.example → secret.env (ไม่ถูก commit) แล้วใส่ค่าจริง
+secretGenerator:
+  - name: app-secret
+    envs:
+      - secret.env

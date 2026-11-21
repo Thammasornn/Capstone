@@ -51,12 +51,6 @@ export function resolveUser(request) {
   }
 }
 
-/** มี Bearer อะไรก็ได้ (ใช้ในโหมด missing ที่ token มาจาก Backend จริงซึ่ง mock ถอดไม่ได้) */
-export function hasAnyToken(request) {
-  const header = request.headers.get('Authorization') ?? ''
-  return header.startsWith('Bearer ') || new URL(request.url).searchParams.has('access_token')
-}
-
 /** user ตามรูป /me (คู่มือข้อ 5.1) */
 export function toMe(user) {
   const student = user.studentId ? db.students.find((s) => s.studentId === user.studentId) : null

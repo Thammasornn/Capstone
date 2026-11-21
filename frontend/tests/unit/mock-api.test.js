@@ -4,11 +4,8 @@ import { configureHttp } from '@/shared/api/http'
 import { useAuthStore } from '@/features/auth/store'
 import { getCourses } from '@/entities/course/api'
 import { getCourseStudents, getCourseSummary } from '@/features/attendance-analytics/api'
-import { getRooms } from '@/features/room-monitor/api'
-import { setCameraAttendance } from '@/features/course-management/api'
-import { withdrawConsent } from '@/features/face-registration/api'
 
-/** ตรวจว่า mock ทำตามกติกาในคู่มือ API — หน้าจอที่ทำต่อจะได้เชื่อตัวเลขได้ */
+/** ตรวจว่า mock (5.1–5.11) ทำตามกติกาในคู่มือ API · B1–B8 ไม่มี mock แล้ว (ใช้ Backend จริง) */
 describe('mock API', () => {
   let auth
   const loginAs = (email) => auth.login({ email, password: 'Passw0rd!' })
@@ -48,34 +45,5 @@ describe('mock API', () => {
     await loginAs('student01@mock.test')
     const [course] = await getCourses()
     await expect(getCourseSummary(course.courseId)).rejects.toMatchObject({ kind: 'forbidden' })
-  })
-
-  it('B1 ห้องของ lecturer01 มีคาบกำลังเรียน', async () => {
-    await loginAs('lecturer01@mock.test')
-    const rooms = await getRooms()
-    expect(rooms.map((r) => r.roomCode)).toEqual(['4301'])
-    expect(rooms[0].currentSession).toMatchObject({ courseCode: 'MOCK101', sectionCode: '001' })
-  })
-
-  it('B6 เปิด/ปิดกล้องของ section', async () => {
-    await loginAs('admin@mock.test')
-    const [course] = await getCourses()
-    const sectionId = course.sections[0].sectionId
-    await expect(setCameraAttendance(sectionId, false)).resolves.toEqual({
-      sectionId,
-      cameraAttendanceEnabled: false,
-    })
-  })
-
-  it('B7 ถอนความยินยอม → สถานะใน /me เป็นยังไม่ลงทะเบียน', async () => {
-    const user = await loginAs('student01@mock.test')
-    expect(user.student.faceRegistration.registered).toBe(true)
-    await withdrawConsent(user.student.studentId)
-    const me = await auth.refreshMe()
-    expect(me.student.faceRegistration).toEqual({
-      registered: false,
-      registeredAt: null,
-      activeFaces: 0,
-    })
   })
 })

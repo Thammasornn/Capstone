@@ -1,9 +1,15 @@
 server:
   port: 8081
-  error:
-    include-message: always   # ให้ FE เห็นข้อความ error ที่เราเขียนไว้ (เช่น "ไม่พบรายวิชา")
+  # อยู่หลัง NGINX ของ FE / Ingress: ใช้ X-Forwarded-For เป็น IP จริง (audit_logs, consent_records)
+  # native = เชื่อ header จาก proxy ใน network ภายในเท่านั้น (10.x, 172.16–31.x, 192.168.x, 127.x)
+  forward-headers-strategy: ${FORWARD_HEADERS_STRATEGY:native}
 
 spring:
+  web:
+    error:
+      # ให้ FE เห็นข้อความ error ที่เราเขียนไว้ (เช่น "ไม่พบรายวิชา")
+      # Spring Boot 4 ย้ายมาจาก server.error.include-message (ชื่อเดิมไม่มีผลแล้ว)
+      include-message: always
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/bangmod_attendance}   # สร้างด้วย backend/db/00_create_database.sql
     username: ${DB_USER:postgres}
@@ -32,3 +38,11 @@ app:
     embedding-key: ${FACE_EMBEDDING_KEY:}   # บังคับตั้ง: base64 ของ 32 ไบต์ (openssl rand -base64 32) ใช้เข้ารหัส face_embeddings
   cors:
     allowed-origins: ${CORS_ORIGINS:http://localhost:5173}   # คั่นด้วย , ได้หลายโดเมน
+  internal:
+    # กุญแจร่วมระหว่าง backend <-> AI Service (header X-Internal-Key) ต้องตั้งค่าเดียวกันทั้งสองฝั่ง
+    # ว่าง = ปิด /api/internal/** ทั้งหมด และแจ้ง AI Service ไม่ได้
+    api-key: ${INTERNAL_API_KEY:}
+  media:
+    # B2: URL ที่เบราว์เซอร์ใช้เปิดภาพจาก MediaMTX (WHEP) = <base-url>/<cameras.stream_path>/whep
+    base-url: ${MEDIA_BASE_URL:http://localhost:8889}
+    stream-ttl-minutes: 90

@@ -20,3 +20,6 @@ build/
 __pycache__/
 *.pyc
 .venv/
+
+# K3s: ความลับของแต่ละ namespace (ใช้ secret.env.example เป็นแบบ)
+devops/k8s/overlays/*/secret.env

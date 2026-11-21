@@ -98,13 +98,13 @@ public class FaceRegistrationService {
      * B7 ถอนความยินยอม (docs/database/database-design.md · PDPA ข้อ 2) ทั้งหมดใน transaction เดียว:
      * INSERT consent_records (withdrawn) → DELETE face_embeddings → INSERT data_deletion_jobs (completed_at = now())
      * → INSERT audit_logs (face.consent_withdrawn) · ประวัติเช็คชื่อไม่ลบ (ไม่ใช่ข้อมูลใบหน้า)
-     * TODO: แจ้ง AI Service ให้ล้าง cache ของนักศึกษาคนนี้ เมื่อ AI Service มี endpoint สำหรับเรื่องนี้
+     * หลัง commit: แจ้ง AI Service ลบ embedding ออกจากหน่วยความจำ (aiNotified = ผลการแจ้ง)
      */
     public WithdrawResponse withdraw(UUID studentId, UUID actorId, String ip, String userAgent) {
         if (!repo.studentExists(studentId)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "ไม่พบนักศึกษา");
         }
-        return tx.execute(status -> {
+        WithdrawResponse done = tx.execute(status -> {
             repo.lockStudent(studentId);
             var latest = repo.latestConsent(studentId)
                     .filter(c -> "granted".equals(c.action()))
@@ -118,8 +118,10 @@ public class FaceRegistrationService {
                     "{\"consentId\":\"" + latest.consentId() + "\",\"embeddingCount\":" + deleted + "}",
                     "{\"consentStatus\":\"withdrawn\",\"embeddingCount\":0}", ip);
             return new WithdrawResponse(studentId, false,
-                    withdrawnAt.atZoneSameInstant(ZoneId.of("Asia/Bangkok")).toLocalDateTime(), deleted);
+                    withdrawnAt.atZoneSameInstant(ZoneId.of("Asia/Bangkok")).toLocalDateTime(), deleted, false);
         });
+        boolean notified = ai.forgetStudent(studentId);
+        return new WithdrawResponse(done.studentId(), false, done.withdrawnAt(), done.deletedCount(), notified);
     }
 
     private void validateFiles(List<MultipartFile> files) {

@@ -23,8 +23,11 @@ public final class DashboardDtos {
     }
 
     // ---- GET /courses : ตัวเลือกรายวิชา/กลุ่มเรียน (dropdown) ตามสิทธิ์ผู้ใช้ ----
+    /** field ตั้งแต่ lecturerId เป็นต้นไป = ตารางเรียนที่ขอเพิ่มใน B5 (classDays = MON–SUN) */
     public record SectionItem(UUID sectionId, String sectionCode, String semester, Integer academicYear,
-                              String lecturerName) {}
+                              String lecturerName, UUID lecturerId, UUID roomId, String roomCode,
+                              List<String> classDays, LocalTime startTime, LocalTime endTime,
+                              LocalTime checkInOpens, LocalTime checkInCloses, boolean cameraAttendanceEnabled) {}
 
     public record CourseItem(UUID courseId, String courseCode, String courseName, List<SectionItem> sections) {}
 
@@ -55,8 +58,10 @@ public final class DashboardDtos {
                                          int onTime, int late, int absent, double attendanceRate) {}
 
     // ---- GET /class-sessions/{sessionId}/attendance[?status=] ----
+    /** source = camera | manual | system | null (null = ยังไม่มีแถว ถือว่า absent) · ขอเพิ่มใน B8 */
     public record AttendanceRow(UUID studentId, String studentCode, String studentName,
-                                LocalDateTime checkInTime, LocalDateTime checkOutTime, String status) {}
+                                LocalDateTime checkInTime, LocalDateTime checkOutTime, String status,
+                                String source) {}
 
     public record SessionAttendanceResponse(UUID sessionId, LocalDate sessionDate, List<AttendanceRow> items) {}
 

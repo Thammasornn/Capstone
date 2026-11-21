@@ -1,6 +1,6 @@
 /**
  * Mock ของ API ที่มีแล้วใน "คู่มือ Attendance API v1.0" (5.1–5.11)
- * ใช้เฉพาะ VITE_MOCK_MODE=all — โหมด missing จะเรียก Backend จริงแทน
+ * ใช้เฉพาะ VITE_MOCK_MODE=all (dev ไม่รัน Backend) และ Vitest
  */
 import { HttpResponse, delay, http } from 'msw'
 import { MOCK_PASSWORD, db } from '../data'

@@ -1,5 +1,6 @@
 package com.faculty.attendance.dashboard;
 
+import com.faculty.attendance.common.ClassDays;
 import com.faculty.attendance.dashboard.DashboardDtos.*;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -110,7 +111,10 @@ public class DashboardRepository {
     // ---------- course / section list ----------
 
     public record CourseSectionRow(UUID courseId, String courseCode, String courseName, UUID sectionId,
-                                   String sectionCode, String semester, Integer academicYear, String lecturerName) {}
+                                   String sectionCode, String semester, Integer academicYear, String lecturerName,
+                                   UUID lecturerId, UUID roomId, String roomCode, List<String> classDays,
+                                   LocalTime startTime, LocalTime endTime, LocalTime checkInOpens,
+                                   LocalTime checkInCloses, boolean cameraAttendanceEnabled) {}
 
     /**
      * lecturerId = เฉพาะ section ที่อาจารย์สอน, studentId = เฉพาะ section ที่นักศึกษาลงทะเบียน
@@ -123,10 +127,18 @@ public class DashboardRepository {
                        (SELECT string_agg(lu.first_name || ' ' || lu.last_name, ', '
                                           ORDER BY sl.is_primary DESC, lu.first_name)
                         FROM section_lecturers sl JOIN users lu ON lu.user_id = sl.lecturer_id
-                        WHERE sl.section_id = sec.section_id) AS lecturer_name
+                        WHERE sl.section_id = sec.section_id) AS lecturer_name,
+                       (SELECT sl.lecturer_id FROM section_lecturers sl WHERE sl.section_id = sec.section_id
+                        ORDER BY sl.is_primary DESC, sl.created_at LIMIT 1) AS lecturer_id,
+                       sec.room_id, r.room_code,
+                       ARRAY(SELECT d.day_of_week::int FROM section_class_days d
+                             WHERE d.section_id = sec.section_id ORDER BY 1) AS class_days,
+                       sec.start_time, sec.end_time, sec.check_in_opens, sec.check_in_closes,
+                       sec.camera_attendance_enabled
                 FROM courses c
                 JOIN sections sec ON sec.course_id = c.course_id
                 JOIN semesters se ON se.semester_id = sec.semester_id
+                JOIN rooms r ON r.room_id = sec.room_id
                 WHERE c.deleted_at IS NULL AND %s AND %s
                   AND (?::uuid IS NULL OR EXISTS (
                         SELECT 1 FROM enrollments e
@@ -136,7 +148,13 @@ public class DashboardRepository {
                 (rs, i) -> new CourseSectionRow(rs.getObject("course_id", UUID.class), rs.getString("course_code"),
                         rs.getString("course_name"), rs.getObject("section_id", UUID.class),
                         rs.getString("section_code"), rs.getString("semester"),
-                        rs.getObject("academic_year", Integer.class), rs.getString("lecturer_name")),
+                        rs.getObject("academic_year", Integer.class), rs.getString("lecturer_name"),
+                        rs.getObject("lecturer_id", UUID.class), rs.getObject("room_id", UUID.class),
+                        rs.getString("room_code"),
+                        ClassDays.fromIso((Object[]) rs.getArray("class_days").getArray()),
+                        rs.getTime("start_time").toLocalTime(), rs.getTime("end_time").toLocalTime(),
+                        rs.getTime("check_in_opens").toLocalTime(), rs.getTime("check_in_closes").toLocalTime(),
+                        rs.getBoolean("camera_attendance_enabled")),
                 lecturerId, lecturerId, studentId, studentId);
     }
 
@@ -246,7 +264,7 @@ public class DashboardRepository {
     public List<AttendanceRow> sessionAttendance(UUID sessionId, String status) {
         return jdbc.query("""
                 SELECT sp.student_id, sp.student_code, u.first_name || ' ' || u.last_name AS name,
-                       a.check_in_time, a.last_seen_at, COALESCE(a.status, 'absent') AS status
+                       a.check_in_time, a.last_seen_at, COALESCE(a.status, 'absent') AS status, a.source
                 FROM class_sessions cs
                 JOIN enrollments e ON e.section_id = cs.section_id AND e.status = 'active'
                 JOIN student_profiles sp ON sp.student_id = e.student_id
@@ -258,7 +276,7 @@ public class DashboardRepository {
                 """,
                 (rs, i) -> new AttendanceRow(rs.getObject("student_id", UUID.class), rs.getString("student_code"),
                         rs.getString("name"), ts(rs, "check_in_time"), ts(rs, "last_seen_at"),
-                        rs.getString("status")),
+                        rs.getString("status"), rs.getString("source")),
                 sessionId, status, status);
     }
 

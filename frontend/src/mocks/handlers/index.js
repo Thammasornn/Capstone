@@ -1,5 +1,4 @@
 import { v1Handlers } from './v1'
-import { pendingHandlers } from './pending'
 
 /** ต่อ path กับ VITE_API_BASE_URL ให้ตรงกับที่ http.js เรียกจริง */
 export function apiPath(path) {
@@ -7,10 +6,9 @@ export function apiPath(path) {
 }
 
 /**
- * @param {'all'|'missing'} mode
- *   all     = mock ทุก endpoint (dev ไม่ต้องรัน Backend)
- *   missing = mock เฉพาะ B1–B8 ที่ Backend ยังไม่มี ที่เหลือส่งต่อไป Backend จริง
+ * mock เฉพาะ API v1.0 (5.1–5.11) ใช้ตอน VITE_MOCK_MODE=all (dev ไม่รัน Backend) และ Vitest
+ * B1–B8 ไม่มี mock แล้ว — Backend ทำครบแล้ว ต้องรัน Backend จริงถ้าจะใช้หน้า Room / จัดการรายวิชา
  */
-export function getHandlers(mode) {
-  return [...pendingHandlers(apiPath, mode), ...(mode === 'all' ? v1Handlers(apiPath) : [])]
+export function getHandlers() {
+  return v1Handlers(apiPath)
 }

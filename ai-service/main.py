@@ -8,7 +8,7 @@ import os
 
 import cv2
 import numpy as np
-from fastapi import FastAPI, HTTPException, UploadFile
+from fastapi import FastAPI, Header, HTTPException, Response, UploadFile
 from ultralytics import YOLO
 
 YOLO_PATH = os.getenv("YOLO_FACE_MODEL", "/models/yolov8n-face-pose.pt")
@@ -17,15 +17,30 @@ MIN_CONF = float(os.getenv("MIN_CONF", "0.8"))
 MIN_FACE_PX = int(os.getenv("MIN_FACE_PX", "112"))
 MIN_BLUR = float(os.getenv("MIN_BLUR", "60"))   # variance of Laplacian
 
+INTERNAL_KEY = os.getenv("INTERNAL_API_KEY", "")   # ต้องตรงกับ backend: app.internal.api-key
+
 detector = YOLO(YOLO_PATH)
 recognizer = cv2.FaceRecognizerSF.create(SFACE_PATH, "")
 
 app = FastAPI()
 
+# embedding ที่โหลดไว้จับคู่ใบหน้าจากกล้อง: student_id -> [vector, ...]
+# (ตัวจับคู่ realtime จะเติมข้อมูลตรงนี้ · ถอนความยินยอมต้องลบออกทันที)
+GALLERY: dict[str, list[np.ndarray]] = {}
+
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.delete("/students/{student_id}/embeddings", status_code=204)
+def forget_student(student_id: str, x_internal_key: str | None = Header(default=None)):
+    """B7: backend เรียกหลังถอนความยินยอม → ลบ embedding ของนักศึกษาออกจากหน่วยความจำ"""
+    if not INTERNAL_KEY or x_internal_key != INTERNAL_KEY:
+        raise HTTPException(401, "invalid internal key")
+    GALLERY.pop(student_id, None)
+    return Response(status_code=204)
 
 
 def detect_faces(img: np.ndarray):

@@ -1,0 +1,57 @@
+# Spring Boot · replicas ต้องเป็น 1 (SSE / RoomEventHub อยู่ในหน่วยความจำ)
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+spec:
+  selector:
+    app: backend
+  ports:
+    - port: 8081
+      targetPort: 8081
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+        - name: backend
+          image: bangmod-backend:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: app-config
+          env:
+            - name: DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: app-secret, key: DB_PASSWORD } }
+            - name: JWT_SECRET
+              valueFrom: { secretKeyRef: { name: app-secret, key: JWT_SECRET } }
+            - name: FACE_EMBEDDING_KEY
+              valueFrom: { secretKeyRef: { name: app-secret, key: FACE_EMBEDDING_KEY } }
+            - name: INTERNAL_API_KEY
+              valueFrom: { secretKeyRef: { name: app-secret, key: INTERNAL_API_KEY } }
+          ports:
+            - containerPort: 8081
+          readinessProbe:
+            tcpSocket: { port: 8081 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: { port: 8081 }
+            initialDelaySeconds: 60
+            periodSeconds: 20
+          resources:
+            requests: { cpu: 200m, memory: 512Mi }
+            limits: { memory: 1Gi }

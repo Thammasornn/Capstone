@@ -24,7 +24,10 @@ public final class FaceDtos {
                                  int activeFaces, String consentStatus, String consentVersion,
                                  LocalDateTime consentedAt, boolean needsReconsent) {}
 
-    /** B7 DELETE /students/{studentId}/face · registered = false เสมอ · deletedCount = จำนวน embedding ที่ลบ */
+    /**
+     * B7 DELETE /students/{studentId}/face · registered = false เสมอ · deletedCount = จำนวน embedding ที่ลบ
+     * aiNotified = AI Service ยืนยันว่าลบ embedding ออกจากหน่วยความจำแล้ว (false = แจ้งไม่สำเร็จ ดู log)
+     */
     public record WithdrawResponse(UUID studentId, boolean registered, LocalDateTime withdrawnAt,
-                                   int deletedCount) {}
+                                   int deletedCount, boolean aiNotified) {}
 }

@@ -1,0 +1,55 @@
+# AI Service · โมเดลอยู่บน VM ที่ /opt/bangmod/models (ดู devops/README.md) ไม่มีโมเดล = pod start ไม่ขึ้น
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-service
+spec:
+  selector:
+    app: ai-service
+  ports:
+    - port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ai-service
+  template:
+    metadata:
+      labels:
+        app: ai-service
+    spec:
+      containers:
+        - name: ai-service
+          image: bangmod-ai-service:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: YOLO_FACE_MODEL
+              value: /models/yolov8n-face-pose.pt
+            - name: SFACE_MODEL
+              value: /models/face_recognition_sface_2021dec.onnx
+            - name: INTERNAL_API_KEY
+              valueFrom: { secretKeyRef: { name: app-secret, key: INTERNAL_API_KEY } }
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet: { path: /health, port: 8080 }
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 500m, memory: 1Gi }
+            limits: { memory: 3Gi }
+          volumeMounts:
+            - name: models
+              mountPath: /models
+              readOnly: true
+      volumes:
+        - name: models
+          hostPath:
+            path: /opt/bangmod/models
+            type: Directory
