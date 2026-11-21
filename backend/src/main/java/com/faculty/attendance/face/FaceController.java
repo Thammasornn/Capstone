@@ -22,15 +22,20 @@ public class FaceController {
         this.access = access;
     }
 
-    /** นักศึกษาลงทะเบียนใบหน้าของตัวเองได้เท่านั้น (หรือ admin) ตรวจสิทธิ์ก่อนตรวจไฟล์ (ไม่ส่งไฟล์ = 400 ใน service) */
+    /**
+     * นักศึกษาลงทะเบียนใบหน้าของตัวเองได้เท่านั้น (หรือ admin) ตรวจสิทธิ์ก่อนตรวจไฟล์ (ไม่ส่งไฟล์ = 400 ใน service)
+     * ageConfirmed = checkbox ข้อ 2 บนหน้ายินยอม → consent_records.age_confirmed
+     */
     @PostMapping(value = "/register", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public RegisterResponse register(@PathVariable UUID studentId,
                                      @RequestParam(value = "files", required = false) List<MultipartFile> files,
                                      @RequestParam(defaultValue = "false") boolean consent,
                                      @RequestParam(defaultValue = "v1") String consentTextVersion,
+                                     @RequestParam(defaultValue = "false") boolean ageConfirmed,
                                      HttpServletRequest request) {
         access.requireFaceRegister(studentId);
-        return service.register(studentId, files, consent, consentTextVersion, request.getRemoteAddr());
+        return service.register(studentId, files, consent, consentTextVersion, ageConfirmed,
+                request.getRemoteAddr(), request.getHeader("User-Agent"));
     }
 
     /** เจ้าของบัญชี, admin หรืออาจารย์ที่สอนนักศึกษาคนนั้น */
@@ -38,5 +43,13 @@ public class FaceController {
     public StatusResponse status(@PathVariable UUID studentId) {
         access.requireFaceView(studentId);
         return service.status(studentId);
+    }
+
+    /** B7 ถอนความยินยอม + ลบข้อมูลใบหน้าทันที: เฉพาะนักศึกษาเจ้าของบัญชี หรือ admin */
+    @DeleteMapping
+    public WithdrawResponse withdraw(@PathVariable UUID studentId, HttpServletRequest request) {
+        access.requireFaceRegister(studentId);
+        return service.withdraw(studentId, access.user().userId(), request.getRemoteAddr(),
+                request.getHeader("User-Agent"));
     }
 }

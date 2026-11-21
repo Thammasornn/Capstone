@@ -1,0 +1,45 @@
+name: database
+
+on:
+  push:
+    branches: [main]
+    paths: ['backend/db/**', '.github/workflows/database.yml']
+  pull_request:
+    paths: ['backend/db/**', '.github/workflows/database.yml']
+
+defaults:
+  run:
+    working-directory: backend/db
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create database
+        run: psql -v ON_ERROR_STOP=1 -f 00_create_database.sql
+      - name: Schema
+        run: psql -d bangmod_attendance -v ON_ERROR_STOP=1 -f 01_schema.sql
+      - name: Mock data (run twice to prove it is re-runnable)
+        run: |
+          psql -d bangmod_attendance -v ON_ERROR_STOP=1 -q -f 02_seed_mock.sql
+          psql -d bangmod_attendance -v ON_ERROR_STOP=1 -q -f 02_seed_mock.sql
+      - name: Demo live session
+        run: psql -d bangmod_attendance -v ON_ERROR_STOP=1 -q -f 03_demo_live_session.sql
+      - name: Assertions
+        run: psql -d bangmod_attendance -v ON_ERROR_STOP=1 -f test/assertions.sql

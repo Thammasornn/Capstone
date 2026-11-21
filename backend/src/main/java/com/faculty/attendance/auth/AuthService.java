@@ -39,36 +39,36 @@ public class AuthService {
         var found = repo.findUserByEmail(req.email().trim());
         boolean passwordOk = encoder.matches(req.password(),
                 found.map(UserRow::passwordHash).orElse(dummyHash));
-        if (found.isEmpty() || !passwordOk || !"active".equalsIgnoreCase(found.get().status())) {
+        if (found.isEmpty() || !passwordOk || !found.get().active()) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, BAD_CREDENTIALS);
         }
         UserRow u = found.get();
-        var student = repo.findStudentByUser(u.id());
-        var lecturer = repo.findLecturerByUser(u.id());
         String role = u.role() == null ? "" : u.role().toLowerCase();
-        String token = jwt.issue(u.id(), role,
-                student.map(AuthRepository.StudentRow::id).orElse(null),
-                lecturer.map(AuthRepository.LecturerRow::id).orElse(null));
+        // student_profiles.student_id = user_id · อาจารย์ใช้ user_id เป็น lecturerId (section_lecturers.lecturer_id)
+        var studentId = "student".equals(role)
+                ? repo.findStudentByUser(u.id()).map(AuthRepository.StudentRow::id).orElse(null) : null;
+        var lecturerId = "lecturer".equals(role) ? u.id() : null;
+        String token = jwt.issue(u.id(), role, studentId, lecturerId);
+        repo.touchLastLogin(u.id());
         return new LoginResponse(token, "Bearer", jwt.ttlSeconds(), build(u));
     }
 
     public MeResponse me() {
         var cu = current.get();
         UserRow u = repo.findUserById(cu.userId())
-                .filter(x -> "active".equalsIgnoreCase(x.status()))
+                .filter(UserRow::active)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "บัญชีนี้ใช้งานไม่ได้"));
         return build(u);
     }
 
     private MeResponse build(UserRow u) {
-        StudentProfile sp = repo.findStudentByUser(u.id()).map(s -> {
-            var e = faceRepo.findEnrollment(s.id());
-            return new StudentProfile(s.id(), s.code(), s.faculty(), s.department(), s.yearLevel(),
-                    new FaceRegistration(e.registered(), e.registeredAt(), faceRepo.countActiveFaces(s.id())));
-        }).orElse(null);
-        LecturerProfile lp = repo.findLecturerByUser(u.id())
-                .map(l -> new LecturerProfile(l.id(), l.code(), l.department())).orElse(null);
-        return new MeResponse(u.id(), u.email(), u.firstName(), u.lastName(),
-                u.role() == null ? null : u.role().toLowerCase(), sp, lp);
+        String role = u.role() == null ? null : u.role().toLowerCase();
+        StudentProfile sp = "student".equals(role) ? repo.findStudentByUser(u.id()).map(s -> {
+            var f = faceRepo.findStatus(s.id());
+            return new StudentProfile(s.id(), s.code(), s.faculty(), s.program(), s.yearLevel(), s.entryYear(),
+                    new FaceRegistration(f.registered(), f.registeredAt(), f.activeFaces()));
+        }).orElse(null) : null;
+        LecturerProfile lp = "lecturer".equals(role) ? new LecturerProfile(u.id(), null, null) : null;
+        return new MeResponse(u.id(), u.email(), u.title(), u.firstName(), u.lastName(), role, sp, lp);
     }
 }
