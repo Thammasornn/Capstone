@@ -7,10 +7,10 @@
 | โฟลเดอร์ | เนื้อหา | สถานะ |
 |---|---|---|
 | [`frontend/`](frontend/) | Vue 3 + Vite (JavaScript) · Tailwind v4 · Pinia · MSW | Release 1 scaffold |
-| [`backend/`](backend/) | Spring Boot REST + SSE · PostgreSQL | รอย้ายโค้ดเข้ามา |
+| [`backend/`](backend/) | Spring Boot REST + SSE · PostgreSQL — [`backend/db/`](backend/db/) schema + mock data R1 พร้อมใช้ | รอย้ายโค้ด Spring Boot |
 | [`ai-service/`](ai-service/) | Python · OpenCV → YOLOv8 → OpenCV SFace | รอย้ายโค้ดเข้ามา |
 | [`devops/`](devops/) | K3s manifests (namespace `prod` / `uat`), Ingress, MediaMTX | รอทำ |
-| [`docs/`](docs/) | เอกสารประกอบ (API guide, PDPA, ฯลฯ) | — |
+| [`docs/`](docs/) | เอกสารประกอบ — [`docs/database/`](docs/database/) แบบฐานข้อมูล + ER Diagram | — |
 
 ```
 [Raspberry Pi Camera] --RTSPS--> [MediaMTX] --RTSP--> [AI Service]
