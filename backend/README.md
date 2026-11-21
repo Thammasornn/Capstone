@@ -2,6 +2,20 @@
 
 Spring Boot 4 · Java · PostgreSQL ([`db/`](db/)) · แบบฐานข้อมูล: [`docs/database/database-design.md`](../docs/database/database-design.md)
 
+## โครงสร้าง
+
+| โฟลเดอร์ | เนื้อหา |
+|---|---|
+| [`db/`](db/) | สร้างฐานข้อมูล `bangmod_attendance` (20 ตาราง + 4 view) และข้อมูล Mock-Up ภาค 1/2569 — เริ่มที่ [`db/README.md`](db/README.md) |
+| `src/main/java/.../auth` | Login (JWT), `/api/me`, ตรวจสิทธิ์ admin / lecturer / student |
+| `src/main/java/.../dashboard` | API 5.3–5.9 (Dashboard, Session Report, ประวัติรายคน) |
+| `src/main/java/.../face` | ลงทะเบียนใบหน้า, สถานะ, ถอนความยินยอม (B7) |
+| `src/main/java/.../room` | B1–B4 ห้อง, ภาพสด, SSE |
+| `src/main/java/.../course` | B5–B6 จัดการรายวิชา, สวิตช์กล้อง |
+| `src/main/java/.../attendance` | B8 เช็คชื่อด้วยมือ, รับผลกล้อง, job สถานะคาบ / absent |
+| `src/main/java/.../internal` | `/api/internal/**` สำหรับ AI Service |
+| `src/main/java/.../audit`, `common` | `audit_logs`, เวลาไทย, error |
+
 ## ตั้งค่า (environment)
 
 | ตัวแปร | ใช้ทำอะไร | ค่าเริ่มต้น |
@@ -13,9 +27,13 @@ Spring Boot 4 · Java · PostgreSQL ([`db/`](db/)) · แบบฐานข้�
 | `AI_SERVICE_URL` | AI Service | `http://ai-service:8080` |
 | `MEDIA_BASE_URL` | MediaMTX (WHEP) ที่เบราว์เซอร์เปิดภาพ | `http://localhost:8889` |
 | `CORS_ORIGINS` | โดเมนของ FE คั่นด้วย `,` | `http://localhost:5173` |
+| `FLYWAY_ENABLED` | ให้ Flyway ดูแล schema (ปกติใช้ `db/*.sql`) | `false` |
+| `FORWARD_HEADERS_STRATEGY` | เชื่อ `X-Forwarded-For` จาก proxy ภายใน | `native` |
+
+สร้างฐานข้อมูลตาม [`db/README.md`](db/README.md) (`00` → `01` → `02`) แล้ว:
 
 ```bash
-mvn spring-boot:run
+mvn spring-boot:run        # http://localhost:8081
 ```
 
 ## API (ทุกเส้นขึ้นต้นด้วย `/api` · ต้องแนบ `Authorization: Bearer <token>` ยกเว้น login และ internal)
@@ -76,3 +94,28 @@ mvn spring-boot:run
   - ตั้ง env ใหม่ `INTERNAL_API_KEY` (ค่าเดียวกับ AI Service) และ `MEDIA_BASE_URL` ใน UAT/Prod · เปลี่ยน `JWT_SECRET` ด้วย
   - ทดสอบกับ PostgreSQL + seed (`db/02`, `db/03`) แล้ว ยังไม่ได้ทดสอบร่วมกับ FE จริง
   - SSE อยู่ในหน่วยความจำ instance เดียว · `v_student_section_attendance` ยังนับเฉพาะคาบ `completed`
+
+### 2026-11-21 — B7 ถอนความยินยอม + ลบข้อมูลใบหน้า
+- **ทำอะไร:** เพิ่ม `DELETE /api/students/{studentId}/face` ทำตามขั้น PDPA ข้อ 2 ใน `docs/database/database-design.md` ใน transaction เดียว: INSERT `consent_records` (`withdrawn`, อ้างฉบับเดิม) → DELETE `face_embeddings` → INSERT `data_deletion_jobs` (`reason = withdrawn`, `completed_at = now()`, `deleted_count`) → INSERT `audit_logs` (`face.consent_withdrawn`) · ตอบ `{ studentId, registered: false, withdrawnAt, deletedCount }` ตามที่ FE (`withdrawConsent`) รอ · ถ้ายังไม่ได้ให้ / ถอนไปแล้ว ตอบ 409 · ทำได้เฉพาะนักศึกษาเจ้าของบัญชีหรือ admin · ประวัติเช็คชื่อไม่ลบ
+- **ไฟล์ที่เกี่ยวข้อง:** `face/FaceController.java`, `face/FaceRegistrationService.java`, `face/StudentFaceRepository.java`, `face/FaceDtos.java`, `audit/AuditLogRepository.java` (ใหม่)
+- **เหตุผล:** PDPA กำหนดให้ถอนความยินยอมได้ง่ายเท่ากับตอนให้ และต้องลบข้อมูลชีวภาพจริง
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ยังไม่ได้แจ้ง AI Service (ยังไม่มี endpoint ฝั่ง AI) — มี TODO ใน `FaceRegistrationService.withdraw`
+
+### 2026-11-21 — แก้โค้ด Back-End ให้ตรงกับ schema ใน `db/01_schema.sql`
+- **ทำอะไร:**
+  - เปลี่ยนชื่อตาราง/คอลัมน์ใน SQL ทั้งหมดให้ตรง schema: `students` → `student_profiles`, `lecturers` (ไม่มีแล้ว ใช้ `users.role`), `course_sections` → `sections` + `semesters` + `section_lecturers`, `course_enrollments` → `enrollments` (`status = 'active'`), `biometric_*` / `student_face_embeddings` → `consent_records` + `face_embeddings`, PK `id` → `user_id` / `course_id` / `section_id` / `session_id`, `users.status` → `is_active`, `class_sessions.status` → `session_status`, `check_out_time` → `last_seen_at`
+  - สิทธิ์อาจารย์ตรวจจาก `section_lecturers` (1 section หลายอาจารย์ได้) · `lecturerId` ใน JWT = `users.user_id`
+  - ซ่อนวิชา/กลุ่มเรียนที่ soft delete (`deleted_at`) · คาบ `cancelled` ไม่นับเป็นขาด
+  - ลงทะเบียนใบหน้า: INSERT `consent_records` (granted) → **ลบ** embedding เดิมจริง → INSERT ชุดใหม่ ใน transaction เดียว (เดิมแค่ `is_active = false` ซึ่งผิดข้อความยินยอม v1 และชน trigger จำกัด 5 ชุด) · ตรวจว่าข้อความยินยอมเป็นฉบับปัจจุบัน (`consent_versions.is_current`) · รับ `ageConfirmed`
+  - เข้ารหัส embedding ด้วย AES-256-GCM ก่อนเก็บ (`EmbeddingCipher`) แทนการเก็บ pgvector แบบ plaintext
+  - `/face/status` เพิ่ม `consentStatus`, `consentVersion`, `consentedAt`, `needsReconsent`
+  - JSON ของ API คงชื่อ field เดิมให้ FE (`department` = `program`, `yearLevel` คำนวณจาก `entry_year`) และเพิ่ม `entryYear`, `title`
+  - เวลา timestamptz แปลงเป็นเวลาไทยเสมอ ไม่ขึ้นกับ timezone ของ JVM
+  - `application.yml`: DB เริ่มต้น `bangmod_attendance`, ปิด Flyway เป็นค่าเริ่มต้น, เพิ่ม `app.face.embedding-key`
+- **ไฟล์ที่เกี่ยวข้อง:** `auth/AuthRepository.java`, `auth/AuthService.java`, `auth/AuthDtos.java`, `auth/AccessService.java`, `dashboard/DashboardRepository.java`, `face/StudentFaceRepository.java`, `face/FaceRegistrationService.java`, `face/FaceController.java`, `face/FaceDtos.java`, `face/EmbeddingCipher.java` (ใหม่), `src/main/resources/application.yml`
+- **เหตุผล:** โค้ดเดิมเขียนตาม schema ชุดเก่า (Flyway V1–V9 ที่ไม่อยู่ใน repo) ทำให้ query พังเกือบทุก endpoint เมื่อรันกับ `db/01_schema.sql`
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:**
+  - ทดสอบ SQL ทุกตัวกับ PostgreSQL 16 + `02_seed_mock.sql` แล้ว แต่ยังไม่ได้ `mvn compile` (ดาวน์โหลด dependency ในเครื่องที่ทดสอบไม่ได้) — ต้อง build อีกรอบ
+  - ต้องตั้ง `FACE_EMBEDDING_KEY` · AI Service ต้องถอดรหัสแบบเดียวกัน (nonce 12 ไบต์ + ciphertext + tag 16 ไบต์, AAD = `student_id`, float32 little-endian)
+  - FE ควรส่ง `ageConfirmed=true` ตอนลงทะเบียน (ตอนนี้ยังไม่ส่ง → บันทึกเป็น `false`)
+  - ยังไม่ได้ทำ B1–B6, B8, B9
