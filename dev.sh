@@ -6,6 +6,8 @@
 #   ./dev.sh db --reset  ลบฐานข้อมูลทิ้งแล้วสร้างใหม่ทั้งหมด (ใช้เมื่อ schema เปลี่ยน)
 #   ./dev.sh             รัน backend + frontend พร้อมกัน (Ctrl+C หยุดทั้งคู่)
 #   ./dev.sh backend     รันเฉพาะ backend   ·   ./dev.sh frontend   รันเฉพาะ frontend
+#   ./dev.sh test        ตรวจอัตโนมัติ: backend compile + frontend unit test / lint / format / build
+#   ./dev.sh smoke       ยิง API จริงกับ backend ที่รันอยู่ (อ่านอย่างเดียว ไม่แก้ข้อมูล)
 #
 # ต้องมี: PostgreSQL ที่เปิดอยู่ (เช่น Postgres.app), Java 25 + Maven, Node.js 22.18+ / 24.12+
 # ต่อ PostgreSQL อื่น: PGHOST / PGPORT / PGUSER / PGPASSWORD (ค่าเริ่มต้น localhost / 5432 / postgres)
@@ -156,6 +158,103 @@ cmd_all() {
   run_frontend
 }
 
+# ---------- test ----------
+
+STEP_FAIL=0
+step() {   # step "ชื่อ" คำสั่ง...
+  local name="$1"; shift
+  printf '\033[36m▸ %s\033[0m ... ' "$name"
+  local out
+  if out="$("$@" 2>&1)"; then
+    printf '\033[32mผ่าน\033[0m\n'
+  else
+    printf '\033[31mไม่ผ่าน\033[0m\n'; echo "$out" | tail -25 >&2; STEP_FAIL=$((STEP_FAIL + 1))
+  fi
+}
+
+cmd_test() {
+  command -v mvn >/dev/null 2>&1 || die "ไม่พบ mvn (Maven)"
+  command -v npm >/dev/null 2>&1 || die "ไม่พบ npm"
+  bold "ตรวจอัตโนมัติ (ไม่ต้องเปิด backend / ฐานข้อมูล)"
+  step "dev.sh syntax"              bash -n "$0"
+  step "backend: mvn compile"       bash -c "cd '$ROOT/backend' && mvn -q -B compile"
+  if [ ! -d "$ROOT/frontend/node_modules" ] || [ "$ROOT/frontend/package-lock.json" -nt "$ROOT/frontend/node_modules" ]; then
+    step "frontend: npm ci"         bash -c "cd '$ROOT/frontend' && npm ci --no-audit --no-fund"
+  fi
+  step "frontend: unit test (Vitest)" bash -c "cd '$ROOT/frontend' && npm test"
+  step "frontend: lint"             bash -c "cd '$ROOT/frontend' && npm run lint"
+  step "frontend: format"           bash -c "cd '$ROOT/frontend' && npm run format:check"
+  step "frontend: build (prod)"     bash -c "cd '$ROOT/frontend' && npm run build"
+  step "frontend: build (uat)"      bash -c "cd '$ROOT/frontend' && npm run build:uat"
+  echo
+  [ "$STEP_FAIL" -eq 0 ] || die "ไม่ผ่าน $STEP_FAIL ข้อ (ดูรายละเอียดด้านบน)"
+  ok "ผ่านทั้งหมด · ตรวจฐานข้อมูล: ./dev.sh db · ตรวจ API จริง: ./dev.sh แล้ว ./dev.sh smoke"
+}
+
+# ---------- smoke ----------
+
+SMOKE_PASS=0 SMOKE_FAIL=0
+expect() {   # expect "ชื่อ" "<ค่าที่ได้>" "<ค่าที่ต้องการ>"
+  if [ "$2" = "$3" ]; then
+    printf '  \033[32m✓\033[0m %s\n' "$1"; SMOKE_PASS=$((SMOKE_PASS + 1))
+  else
+    printf '  \033[31m✗\033[0m %s (ได้ "%s" ต้องการ "%s")\n' "$1" "$2" "$3"; SMOKE_FAIL=$((SMOKE_FAIL + 1))
+  fi
+}
+
+cmd_smoke() {
+  command -v jq >/dev/null 2>&1 || die "ต้องมี jq (brew install jq)"
+  local api="http://localhost:$BACKEND_PORT/api" key="${INTERNAL_API_KEY:-local-test-key}"
+  port_in_use "$BACKEND_PORT" || die "backend ไม่ได้รันที่ port $BACKEND_PORT — เปิดด้วย ./dev.sh หรือ ./dev.sh backend ก่อน"
+  bold "Smoke test: $api (อ่านอย่างเดียว · ต้องใช้ข้อมูลจาก ./dev.sh db)"
+
+  login() {
+    curl -s "$api/auth/login" -H 'Content-Type: application/json' \
+      -d "{\"email\":\"$1\",\"password\":\"Password@123\"}" | jq -r '.accessToken // empty'
+  }
+  code() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
+
+  local admin lect stu
+  admin="$(login admin@sit.kmutt.ac.th)"; lect="$(login supawadee.c@sit.kmutt.ac.th)"
+  stu="$(login 69130500001@st.sit.kmutt.ac.th)"
+  echo "Auth (5.1–5.2)"
+  expect "login admin / lecturer / student" "$([ -n "$admin" ] && [ -n "$lect" ] && [ -n "$stu" ] && echo ok)" "ok"
+  [ -n "$admin" ] || die "login ไม่ได้ — รัน ./dev.sh db เพื่อใส่ข้อมูล mock ก่อน"
+  expect "รหัสผิด → 401 + ข้อความ" \
+    "$(curl -s "$api/auth/login" -H 'Content-Type: application/json' -d '{"email":"admin@sit.kmutt.ac.th","password":"x"}' | jq -r '"\(.status) \(.message != null)"')" "401 true"
+  expect "GET /me (student)" "$(curl -s -H "Authorization: Bearer $stu" "$api/me" | jq -r .role)" "student"
+  expect "ไม่มี token → 401" "$(code "$api/me")" "401"
+
+  echo "Dashboard (5.3–5.8)"
+  local course
+  course="$(curl -s -H "Authorization: Bearer $lect" "$api/courses" | jq -r '.[0].courseId // empty')"
+  expect "GET /courses (lecturer) มีรายวิชา" "$([ -n "$course" ] && echo ok)" "ok"
+  expect "GET /courses มีตารางเรียน (B5)" \
+    "$(curl -s -H "Authorization: Bearer $lect" "$api/courses" | jq -r '.[0].sections[0].classDays | length > 0')" "true"
+  expect "สรุปรายวิชา (5.4)" "$(code -H "Authorization: Bearer $lect" "$api/courses/$course/attendance/summary")" "200"
+  expect "student ดูสรุปรายวิชา → 403" "$(code -H "Authorization: Bearer $stu" "$api/courses/$course/attendance/summary")" "403"
+
+  echo "Room Monitor (B1–B4)"
+  local room
+  room="$(curl -s -H "Authorization: Bearer $lect" "$api/rooms" | jq -r '.[0].roomId // empty')"
+  expect "GET /rooms (lecturer)" "$([ -n "$room" ] && echo ok)" "ok"
+  expect "student ดูห้อง → 403" "$(code -H "Authorization: Bearer $stu" "$api/rooms")" "403"
+  expect "GET /rooms/{id} (B4)" "$(code -H "Authorization: Bearer $lect" "$api/rooms/$room")" "200"
+  expect "GET /rooms/{id}/stream (B2)" "$(curl -s -H "Authorization: Bearer $lect" "$api/rooms/$room/stream" | jq -r .protocol)" "whep"
+  expect "SSE /rooms/{id}/events (B3) ส่ง event camera" \
+    "$(curl -s -N --max-time 3 "$api/rooms/$room/events?access_token=$lect" | grep -c '^event:camera' | tr -d ' ')" "1"
+
+  echo "Internal (AI Service → backend)"
+  expect "ไม่มี X-Internal-Key → 401" \
+    "$(code -X POST "$api/internal/rooms/$room/faces" -H 'Content-Type: application/json' -d '{"detected":1}')" "401"
+  expect "มี key → 200 (ส่ง event faces อย่างเดียว ไม่เขียน DB)" \
+    "$(code -X POST "$api/internal/rooms/$room/faces" -H "X-Internal-Key: $key" -H 'Content-Type: application/json' -d '{"detected":1}')" "200"
+
+  echo
+  [ "$SMOKE_FAIL" -eq 0 ] || die "ผ่าน $SMOKE_PASS · ไม่ผ่าน $SMOKE_FAIL"
+  ok "ผ่านทั้งหมด $SMOKE_PASS ข้อ"
+}
+
 cmd_backend() {
   check_db_ready
   command -v mvn >/dev/null 2>&1 || die "ไม่พบ mvn (Maven)"
@@ -167,6 +266,8 @@ case "${1:-}" in
   db)        shift; cmd_db "$@" ;;
   backend)   cmd_backend ;;
   frontend)  run_frontend ;;
-  -h|--help|help) sed -n '3,13p' "$0" | sed 's/^# \{0,1\}//' ;;
+  test)      cmd_test ;;
+  smoke)     cmd_smoke ;;
+  -h|--help|help) sed -n '3,15p' "$0" | sed 's/^# \{0,1\}//' ;;
   *)         die "ไม่รู้จักคำสั่ง '$1' — ดู ./dev.sh help" ;;
 esac

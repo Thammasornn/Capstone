@@ -37,9 +37,22 @@ Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/uat/` แยก 
 | `./dev.sh backend` / `./dev.sh frontend` | รันทีละตัว (เช่นรัน backend จาก IDE แล้วใช้ `./dev.sh frontend`) |
 | `BACKEND_PORT=8082 FRONTEND_PORT=5174 ./dev.sh` | port ชนกับโปรแกรมอื่น |
 | `PGPORT=5433 ./dev.sh db` | PostgreSQL ไม่ได้อยู่ที่ `localhost:5432` (แล้วใส่ `DB_URL` ใน `backend/.env.local`) |
-| `cd frontend && npm test` | unit test ของ FE |
 
 ไม่รัน backend เลย: ใส่ `VITE_MOCK_MODE=all` ใน `frontend/.env.development.local` (mock เฉพาะ API 5.1–5.11 · ดู `frontend/README.md`)
+
+### วิธีรัน test
+
+| ลำดับ | คำสั่ง | ตรวจอะไร | ต้องเปิดอะไรไว้ |
+|---|---|---|---|
+| 1 | `./dev.sh test` | backend compile · frontend unit test (Vitest) · lint · format · build ทั้ง prod / uat | ไม่ต้อง |
+| 2 | `./dev.sh db` | schema + ข้อมูล mock ถูกต้อง (`backend/db/test/assertions.sql`) — **ล้างข้อมูลกลับเป็นชุดเดิม** | PostgreSQL |
+| 3 | `./dev.sh` (terminal 1) แล้ว `./dev.sh smoke` (terminal 2) | ยิง API จริง 15 ข้อ: login, สิทธิ์ (401 / 403), Dashboard, Room (B1–B4) รวม SSE, `/api/internal` · อ่านอย่างเดียว ไม่แก้ข้อมูล | PostgreSQL + backend |
+| 4 | เปิด `http://localhost:5173` | ลองใช้ผ่านหน้าเว็บด้วยบัญชีทดสอบด้านบน | PostgreSQL + backend + frontend |
+
+- ทุกข้อจบด้วย `✓ ผ่านทั้งหมด` ถ้าไม่ผ่านจะแสดงรายละเอียดและ exit code ≠ 0 (ใช้ใน script / CI ได้)
+- backend ยังไม่มี unit test ของตัวเอง — ข้อ 1 ตรวจแค่ว่า compile ได้ ข้อ 3 ตรวจการทำงานจริง
+- ทดสอบที่แก้ข้อมูล (B5 สร้าง/แก้/ลบรายวิชา, B6 สวิตช์กล้อง, B7 ถอนความยินยอม, B8 เช็คชื่อด้วยมือ, กล้องส่งผลเข้า `/api/internal/rooms/{roomId}/sightings`) ทำด้วยมือตามตัวอย่าง request ใน `backend/README.md` แล้ว `./dev.sh db` เพื่อล้างกลับ
+- บน GitHub: workflow `database` (เมื่อแก้ `backend/db/**`) และ `frontend` (เมื่อแก้ `frontend/**`) รันให้อัตโนมัติทุก PR
 
 ### สร้างฐานข้อมูลด้วย DBeaver แทน `./dev.sh db`
 
@@ -62,6 +75,12 @@ Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/uat/` แยก 
 อาจารย์ที่ปรึกษา: อ.มนตรี สุภัททธรรม
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-22 — `./dev.sh test` / `./dev.sh smoke` + คู่มือวิธีรัน test
+- **ทำอะไร:** เพิ่มคำสั่ง `./dev.sh test` (backend compile + frontend unit test / lint / format / build ทั้ง 2 mode ในคำสั่งเดียว) และ `./dev.sh smoke` (ยิง API จริง 15 ข้อกับ backend ที่รันอยู่: login, 401 / 403, Dashboard, B1–B4 + SSE, `/api/internal` — อ่านอย่างเดียว) · เพิ่มหัวข้อ "วิธีรัน test" ใน README
+- **ไฟล์ที่เกี่ยวข้อง:** `dev.sh`, `README.md`
+- **เหตุผล:** ให้ทุกคนในทีมตรวจงานก่อน push ได้ด้วยคำสั่งเดียว และรู้ว่าต้องรัน test อะไรตามลำดับไหน
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ทดสอบแล้ว: `./dev.sh test` ผ่านครบ 7 ขั้น, `./dev.sh smoke` ผ่าน 15/15 กับ backend + ข้อมูล mock และแจ้งเตือนถูกต้องเมื่อ backend ไม่ได้รัน · backend ยังไม่มี unit test (JUnit) ควรเพิ่มต่อ · smoke ยังไม่ครอบคลุม API ที่แก้ข้อมูล (B5–B8)
 
 ### 2026-11-22 — `./dev.sh` + โปรไฟล์ `local` ให้ทุกคนทดสอบบนเครื่องได้ง่าย
 - **ทำอะไร:** เพิ่ม `dev.sh` (สร้างฐานข้อมูล + ข้อมูล mock, รัน backend + frontend พร้อมกัน, เปลี่ยน port ได้) · backend มีโปรไฟล์ `local` เป็นค่าเริ่มต้นพร้อม key ทดสอบ จึงไม่ต้องตั้ง env · บน server บังคับโปรไฟล์ `prod` · เพิ่มคู่มือ "ทดสอบบนเครื่อง (local)" รวมวิธีใช้ DBeaver
