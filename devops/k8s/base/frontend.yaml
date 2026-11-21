@@ -28,7 +28,7 @@ spec:
         - name: frontend
           # tag prod / uat = build คนละ base path (VITE_BASE) · overlay เลือก tag ให้
           image: bangmod-frontend:prod
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Never   # image มาจาก build-images.sh (ไม่มี registry) · ลืม import = ErrImageNeverPull
           env:
             - name: BACKEND_URL
               value: http://backend:8081

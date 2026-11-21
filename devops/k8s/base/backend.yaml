@@ -29,7 +29,7 @@ spec:
       containers:
         - name: backend
           image: bangmod-backend:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Never   # image มาจาก build-images.sh (ไม่มี registry) · ลืม import = ErrImageNeverPull
           envFrom:
             - configMapRef:
                 name: app-config
