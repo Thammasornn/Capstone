@@ -76,6 +76,11 @@ Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/uat/` แยก 
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-22 — กฎการ deploy ใน `CLAUDE.md`
+- **ทำอะไร:** เพิ่มหัวข้อ "กฎการ deploy (K3s บน VM)" ใน `CLAUDE.md`: ตรวจเครื่องก่อน, uat ก่อนแล้วรอยืนยันค่อยทำ prod, ห้าม seed prod, ห้ามลบ namespace / PVC / ข้อมูลโดยไม่ถาม, ห้าม commit จาก VM, จัดการ `secret.env` (โดยเฉพาะ `FACE_EMBEDDING_KEY`), รายการตรวจหลัง deploy และข้อมูลเริ่มต้นของ prod
+- **ไฟล์ที่เกี่ยวข้อง:** `CLAUDE.md`, `README.md`
+- **เหตุผล:** ให้ Claude Code ทุกเครื่อง (รวม VM) ทำตามขั้นตอนเดียวกันทุกครั้งก่อน deploy และไม่ทำสิ่งที่ย้อนกลับไม่ได้
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ขั้นตอนละเอียดยังอยู่ที่ `devops/README.md` · ถ้าขั้นตอน deploy เปลี่ยน ให้แก้ทั้งสองไฟล์ให้ตรงกัน
 ### 2026-11-22 — FE ทุกหน้าเรียก API จริง
 - **ทำอะไร:** ทำหน้าจอ FE ที่เหลือทั้งหมด (อาจารย์ / admin / นักศึกษา) ให้ดึงข้อมูลจาก Backend จริง รวม SSE, กราฟ, ฟอร์มรายวิชา, ลงทะเบียน/ถอนใบหน้า · Backend เพิ่ม `GET /rooms/options`, `GET /lecturers` · แก้ Vite proxy ที่ทำให้ login ไม่ได้เมื่อเปลี่ยน port
 - **ไฟล์ที่เกี่ยวข้อง:** `frontend/src/**`, `frontend/vite.config.js`, `backend/.../course/LookupController.java`
