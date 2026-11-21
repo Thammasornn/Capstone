@@ -27,7 +27,7 @@ spec:
       containers:
         - name: ai-service
           image: bangmod-ai-service:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Never   # image มาจาก build-images.sh (ไม่มี registry) · ลืม import = ErrImageNeverPull
           env:
             - name: YOLO_FACE_MODEL
               value: /models/yolov8n-face-pose.pt

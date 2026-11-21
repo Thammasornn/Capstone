@@ -76,6 +76,12 @@ Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/uat/` แยก 
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-22 — บันทึกการ deploy uat บน VM
+- **ทำอะไร:** บันทึกว่า deploy uat สำเร็จ (http://cp26ms3.sit.kmutt.ac.th/uat/) พร้อมข้อมูล VM, ปัญหาที่เจอและวิธีแก้ · ปรับ `build-images.sh` ให้เช็คสิทธิ์ docker และผล import · `imagePullPolicy: Never` · กฎใน `CLAUDE.md` เรื่อง sudo และการบันทึกหลัง deploy
+- **ไฟล์ที่เกี่ยวข้อง:** `devops/README.md`, `devops/k8s/build-images.sh`, `devops/k8s/base/*.yaml`, `CLAUDE.md`
+- **เหตุผล:** คนที่ deploy ครั้งต่อไป (รวม prod) จะได้ไม่ติดปัญหาเดิม
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** รายละเอียดใน `devops/README.md`
+
 ### 2026-11-22 — ใช้โดเมน `cp26ms3.sit.kmutt.ac.th` บน VM
 - **ทำอะไร:** ตั้ง URL ภาพสด (`MEDIA_BASE_URL`) และเอกสาร deploy ให้ใช้โดเมน `cp26ms3.sit.kmutt.ac.th` แทน IP / ค่าที่ต้องแก้เอง
 - **ไฟล์ที่เกี่ยวข้อง:** `devops/k8s/overlays/*/kustomization.yaml`, `devops/README.md`, `CLAUDE.md`
