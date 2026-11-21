@@ -1,0 +1,25 @@
+# =====================================================================
+# โปรไฟล์ local — ค่าสำหรับทดสอบบนเครื่องนักพัฒนาเท่านั้น (เป็นโปรไฟล์เริ่มต้น: spring.profiles.default)
+#   mvn spring-boot:run   หรือกด Run ที่ AttendanceApplication ใน IDE → ใช้ได้ทันที ไม่ต้องตั้ง env
+#
+# ⚠️ key ในไฟล์นี้อยู่ใน git = ไม่เป็นความลับ ใช้กับข้อมูล mock เท่านั้น ห้ามใช้กับข้อมูลใบหน้าจริง
+#    บน server (Docker image / K3s) ตั้ง SPRING_PROFILES_ACTIVE=prod ไว้แล้ว ไฟล์นี้จึงไม่ถูกโหลด
+#
+# อยากใช้ค่าของตัวเอง: สร้าง backend/.env.local (ไม่ถูก commit) เช่น
+#   DB_URL=jdbc:postgresql://localhost:5433/bangmod_attendance
+#   FACE_EMBEDDING_KEY=<openssl rand -base64 32>
+# env ของเครื่อง / IDE ยังทับทุกค่าได้เหมือนเดิม
+# =====================================================================
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:local-only-jwt-secret-do-not-use-on-any-server-0123456789}
+  face:
+    embedding-key: ${FACE_EMBEDDING_KEY:tRv4JpHroo070kKtVEXa4ZSpXMBSgNa0GYxnZKhPp0Y=}
+  internal:
+    # ใช้ทดสอบ /api/internal/** ด้วย curl (header X-Internal-Key) และให้ AI Service ที่รันในเครื่องใช้ค่าเดียวกัน
+    api-key: ${INTERNAL_API_KEY:local-test-key}
+
+ai-service:
+  # AI Service ที่รันในเครื่อง (uvicorn main:app --port 8080) · ไม่ได้รัน = ลงทะเบียนใบหน้าได้ 502 ส่วนอื่นใช้ได้
+  base-url: ${AI_SERVICE_URL:http://localhost:8080}
