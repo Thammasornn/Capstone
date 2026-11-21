@@ -1,4 +1,4 @@
-# namespace uat · เว็บอยู่ที่ http://<VM>/uat/ · ใส่ข้อมูล mock ได้ (init-db.sh uat --seed)
+# namespace uat · เว็บอยู่ที่ http://cp26ms3.sit.kmutt.ac.th/uat/ · ใส่ข้อมูล mock ได้ (init-db.sh uat --seed)
 #   kubectl apply -k devops/k8s/overlays/uat
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
@@ -25,8 +25,8 @@ configMapGenerator:
       - AI_SERVICE_URL=http://ai-service:8080
       # FE เรียกผ่าน NGINX (same origin) จึงไม่ต้องใช้ CORS · ใส่ไว้เผื่อเปิด FE จากโดเมนอื่น
       - CORS_ORIGINS=http://localhost:5173
-      # B2: URL ที่เบราว์เซอร์เปิดภาพจาก MediaMTX · แก้เป็น IP / โดเมนของ VM
-      - MEDIA_BASE_URL=http://CHANGE-ME-VM-HOST:8889
+      # B2: URL ที่เบราว์เซอร์เปิดภาพจาก MediaMTX (โดเมนของ VM · DNS ชี้ไป 10.4.56.69)
+      - MEDIA_BASE_URL=http://cp26ms3.sit.kmutt.ac.th:8889
 # ความลับ: copy secret.env.example → secret.env (ไม่ถูก commit) แล้วใส่ค่าจริง
 secretGenerator:
   - name: app-secret
