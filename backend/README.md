@@ -53,6 +53,12 @@ mvn spring-boot:run
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-21 — Dockerfile + รองรับการอยู่หลัง proxy
+- **ทำอะไร:** เพิ่ม `Dockerfile` (Maven build → JRE 25, ไม่รันด้วย root) และ `.dockerignore` · ตั้ง `server.forward-headers-strategy: native` ให้ใช้ IP จาก `X-Forwarded-For` ของ proxy ภายใน
+- **ไฟล์ที่เกี่ยวข้อง:** `Dockerfile`, `.dockerignore`, `src/main/resources/application.yml`
+- **เหตุผล:** deploy บน K3s และให้ `audit_logs` / `consent_records` บันทึก IP จริงของผู้ใช้ ไม่ใช่ IP ของ NGINX
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ทดสอบผ่าน NGINX config จริงแล้ว IP ถูกต้อง · ยังไม่ได้ build image (เครื่องไม่มี docker)
+
 ### 2026-11-21 — API B1–B8, แจ้ง AI Service, job สถานะคาบ
 - **ทำอะไร:**
   - B1–B4 `room/`: รายการห้อง + คาบปัจจุบัน, URL ภาพ MediaMTX, SSE `/rooms/{id}/events` (รับ token ทาง `?access_token=` เฉพาะ path นี้)

@@ -20,6 +20,12 @@ FastAPI · YOLOv8 face-pose + SFace (รายละเอียดโมเด�
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-21 — Dockerfile
+- **ทำอะไร:** เพิ่ม `Dockerfile` (python 3.12-slim + lib ของ OpenCV, uvicorn port 8080) · โมเดล mount เข้า `/models` ตอนรัน
+- **ไฟล์ที่เกี่ยวข้อง:** `Dockerfile`
+- **เหตุผล:** deploy บน K3s (`devops/k8s/base/ai-service.yaml`)
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ยังไม่ได้ build image จริง
+
 ### 2026-11-21 — endpoint ลบ embedding ตอนถอนความยินยอม
 - **ทำอะไร:** เพิ่ม `DELETE /students/{student_id}/embeddings` (ตรวจ `X-Internal-Key` = `INTERNAL_API_KEY`) และ `GALLERY` ไว้เก็บ embedding สำหรับจับคู่ใบหน้าจากกล้อง
 - **ไฟล์ที่เกี่ยวข้อง:** `main.py`, `README.md`

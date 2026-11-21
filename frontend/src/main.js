@@ -13,11 +13,10 @@ import { useAuthStore } from './features/auth/store'
 import { useCourseStore } from './entities/course/store'
 
 async function enableMocks() {
-  const mode = import.meta.env.VITE_MOCK_MODE
-  // VITE_MOCK_MODE=off ถูกแทนค่าตอน build → โค้ด mock ไม่ถูกรวมใน bundle production
-  if (mode !== 'all' && mode !== 'missing') return
+  // VITE_MOCK_MODE=off ถูกแทนค่าตอน build → โค้ด mock ไม่ถูกรวมใน bundle UAT / production
+  if (import.meta.env.VITE_MOCK_MODE !== 'all') return
   const { startMockWorker } = await import('./mocks/browser')
-  await startMockWorker(mode)
+  await startMockWorker()
 }
 
 async function bootstrap() {

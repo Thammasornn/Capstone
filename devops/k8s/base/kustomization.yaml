@@ -1,0 +1,12 @@
+# ชุดกลางของทุก namespace · ค่าเฉพาะ prod / uat อยู่ใน overlays/<env>
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - postgres.yaml
+  - backend.yaml
+  - frontend.yaml
+  - ai-service.yaml
+  - ingress.yaml
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: bangmod-attendance

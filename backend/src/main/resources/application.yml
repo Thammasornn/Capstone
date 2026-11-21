@@ -1,5 +1,8 @@
 server:
   port: 8081
+  # อยู่หลัง NGINX ของ FE / Ingress: ใช้ X-Forwarded-For เป็น IP จริง (audit_logs, consent_records)
+  # native = เชื่อ header จาก proxy ใน network ภายในเท่านั้น (10.x, 172.16–31.x, 192.168.x, 127.x)
+  forward-headers-strategy: ${FORWARD_HEADERS_STRATEGY:native}
 
 spring:
   web:
