@@ -43,6 +43,12 @@ const sortedRows = computed(() => {
   })
 })
 
+/** ค่าเริ่มต้นของช่อง (ไม่มี slot หรือ slot ว่าง): ไม่แสดง object ดิบ */
+function display(value) {
+  if (value === null || value === undefined || value === '') return '-'
+  return typeof value === 'object' ? '-' : value
+}
+
 const alignClass = { left: 'text-left', right: 'text-right', center: 'text-center' }
 
 function ariaSort(column) {
@@ -97,7 +103,7 @@ function ariaSort(column) {
             :class="alignClass[column.align ?? 'left']"
           >
             <slot :name="`cell-${column.key}`" :row="row" :value="row[column.key]">
-              {{ row[column.key] ?? '-' }}
+              {{ display(row[column.key]) }}
             </slot>
           </td>
         </tr>

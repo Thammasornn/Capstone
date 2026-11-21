@@ -76,6 +76,11 @@ docker run -p 8080:80 -e BACKEND_URL=http://10.0.0.5:8081 bangmod-frontend:prod 
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-22 — แก้ตารางจัดการรายวิชา: กลุ่มที่ 2 ขึ้นเป็น JSON และไม่มีปุ่ม
+- **ทำอะไร:** `CourseTable` แสดงรหัสวิชาและปุ่มแก้ไข / ลบ ทุกแถว (แถวที่ 2+ ของวิชาเดียวกันแสดงรหัสแบบจาง) · `DataTable` ค่าเริ่มต้นของช่องไม่แสดง object ดิบ (แสดง `-` แทน)
+- **ไฟล์ที่เกี่ยวข้อง:** `src/features/course-management/components/CourseTable.vue`, `src/shared/components/DataTable.vue`
+- **เหตุผล:** เดิมแสดงเฉพาะแถวแรกของวิชา (`v-if`) แถวอื่น slot ว่าง Vue จึงใช้ค่า fallback ของ `DataTable` = `row.course` (object ทั้งก้อน) และ `-` แทนปุ่ม
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ตรวจใน browser ด้วยบัญชี admin (INT101 มี 2 กลุ่ม) แล้ว
 ### 2026-11-22 — ทุกหน้าเรียก API จริง (แทนหน้า "กำลังพัฒนา")
 - **ทำอะไร:**
   - component กลาง: `DataTable` (sort), `StatCard`, `BaseSelect`, `BaseToggle` (role=switch), `BaseDialog` (`<dialog>`), `RefreshButton`, `TextField` (ใหม่) · composable `useAsyncState`, `usePolling` (หยุดเมื่อซ่อนแท็บ) · `CourseSectionSelect` ผูก `useCourseStore`

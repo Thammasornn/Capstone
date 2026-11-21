@@ -1,5 +1,8 @@
 <script setup>
-/** ตารางรายวิชา: 1 แถวต่อกลุ่มเรียน + สวิตช์กล้อง (B6) + แก้ไข / ลบ */
+/**
+ * ตารางรายวิชา: 1 แถวต่อกลุ่มเรียน + สวิตช์กล้อง (B6) + แก้ไข / ลบ
+ * ทุกแถวแสดงรหัสวิชาและปุ่ม (ปุ่มทำกับทั้งรายวิชา) — แถวที่ 2+ ของวิชาเดียวกันแสดงแบบจาง
+ */
 import { computed } from 'vue'
 import DataTable from '@/shared/components/DataTable.vue'
 import { formatTime } from '@/shared/utils/datetime'
@@ -29,10 +32,12 @@ const columns = [
 <template>
   <DataTable :columns="columns" :rows="rows" row-key="rowKey" caption="รายวิชาและกลุ่มเรียน">
     <template #cell-course="{ row }">
-      <template v-if="row.firstOfCourse">
-        <p class="font-semibold">{{ row.course.courseCode }}</p>
-        <p class="max-w-56 truncate text-xs text-muted">{{ row.course.courseName }}</p>
-      </template>
+      <p class="font-semibold" :class="!row.firstOfCourse && 'text-muted'">
+        {{ row.course.courseCode }}
+      </p>
+      <p v-if="row.firstOfCourse" class="max-w-56 truncate text-xs text-muted">
+        {{ row.course.courseName }}
+      </p>
     </template>
     <template #cell-schedule="{ row }">
       {{ (row.classDays ?? []).map((d) => DAY[d]).join(' ') }}
@@ -49,7 +54,7 @@ const columns = [
       />
     </template>
     <template #cell-actions="{ row }">
-      <div v-if="row.firstOfCourse" class="flex gap-1">
+      <div class="flex gap-1">
         <RouterLink
           :to="{ name: 'course-edit', params: { courseId: row.course.courseId } }"
           class="rounded-button px-2 py-1 text-xs font-semibold text-primary hover:bg-primary/5"
