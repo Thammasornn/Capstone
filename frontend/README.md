@@ -53,11 +53,45 @@ docker run -p 8080:80 -e BACKEND_URL=http://10.0.0.5:8081 bangmod-frontend:prod 
 - B1–B8 ไม่มี mock แล้ว (Backend ทำครบ) · ลบ `pending.js` และโหมด `missing` ออกแล้ว
 - ทดสอบ error การลงทะเบียนใบหน้า: ตั้งชื่อไฟล์มี `noface` → 422, มี `aidown` → 502
 
+## หน้าจอ → API
+
+| หน้า | route | API |
+|---|---|---|
+| เลือกห้องเรียน | `/classrooms` | B1 (รีเฟรชทุก 30 วินาที) |
+| Room Live | `/classrooms/:roomId` | B4, B2 (ภาพสด WHEP จาก MediaMTX), B3 SSE (`camera` / `faces` / `check_in` / `session`), 5.8, B8 |
+| วิเคราะห์การเข้าเรียน | `/courses/analytics` | 5.4–5.6 (การ์ด, กราฟรายคาบ, ตารางคาบ, ตารางนักศึกษา + ความเสี่ยง) |
+| นักศึกษากลุ่มเสี่ยง | `/courses/at-risk` | 5.6 |
+| สถานะลงทะเบียนใบหน้า | `/courses/registration` | 5.6 (`faceRegistered`) |
+| จัดการรายวิชา | `/courses/manage` | 5.3, B6 (สวิตช์กล้อง), B5 DELETE |
+| เพิ่ม / แก้ไขรายวิชา | `/courses/new`, `/courses/:id/edit` | B5, `GET /rooms/options`, `GET /lecturers` |
+| รายงานรายคาบ | `/reports/sessions/:sessionId` | 5.7–5.8, B8 |
+| หน้าแรกนักศึกษา / วิชาของฉัน | `/student`, `/student/courses` | 5.3 + 5.9 ของทุกวิชา |
+| ประวัติการเข้าเรียน | `/student/attendance` | 5.9 |
+| ลงทะเบียนใบหน้า | `/student/face` | 5.10 (+ `ageConfirmed`), `/me` |
+| จัดการข้อมูลใบหน้า | `/student/face/manage` | 5.11, B7 |
+
 ## ชั้นของโค้ด
 
 `app → features → entities → shared` — ฟีเจอร์ห้าม import ฟีเจอร์อื่น (ESLint ตรวจให้ที่ `shared/` และ `entities/`)
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-22 — ทุกหน้าเรียก API จริง (แทนหน้า "กำลังพัฒนา")
+- **ทำอะไร:**
+  - component กลาง: `DataTable` (sort), `StatCard`, `BaseSelect`, `BaseToggle` (role=switch), `BaseDialog` (`<dialog>`), `RefreshButton`, `TextField` (ใหม่) · composable `useAsyncState`, `usePolling` (หยุดเมื่อซ่อนแท็บ) · `CourseSectionSelect` ผูก `useCourseStore`
+  - หน้าอาจารย์ / admin: เลือกห้องเรียน, Room Live (SSE อัปเดตรายชื่อสด + toast, ภาพสด WHEP, เช็คชื่อด้วยมือ), วิเคราะห์การเข้าเรียน (Chart.js), กลุ่มเสี่ยง, สถานะลงทะเบียนใบหน้า, จัดการรายวิชา + ฟอร์มเพิ่ม/แก้ไข (ตรวจข้อมูลเหมือน Backend, timeline ช่วงเช็คชื่อ), รายงานรายคาบ
+  - หน้านักศึกษา: หน้าแรก (ภาพรวม + เรียนวันนี้), วิชาของฉัน, ประวัติการเข้าเรียน, ลงทะเบียนใบหน้า (ยินยอม → ถ่ายด้วยกล้อง / เลือกรูป → ส่ง), จัดการข้อมูลใบหน้า (ถอนความยินยอม)
+  - `ManualAttendanceDialog` (B8) อยู่ใน `entities/attendance` เพราะใช้ทั้ง Room Live และรายงานรายคาบ
+  - `registerFace` ส่ง `ageConfirmed` · `datetime.js` รับเวลาที่มีเศษวินาทีจาก Backend
+  - `vite.config.js`: proxy คง `Host` เดิม (`changeOrigin: false`) — เดิมเปลี่ยน port ของ FE แล้ว login ไม่ได้ (Spring ตอบ 403 CORS)
+  - test ใหม่ `tests/unit/course-form.test.js` (ตรวจฟอร์มรายวิชา)
+- **ไฟล์ที่เกี่ยวข้อง:** `src/shared/**`, `src/entities/**`, `src/features/**`, `vite.config.js`, `tests/unit/*`
+- **เหตุผล:** หน้าจอทั้งหมดยังเป็นโครงเปล่าจาก scaffold รอบแรก ทำให้ข้อมูลไม่แสดงแม้ FE ต่อ BE ได้แล้ว
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:**
+  - ทดสอบใน browser กับ Backend จริง + ข้อมูล mock ครบทุกหน้า ทั้ง 3 role (lecturer / admin / student) รวม SSE check-in สด, B5 สร้าง/แก้/ลบ, B6, B7, B8 · unit test 51 ข้อผ่าน
+  - ยังไม่ได้ทดสอบ: ภาพสดจริง (ต้องมี MediaMTX) และลงทะเบียนใบหน้าสำเร็จจริง (ต้องมี AI Service + โมเดล) — ตอนนี้ตรวจแค่ว่าแสดง error ถูกต้อง
+  - หน้าจอยังไม่ได้เทียบกับ Figma (ไม่มีสิทธิ์เข้าไฟล์) ใช้ design token เดิมใน `main.css`
+  - feature ใช้ `useAuthStore` จาก `features/auth` (ข้อมูล session ที่ทุกหน้าต้องใช้)
 
 ### 2026-11-21 — ลบ mock B1–B8 และเชื่อม Backend จริงผ่าน proxy `/api`
 - **ทำอะไร:** ลบ `src/mocks/handlers/pending.js` + โหมด `missing` · dev ค่าเริ่มต้นต่อ Backend จริง · เพิ่ม Vite proxy (`DEV_BACKEND_URL`) และ NGINX proxy `<base>api/` → `BACKEND_URL` (รองรับ SSE, อัปโหลด 25MB, ปิด `/api/internal/`) · ลบ test ของ mock B1/B6/B7

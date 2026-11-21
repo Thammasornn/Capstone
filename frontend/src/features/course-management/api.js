@@ -1,7 +1,7 @@
 import { getJson, http } from '@/shared/api/http'
 
 /**
- * ⚠️ B5–B6 ยังไม่มีใน API v1.0 — ใช้ mock ตาม shape ในเอกสารแจ้ง Back-End
+ * B5–B6 จัดการรายวิชา + ตัวเลือกห้อง / อาจารย์สำหรับฟอร์ม
  * ตารางเรียน ห้อง ช่วงเช็คชื่อ และสวิตช์กล้อง ผูกกับ section (ไม่ใช่ course)
  *
  * @typedef {object} SectionInput
@@ -15,6 +15,7 @@ import { getJson, http } from '@/shared/api/http'
  * @property {string} checkInOpens
  * @property {string} checkInCloses
  * @property {boolean} cameraAttendanceEnabled
+ * @property {number} [onTimeMinutes]     ไม่ใส่ = 15 นาที (หรือเท่าช่วงเช็คชื่อถ้าสั้นกว่า)
  *
  * @typedef {object} CourseInput
  * @property {string} courseCode
@@ -44,7 +45,7 @@ export async function updateCourse(courseId, body) {
   return data
 }
 
-/** B5 DELETE /courses/{courseId} — 409 เมื่อมีประวัติเช็คชื่อแล้ว (รอ Q5) */
+/** B5 DELETE /courses/{courseId} — soft delete (Q5): ประวัติเช็คชื่อยังอยู่ · คาบที่ยังไม่เริ่มถูกยกเลิก */
 export async function deleteCourse(courseId) {
   await http.delete(`/courses/${courseId}`)
 }
@@ -56,4 +57,14 @@ export async function deleteCourse(courseId) {
 export async function setCameraAttendance(sectionId, enabled) {
   const { data } = await http.patch(`/sections/${sectionId}/camera-attendance`, { enabled })
   return data
+}
+
+/** ทุกห้องที่ใช้งานได้ (ใช้ในฟอร์ม) @returns {Promise<{ roomId: string, roomCode: string, building: string | null, capacity: number | null }[]>} */
+export function getRoomOptions() {
+  return getJson('/rooms/options')
+}
+
+/** อาจารย์ที่ใช้งานได้ (admin เลือกผู้สอน) @returns {Promise<{ lecturerId: string, name: string, email: string }[]>} */
+export function getLecturers() {
+  return getJson('/lecturers')
 }

@@ -76,6 +76,12 @@ Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/uat/` แยก 
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-22 — FE ทุกหน้าเรียก API จริง
+- **ทำอะไร:** ทำหน้าจอ FE ที่เหลือทั้งหมด (อาจารย์ / admin / นักศึกษา) ให้ดึงข้อมูลจาก Backend จริง รวม SSE, กราฟ, ฟอร์มรายวิชา, ลงทะเบียน/ถอนใบหน้า · Backend เพิ่ม `GET /rooms/options`, `GET /lecturers` · แก้ Vite proxy ที่ทำให้ login ไม่ได้เมื่อเปลี่ยน port
+- **ไฟล์ที่เกี่ยวข้อง:** `frontend/src/**`, `frontend/vite.config.js`, `backend/.../course/LookupController.java`
+- **เหตุผล:** เดิมทุกหน้ายกเว้น Login เป็น "กำลังพัฒนา" ข้อมูลจึงไม่แสดง
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** รายละเอียดใน `frontend/README.md` (ตาราง หน้าจอ → API) · ภาพสดและลงทะเบียนใบหน้าจริงต้องมี MediaMTX / AI Service
+
 ### 2026-11-22 — `./dev.sh test` / `./dev.sh smoke` + คู่มือวิธีรัน test
 - **ทำอะไร:** เพิ่มคำสั่ง `./dev.sh test` (backend compile + frontend unit test / lint / format / build ทั้ง 2 mode ในคำสั่งเดียว) และ `./dev.sh smoke` (ยิง API จริง 15 ข้อกับ backend ที่รันอยู่: login, 401 / 403, Dashboard, B1–B4 + SSE, `/api/internal` — อ่านอย่างเดียว) · เพิ่มหัวข้อ "วิธีรัน test" ใน README
 - **ไฟล์ที่เกี่ยวข้อง:** `dev.sh`, `README.md`

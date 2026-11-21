@@ -62,6 +62,7 @@ mvn spring-boot:run        # http://localhost:8081
 | `GET /rooms/{id}/events?access_token=` (SSE: `camera`, `faces`, `check_in`, `session`) | B3 | เหมือน B1 |
 | `GET/POST /courses`, `GET/PUT/DELETE /courses/{id}` | B5 | admin, lecturer (แก้ได้เฉพาะกลุ่มที่สอน) · ลบ = soft delete |
 | `PATCH /sections/{id}/camera-attendance` | B6 | admin, อาจารย์ผู้สอน |
+| `GET /rooms/options`, `GET /lecturers` | ตัวเลือกฟอร์มรายวิชา | admin, lecturer |
 | `PUT /class-sessions/{sessionId}/attendance/{studentId}` (`status`, `reason` บังคับ, `checkInTime`) | B8 | admin, อาจารย์ผู้สอน |
 
 ### AI Service → backend (`X-Internal-Key`, ไม่เปิดออกนอก cluster)
@@ -80,6 +81,12 @@ mvn spring-boot:run        # http://localhost:8081
 > SSE และ event อยู่ในหน่วยความจำของ instance เดียว ถ้ารันหลาย replica ต้องเปลี่ยน `RoomEventHub` ไปใช้ pub/sub กลาง
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-22 — ตัวเลือกห้อง / อาจารย์สำหรับฟอร์มรายวิชา
+- **ทำอะไร:** เพิ่ม `GET /api/rooms/options` (ทุกห้องที่ใช้งานได้) และ `GET /api/lecturers` (อาจารย์ที่ใช้งานได้) สำหรับฟอร์มเพิ่ม/แก้ไขรายวิชาของ FE · staff เท่านั้น
+- **ไฟล์ที่เกี่ยวข้อง:** `src/main/java/com/faculty/attendance/course/LookupController.java` (ใหม่)
+- **เหตุผล:** `GET /rooms` (B1) กรองเฉพาะห้องที่อาจารย์มีกลุ่มเรียน ใช้เลือกห้องตอนสร้างวิชาใหม่ไม่ได้ และ admin ต้องเลือกผู้สอนให้กลุ่มเรียน
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** backend ที่เปิดค้างไว้ต้อง restart ถึงจะมี 2 เส้นนี้
 
 ### 2026-11-22 — โปรไฟล์ `local`: รันบนเครื่องได้ทันทีโดยไม่ต้องตั้ง env
 - **ทำอะไร:** เพิ่ม `application-local.yml` (key ทดสอบ: JWT, `FACE_EMBEDDING_KEY`, `INTERNAL_API_KEY=local-test-key`, AI ที่ `localhost:8080`) และตั้ง `spring.profiles.default: local` · อ่านค่าส่วนตัวจาก `backend/.env.local` (`spring.config.import`) · `server.port` อ่าน `SERVER_PORT` · ย้ายค่า JWT dev ออกจาก `application.yml` (โปรไฟล์ `prod` บังคับตั้ง) · `LocalProfileWarning` เขียน WARN ทุกครั้งที่รันโปรไฟล์ `local` · Dockerfile ตั้ง `SPRING_PROFILES_ACTIVE=prod`

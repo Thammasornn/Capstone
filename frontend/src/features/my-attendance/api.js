@@ -30,3 +30,8 @@ import { getJson } from '@/shared/api/http'
 export function getMyAttendance(courseId, studentId) {
   return getJson(`/courses/${courseId}/students/${studentId}/attendance`)
 }
+
+/** วิชาที่ลงทะเบียน (5.3) ใช้ทำตัวเลือกวิชา */
+export function getMyCourses() {
+  return getJson('/courses')
+}

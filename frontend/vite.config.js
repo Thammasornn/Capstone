@@ -17,7 +17,8 @@ export default defineConfig(({ mode, command }) => {
   const proxy = {
     [`${base}api`]: {
       target,
-      changeOrigin: true,
+      // คง Host เดิม (เหมือน NGINX บน VM) → Spring เห็นเป็น same-origin ไม่ติด CORS ไม่ว่า FE จะรัน port ไหน
+      changeOrigin: false,
       rewrite: (path) => path.replace(new RegExp(`^${base}api`), '/api'),
     },
   }

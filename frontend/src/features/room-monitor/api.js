@@ -1,7 +1,7 @@
 import { getJson } from '@/shared/api/http'
 
 /**
- * ⚠️ ทุก endpoint ในไฟล์นี้ยังไม่มีใน API v1.0 — ใช้ mock (B1–B4) ตาม shape ในเอกสารแจ้ง Back-End
+ * Room Monitor (B1–B4) + รายชื่อ/สรุปของคาบที่กำลังเรียน (API 5.7–5.8)
  *
  * @typedef {object} CurrentSession
  * @property {string} sessionId
@@ -45,9 +45,17 @@ export function getStreamInfo(roomId) {
 export const roomEventsPath = (roomId) => `/rooms/${roomId}/events`
 
 /**
- * ปุ่ม "Check in now" — รอคำตอบ Q2 (สั่ง AI สแกนใหม่ หรือเปิดหน้าเช็คชื่อด้วยมือ B8)
- * TODO(Q2): ใส่ endpoint เมื่อ Backend ตอบ
+ * สรุปของคาบ (API 5.7) — ใช้ใน Room Live (ฟีเจอร์ห้าม import session-report จึงประกาศซ้ำที่นี่)
+ * @returns {Promise<{ sessionId: string, sessionDate: string, totalStudents: number, onTime: number, late: number, absent: number, attendanceRate: number }>}
  */
-export function checkInNow() {
-  return Promise.reject(new Error('ยังไม่รองรับ: รอคำตอบ Q2 จากทีม Back-End'))
+export function getLiveSummary(sessionId) {
+  return getJson(`/class-sessions/${sessionId}/attendance/summary`)
+}
+
+/**
+ * รายชื่อทั้งคาบ (API 5.8) — source: camera | manual | system | null
+ * @returns {Promise<{ sessionId: string, sessionDate: string, items: Array<{ studentId: string, studentCode: string, studentName: string, checkInTime: string | null, checkOutTime: string | null, status: string, source: string | null }> }>}
+ */
+export function getLiveRoster(sessionId) {
+  return getJson(`/class-sessions/${sessionId}/attendance`)
 }
