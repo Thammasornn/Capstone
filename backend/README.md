@@ -50,3 +50,23 @@ mvn spring-boot:run
 - ปิดช่วงเช็คชื่อแล้ว → INSERT absent (`source = system`) ให้คนที่ยังไม่มีแถว
 
 > SSE และ event อยู่ในหน่วยความจำของ instance เดียว ถ้ารันหลาย replica ต้องเปลี่ยน `RoomEventHub` ไปใช้ pub/sub กลาง
+
+## บันทึกการทำงาน (Changelog)
+
+### 2026-11-21 — API B1–B8, แจ้ง AI Service, job สถานะคาบ
+- **ทำอะไร:**
+  - B1–B4 `room/`: รายการห้อง + คาบปัจจุบัน, URL ภาพ MediaMTX, SSE `/rooms/{id}/events` (รับ token ทาง `?access_token=` เฉพาะ path นี้)
+  - B5–B6 `course/`: สร้าง/แก้/ลบ (soft delete) รายวิชา ตรวจห้องชน สร้าง `class_sessions` ตามวันเรียนจนสิ้นภาค (D2) และสวิตช์กล้องต่อ section
+  - B8 `attendance/`: เช็คชื่อด้วยมือ (บังคับเหตุผล + `audit_logs`) และรับผลกล้องตามกติกาใน database-design.md
+  - `internal/`: `/api/internal/**` ให้ AI Service ส่ง heartbeat กล้อง, จำนวนใบหน้า, ผลจับคู่ใบหน้า (ตรวจ `X-Internal-Key`)
+  - `AttendanceJobs`: ทุก 1 นาที เลื่อน `session_status` และ INSERT absent (`source = system`) เมื่อปิดช่วงเช็คชื่อ
+  - B7: หลังถอนความยินยอม เรียก AI Service `DELETE /students/{id}/embeddings` (ผลใน `aiNotified`)
+  - 5.8 เพิ่ม `source` · `GET /courses` เพิ่มตารางเรียนของ section
+  - `AccessService`: `requireFaceView` นับเฉพาะ enrollment ที่ active, `requireSession` ไม่นับ section ที่ถูกลบ
+  - แก้ `application.yml`: Spring Boot 4 ใช้ `spring.web.error.include-message` (ชื่อเดิมไม่มีผล ทำให้ error ไม่มีข้อความ)
+- **ไฟล์ที่เกี่ยวข้อง:** `src/main/java/com/faculty/attendance/{room,course,attendance,internal,common}/`, `auth/AccessService.java`, `auth/SecurityConfig.java`, `face/AiServiceClient.java`, `face/FaceRegistrationService.java`, `dashboard/*`, `src/main/resources/application.yml`
+- **เหตุผล:** FE ยัง mock B1–B8 อยู่ (`frontend/src/mocks/handlers/pending.js`) และ PDPA ต้องลบข้อมูลใบหน้าฝั่ง AI ด้วย
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:**
+  - ตั้ง env ใหม่ `INTERNAL_API_KEY` (ค่าเดียวกับ AI Service) และ `MEDIA_BASE_URL` ใน UAT/Prod · เปลี่ยน `JWT_SECRET` ด้วย
+  - ทดสอบกับ PostgreSQL + seed (`db/02`, `db/03`) แล้ว ยังไม่ได้ทดสอบร่วมกับ FE จริง
+  - SSE อยู่ในหน่วยความจำ instance เดียว · `v_student_section_attendance` ยังนับเฉพาะคาบ `completed`
