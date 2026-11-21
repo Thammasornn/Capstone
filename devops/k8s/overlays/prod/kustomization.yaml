@@ -18,6 +18,8 @@ patches:
 configMapGenerator:
   - name: app-config
     literals:
+      # ห้ามใช้โปรไฟล์ local (key ทดสอบที่อยู่ใน git) บน server
+      - SPRING_PROFILES_ACTIVE=prod
       - DB_URL=jdbc:postgresql://postgres:5432/bangmod_attendance
       - DB_USER=postgres
       - AI_SERVICE_URL=http://ai-service:8080

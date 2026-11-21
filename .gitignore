@@ -23,3 +23,6 @@ __pycache__/
 
 # K3s: ความลับของแต่ละ namespace (ใช้ secret.env.example เป็นแบบ)
 devops/k8s/overlays/*/secret.env
+
+# ./dev.sh (log ของ backend)
+.dev/

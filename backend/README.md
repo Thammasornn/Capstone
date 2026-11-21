@@ -18,19 +18,29 @@ Spring Boot 4 · Java · PostgreSQL ([`db/`](db/)) · แบบฐานข้�
 
 ## ตั้งค่า (environment)
 
-| ตัวแปร | ใช้ทำอะไร | ค่าเริ่มต้น |
-|---|---|---|
-| `DB_URL` / `DB_USER` / `DB_PASSWORD` | PostgreSQL | `jdbc:postgresql://localhost:5432/bangmod_attendance` / `postgres` / `postgres` |
-| `JWT_SECRET` | ลงชื่อ token (ยาว ≥ 32 ตัวอักษร) | มีค่า dev ใน `application.yml` — **ต้องเปลี่ยนใน UAT/Prod** |
-| `FACE_EMBEDDING_KEY` | AES-256 เข้ารหัส `face_embeddings` (`openssl rand -base64 32`) | ไม่มี = เปิดระบบไม่ได้ |
-| `INTERNAL_API_KEY` | กุญแจร่วมกับ AI Service (header `X-Internal-Key`) ตั้งค่าเดียวกันทั้งสองฝั่ง | ไม่มี = ปิด `/api/internal/**` และแจ้ง AI ตอนถอนความยินยอมไม่ได้ |
-| `AI_SERVICE_URL` | AI Service | `http://ai-service:8080` |
-| `MEDIA_BASE_URL` | MediaMTX (WHEP) ที่เบราว์เซอร์เปิดภาพ | `http://localhost:8889` |
-| `CORS_ORIGINS` | โดเมนของ FE คั่นด้วย `,` | `http://localhost:5173` |
-| `FLYWAY_ENABLED` | ให้ Flyway ดูแล schema (ปกติใช้ `db/*.sql`) | `false` |
-| `FORWARD_HEADERS_STRATEGY` | เชื่อ `X-Forwarded-For` จาก proxy ภายใน | `native` |
+**บนเครื่องนักพัฒนาไม่ต้องตั้งอะไร** — ถ้าไม่ได้ตั้ง `SPRING_PROFILES_ACTIVE` จะใช้โปรไฟล์ `local`
+([`application-local.yml`](src/main/resources/application-local.yml)) ที่มี key ทดสอบให้ครบ
+แค่ `mvn spring-boot:run` หรือกด Run ที่ `AttendanceApplication` ใน IDE (หรือใช้ `./dev.sh` ที่ root)
 
-สร้างฐานข้อมูลตาม [`db/README.md`](db/README.md) (`00` → `01` → `02`) แล้ว:
+- ค่าส่วนตัวของเครื่อง (เช่น DB คนละ port) ใส่ใน `backend/.env.local` (ไม่ถูก commit) รูปแบบ `ชื่อ=ค่า` ทีละบรรทัด ใช้ได้กับทุกตัวแปรในตารางด้านล่าง
+- key ในโปรไฟล์ `local` อยู่ใน git — ใช้กับข้อมูล mock เท่านั้น ตอนรันจะมี WARN ใน log เตือนทุกครั้ง
+- Docker image และ K3s ตั้ง `SPRING_PROFILES_ACTIVE=prod` → ไม่โหลดโปรไฟล์ `local` และ **ต้องตั้ง** `JWT_SECRET`, `FACE_EMBEDDING_KEY` เอง (ไม่ตั้ง = start ไม่ขึ้น)
+
+| ตัวแปร | ใช้ทำอะไร | ค่าเริ่มต้น (`prod`) | โปรไฟล์ `local` |
+|---|---|---|---|
+| `SPRING_PROFILES_ACTIVE` | เลือกโปรไฟล์ | ไม่ตั้ง = `local` | — |
+| `SERVER_PORT` | port ของ backend | `8081` | `8081` |
+| `DB_URL` / `DB_USER` / `DB_PASSWORD` | PostgreSQL | `jdbc:postgresql://localhost:5432/bangmod_attendance` / `postgres` / `postgres` | เหมือนกัน |
+| `JWT_SECRET` | ลงชื่อ token (ยาว ≥ 32 ตัวอักษร, `openssl rand -base64 48`) | **บังคับตั้ง** | ค่าทดสอบ |
+| `FACE_EMBEDDING_KEY` | AES-256 เข้ารหัส `face_embeddings` (`openssl rand -base64 32`) | **บังคับตั้ง** | ค่าทดสอบ |
+| `INTERNAL_API_KEY` | กุญแจร่วมกับ AI Service (header `X-Internal-Key`) ตั้งค่าเดียวกันทั้งสองฝั่ง | ไม่มี = ปิด `/api/internal/**` | `local-test-key` |
+| `AI_SERVICE_URL` | AI Service | `http://ai-service:8080` | `http://localhost:8080` |
+| `MEDIA_BASE_URL` | MediaMTX (WHEP) ที่เบราว์เซอร์เปิดภาพ | `http://localhost:8889` | เหมือนกัน |
+| `CORS_ORIGINS` | โดเมนของ FE คั่นด้วย `,` | `http://localhost:5173` | เหมือนกัน |
+| `FLYWAY_ENABLED` | ให้ Flyway ดูแล schema (ปกติใช้ `db/*.sql`) | `false` | เหมือนกัน |
+| `FORWARD_HEADERS_STRATEGY` | เชื่อ `X-Forwarded-For` จาก proxy ภายใน | `native` | เหมือนกัน |
+
+สร้างฐานข้อมูลด้วย `./dev.sh db` ที่ root (หรือตาม [`db/README.md`](db/README.md): `00` → `01` → `02`) แล้ว:
 
 ```bash
 mvn spring-boot:run        # http://localhost:8081
@@ -70,6 +80,12 @@ mvn spring-boot:run        # http://localhost:8081
 > SSE และ event อยู่ในหน่วยความจำของ instance เดียว ถ้ารันหลาย replica ต้องเปลี่ยน `RoomEventHub` ไปใช้ pub/sub กลาง
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-22 — โปรไฟล์ `local`: รันบนเครื่องได้ทันทีโดยไม่ต้องตั้ง env
+- **ทำอะไร:** เพิ่ม `application-local.yml` (key ทดสอบ: JWT, `FACE_EMBEDDING_KEY`, `INTERNAL_API_KEY=local-test-key`, AI ที่ `localhost:8080`) และตั้ง `spring.profiles.default: local` · อ่านค่าส่วนตัวจาก `backend/.env.local` (`spring.config.import`) · `server.port` อ่าน `SERVER_PORT` · ย้ายค่า JWT dev ออกจาก `application.yml` (โปรไฟล์ `prod` บังคับตั้ง) · `LocalProfileWarning` เขียน WARN ทุกครั้งที่รันโปรไฟล์ `local` · Dockerfile ตั้ง `SPRING_PROFILES_ACTIVE=prod`
+- **ไฟล์ที่เกี่ยวข้อง:** `src/main/resources/application.yml`, `src/main/resources/application-local.yml` (ใหม่), `src/main/java/com/faculty/attendance/common/LocalProfileWarning.java` (ใหม่), `Dockerfile`, `README.md`
+- **เหตุผล:** คนอื่นในทีม clone แล้วรันได้เลย ไม่เจอ error `ต้องตั้ง FACE_EMBEDDING_KEY` และค่าทดสอบไม่มีทางหลุดไปใช้บน server
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ทดสอบแล้ว: รันโปรไฟล์ `local` โดยไม่ตั้ง env ใช้ได้, `.env.local` ทับ `DB_URL` / `SERVER_PORT` ได้, โปรไฟล์ `prod` ที่ไม่ตั้ง key ไม่ยอม start · key ในโปรไฟล์ `local` ห้ามใช้กับข้อมูลใบหน้าจริง
 
 ### 2026-11-21 — Dockerfile + รองรับการอยู่หลัง proxy
 - **ทำอะไร:** เพิ่ม `Dockerfile` (Maven build → JRE 25, ไม่รันด้วย root) และ `.dockerignore` · ตั้ง `server.forward-headers-strategy: native` ให้ใช้ IP จาก `X-Forwarded-For` ของ proxy ภายใน

@@ -14,4 +14,6 @@ COPY --from=build /app/app.jar app.jar
 USER 10001
 EXPOSE 8081
 ENV TZ=Asia/Bangkok
+# image ใช้บน server เสมอ: ไม่โหลดโปรไฟล์ local (key ทดสอบ) · ต้องตั้ง JWT_SECRET / FACE_EMBEDDING_KEY ตอนรัน
+ENV SPRING_PROFILES_ACTIVE=prod
 ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75", "-jar", "/app/app.jar"]

@@ -19,6 +19,40 @@
 
 Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/uat/` แยก namespace
 
+## ทดสอบบนเครื่อง (local)
+
+ต้องมี: **PostgreSQL** ที่เปิดอยู่ (macOS แนะนำ [Postgres.app](https://postgresapp.com) แล้วกด Start), **Java 25 + Maven**, **Node.js** 22.18+ หรือ 24.12+
+
+```bash
+./dev.sh db     # ครั้งแรก: สร้างฐานข้อมูล + ข้อมูล mock (รันซ้ำ = ล้างข้อมูลกลับเป็นชุดเดิม)
+./dev.sh        # รัน backend + frontend พร้อมกัน → http://localhost:5173 (Ctrl+C หยุดทั้งคู่)
+```
+
+ไม่ต้องตั้ง key อะไรเลย — backend ใช้โปรไฟล์ `local` ที่มี key ทดสอบให้ (ดู `backend/README.md`)
+บัญชีทดสอบ (รหัสผ่าน `Password@123`): `admin@sit.kmutt.ac.th`, `supawadee.c@sit.kmutt.ac.th` (lecturer, มีคาบกำลังเรียนในห้อง 4302), `69130500001@st.sit.kmutt.ac.th` (student)
+
+| คำสั่ง | ทำอะไร |
+|---|---|
+| `./dev.sh db --reset` | ลบฐานข้อมูลแล้วสร้างใหม่ทั้งหมด (เมื่อ schema เปลี่ยน · ถามยืนยันก่อน) |
+| `./dev.sh backend` / `./dev.sh frontend` | รันทีละตัว (เช่นรัน backend จาก IDE แล้วใช้ `./dev.sh frontend`) |
+| `BACKEND_PORT=8082 FRONTEND_PORT=5174 ./dev.sh` | port ชนกับโปรแกรมอื่น |
+| `PGPORT=5433 ./dev.sh db` | PostgreSQL ไม่ได้อยู่ที่ `localhost:5432` (แล้วใส่ `DB_URL` ใน `backend/.env.local`) |
+| `cd frontend && npm test` | unit test ของ FE |
+
+ไม่รัน backend เลย: ใส่ `VITE_MOCK_MODE=all` ใน `frontend/.env.development.local` (mock เฉพาะ API 5.1–5.11 · ดู `frontend/README.md`)
+
+### สร้างฐานข้อมูลด้วย DBeaver แทน `./dev.sh db`
+
+1. **Preferences → Editors → SQL Editor → SQL Processing** → *Blank line is statement delimiter* = **Never** และเปิด Auto-commit
+2. connection PostgreSQL `localhost:5432` database `postgres` user `postgres` → เปิด `backend/db/00_create_database.sql` → **Alt+X** (Execute SQL Script)
+3. สร้าง connection ใหม่ database **`bangmod_attendance`** → รันทีละไฟล์ด้วย **Alt+X**: `01_schema.sql` → `02_seed_mock.sql` → `03_demo_live_session.sql` → `test/assertions.sql` (ต้องเห็น `All database checks passed` ในแท็บ Output)
+
+| อาการ | วิธีแก้ |
+|---|---|
+| `CREATE DATABASE cannot run inside a transaction block` | เปิด Auto-commit |
+| `unterminated dollar-quoted string` | ข้อ 1 ยังไม่ได้ตั้ง *Never* |
+| `relation "users" does not exist` | รันใน connection `postgres` แทน `bangmod_attendance` |
+
 ## สมาชิก
 
 - นายจักรพงษ์ สุขสมบรูณ์ — 66130500013
@@ -28,6 +62,12 @@ Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/uat/` แยก 
 อาจารย์ที่ปรึกษา: อ.มนตรี สุภัททธรรม
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-22 — `./dev.sh` + โปรไฟล์ `local` ให้ทุกคนทดสอบบนเครื่องได้ง่าย
+- **ทำอะไร:** เพิ่ม `dev.sh` (สร้างฐานข้อมูล + ข้อมูล mock, รัน backend + frontend พร้อมกัน, เปลี่ยน port ได้) · backend มีโปรไฟล์ `local` เป็นค่าเริ่มต้นพร้อม key ทดสอบ จึงไม่ต้องตั้ง env · บน server บังคับโปรไฟล์ `prod` · เพิ่มคู่มือ "ทดสอบบนเครื่อง (local)" รวมวิธีใช้ DBeaver
+- **ไฟล์ที่เกี่ยวข้อง:** `dev.sh` (ใหม่), `.gitignore`, `README.md`, `backend/` (ดู `backend/README.md`), `devops/k8s/overlays/*/kustomization.yaml`
+- **เหตุผล:** เดิมต้องตั้ง `FACE_EMBEDDING_KEY` เองก่อนรัน ไม่งั้น backend start ไม่ขึ้น และต้องรันหลายคำสั่งกว่าจะทดสอบได้
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ทดสอบ `./dev.sh db` (สร้างใหม่ / รันซ้ำ / `--reset` / DB ไม่เปิด) และ `./dev.sh` (login ผ่าน FE, Ctrl+C หยุดทั้งคู่) บน macOS แล้ว · ยังไม่ได้ลองบน Windows (ต้องใช้ Git Bash หรือ WSL)
 
 ### 2026-11-21 — ลบ mock B1–B8 และเชื่อม FE ↔ BE (local + K3s)
 - **ทำอะไร:** FE ลบ mock B1–B8 แล้วต่อ Backend จริงเป็นค่าเริ่มต้น · FE เรียก `/api` แบบ relative ผ่าน proxy (Vite ตอน dev, NGINX ใน container บน VM) · เพิ่ม Dockerfile ของ backend / ai-service และ K3s manifests (`devops/k8s`, namespace prod / uat)
