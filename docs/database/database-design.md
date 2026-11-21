@@ -243,8 +243,8 @@ Attendance Rules ของ R2 ไม่ต้องมีตารางให�
 
 **PDPA**
 
-1. ลงทะเบียน: INSERT `consent_records` (granted) → สร้าง embedding → ลบชุดเดิม + INSERT ชุดใหม่ใน transaction เดียว
-2. ถอน (B7): INSERT `consent_records` (withdrawn) → DELETE `face_embeddings` → INSERT `data_deletion_jobs` ที่ `completed_at = now()` → แจ้ง AI Service
+1. ลงทะเบียน: เรียก AI Service สร้าง embedding ก่อน (นอก transaction) → INSERT `consent_records` (granted) → ลบชุดเดิม → INSERT ชุดใหม่ ใน transaction เดียว (AI ล้มเหลว = ไม่มีแถว consent ค้าง)
+2. ถอน (B7): INSERT `consent_records` (withdrawn) → DELETE `face_embeddings` → INSERT `data_deletion_jobs` ที่ `completed_at = now()` → (หลัง commit) แจ้ง AI Service `DELETE /students/{id}/embeddings` ผลอยู่ใน `aiNotified`
 3. พ้นสภาพ / สิ้นสุดระบบ: INSERT `data_deletion_jobs` ที่ `due_at = +30 วัน` → job รายวันลบ
 4. ประวัติเช็คชื่อก่อนถอนไม่ลบ (ไม่ใช่ข้อมูลใบหน้า)
 
@@ -261,7 +261,7 @@ Attendance Rules ของ R2 ไม่ต้องมีตารางให�
 | Room Live | B2–B4, 5.7–5.8 | cameras, class_sessions, attendance_records (จำนวนใบหน้าในเฟรมมาทาง SSE) |
 | Manage / Edit Course | B5, B6 | courses, sections, section_class_days, section_lecturers |
 | Registration Status | 5.6 `faceRegistered=false` | enrollments + `v_face_registration` |
-| Analytics / At-Risk | 5.4–5.6 | `v_student_section_attendance` |
+| Analytics / At-Risk | 5.4–5.6 | sections, class_sessions, enrollments, attendance_records, `v_face_registration` (backend คำนวณเองใน `DashboardRepository` นับคาบที่เริ่มแล้ว · `v_student_section_attendance` ยังนับเฉพาะ `completed` และยังไม่ได้ใช้) |
 | Session Report + เช็คชื่อด้วยมือ | 5.7–5.8, B8 | class_sessions, attendance_records, audit_logs |
 
 ## คำถามที่ยังเปิดอยู่
@@ -274,3 +274,4 @@ Attendance Rules ของ R2 ไม่ต้องมีตารางให�
 - [ ] สถานะ "ลา" (`excused`) — Sonnet มี แต่ API v1.0 ไม่มี
 - [ ] ชื่อตารางแบบ MS_ / TR_ หรือ snake_case ตรงๆ
 - [ ] B9 และระยะเก็บข้อมูล 30 วัน — รอ DPO
+- [ ] อาจารย์ไม่มี `lecturerCode` / `department` ใน schema (`GET /me` ส่ง null) — เพิ่มคอลัมน์ หรือตัดออกจาก API

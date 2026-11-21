@@ -1,15 +1,20 @@
 server:
   port: 8081
-  error:
-    include-message: always   # ให้ FE เห็นข้อความ error ที่เราเขียนไว้ (เช่น "ไม่พบรายวิชา")
 
 spring:
+  web:
+    error:
+      # ให้ FE เห็นข้อความ error ที่เราเขียนไว้ (เช่น "ไม่พบรายวิชา")
+      # Spring Boot 4 ย้ายมาจาก server.error.include-message (ชื่อเดิมไม่มีผลแล้ว)
+      include-message: always
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/postgres}
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/bangmod_attendance}   # สร้างด้วย backend/db/00_create_database.sql
     username: ${DB_USER:postgres}
     password: ${DB_PASSWORD:postgres}
   flyway:
-    enabled: true
+    # schema มาจาก backend/db/*.sql (รันด้วย psql ตาม backend/db/README.md และ CI database.yml)
+    # ถ้าจะให้ Flyway ดูแล: copy 01_schema.sql เป็น db/migration/V1__init_schema.sql แล้วตั้ง FLYWAY_ENABLED=true
+    enabled: ${FLYWAY_ENABLED:false}
   servlet:
     multipart:
       max-file-size: 5MB      # Face Register: ภาพละไม่เกิน 5MB
@@ -26,5 +31,15 @@ app:
   jwt:
     secret: ${JWT_SECRET:AhA9z4d9QF3Vb0dXNOYAL4eYEEKLnl6tgz4usl8xNTX6TBm/DjszGZaEfdEwdMwe}          # บังคับตั้ง ยาว >= 32 ตัวอักษร เช่น openssl rand -base64 48
     expires-minutes: 480
+  face:
+    embedding-key: ${FACE_EMBEDDING_KEY:}   # บังคับตั้ง: base64 ของ 32 ไบต์ (openssl rand -base64 32) ใช้เข้ารหัส face_embeddings
   cors:
     allowed-origins: ${CORS_ORIGINS:http://localhost:5173}   # คั่นด้วย , ได้หลายโดเมน
+  internal:
+    # กุญแจร่วมระหว่าง backend <-> AI Service (header X-Internal-Key) ต้องตั้งค่าเดียวกันทั้งสองฝั่ง
+    # ว่าง = ปิด /api/internal/** ทั้งหมด และแจ้ง AI Service ไม่ได้
+    api-key: ${INTERNAL_API_KEY:}
+  media:
+    # B2: URL ที่เบราว์เซอร์ใช้เปิดภาพจาก MediaMTX (WHEP) = <base-url>/<cameras.stream_path>/whep
+    base-url: ${MEDIA_BASE_URL:http://localhost:8889}
+    stream-ttl-minutes: 90

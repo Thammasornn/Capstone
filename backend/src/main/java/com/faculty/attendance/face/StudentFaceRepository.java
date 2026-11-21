@@ -1,19 +1,26 @@
 package com.faculty.attendance.face;
 
-import com.faculty.attendance.face.FaceDtos.EmbeddingItem;
 import java.time.LocalDateTime;
-import java.util.List;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.util.Optional;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
-/** ตารางที่ใช้: students, student_face_embeddings (V9), biometric_enrollments, biometric_consents */
+/**
+ * ตารางที่ใช้ (backend/db/01_schema.sql):
+ *  student_profiles, consent_versions, consent_records (append-only), face_embeddings, v_current_consent
+ *
+ * กติกา PDPA (docs/database/database-design.md):
+ *  - ไม่เก็บรูป เก็บเฉพาะ embedding ที่เข้ารหัสแล้ว (EmbeddingCipher)
+ *  - ลงทะเบียนใหม่ = INSERT consent_records (granted) → DELETE ชุดเดิม → INSERT ชุดใหม่ ใน transaction เดียว
+ *  - trigger ใน DB บังคับ: embedding ต้องอ้าง consent ที่ granted ของคนเดียวกัน และไม่เกิน 5 ชุดต่อคน
+ */
 @Repository
 public class StudentFaceRepository {
 
-    /** ค่า biometric_enrollments.status เมื่อลงทะเบียนใบหน้าแล้ว (default เดิมคือ 'pending') */
-    static final String STATUS_REGISTERED = "registered";
+    private static final ZoneId BANGKOK = ZoneId.of("Asia/Bangkok");
 
     private final JdbcTemplate jdbc;
 
@@ -22,68 +29,114 @@ public class StudentFaceRepository {
     }
 
     public boolean studentExists(UUID studentId) {
-        Integer n = jdbc.queryForObject("SELECT count(*) FROM students WHERE id = ?", Integer.class, studentId);
+        Integer n = jdbc.queryForObject("SELECT count(*) FROM student_profiles WHERE student_id = ?",
+                Integer.class, studentId);
         return n != null && n > 0;
     }
 
-    public void deactivateAll(UUID studentId) {
-        jdbc.update("UPDATE student_face_embeddings SET is_active = FALSE, updated_at = now() "
-                + "WHERE student_id = ? AND is_active", studentId);
+    /** ฉบับข้อความยินยอมที่มีผลอยู่ (consent_versions.is_current) */
+    public Optional<String> currentConsentVersion() {
+        return jdbc.queryForList("SELECT version FROM consent_versions WHERE is_current", String.class)
+                .stream().findFirst();
     }
 
-    public void insert(UUID studentId, EmbeddingItem item, String model, String version) {
+    /** หลักฐานการให้ความยินยอม (append-only) คืน consent_id ไว้ผูกกับ embedding */
+    public UUID insertGrantedConsent(UUID studentId, String version, boolean ageConfirmed, String ip,
+                                     String userAgent) {
+        return jdbc.queryForObject("""
+                INSERT INTO consent_records (student_id, version, action, age_confirmed, ip_address, user_agent)
+                VALUES (?, ?, 'granted', ?, ?::inet, ?)
+                RETURNING consent_id
+                """, UUID.class, studentId, version, ageConfirmed, ip, truncate(userAgent, 255));
+    }
+
+    /** ล็อกแถวนักศึกษาใน transaction ปัจจุบัน กันลงทะเบียน / ถอนพร้อมกันหลาย request */
+    public void lockStudent(UUID studentId) {
+        jdbc.queryForList("SELECT 1 FROM student_profiles WHERE student_id = ? FOR UPDATE", studentId);
+    }
+
+    /** แถวล่าสุดใน consent_records ของนักศึกษา (= v_current_consent) ใช้ตอนถอนความยินยอม */
+    public record LatestConsent(UUID consentId, String version, String action, boolean ageConfirmed) {}
+
+    public Optional<LatestConsent> latestConsent(UUID studentId) {
+        return jdbc.query("""
+                SELECT consent_id, version, action, age_confirmed
+                FROM consent_records
+                WHERE student_id = ?
+                ORDER BY created_at DESC
+                LIMIT 1
+                """, (rs, i) -> new LatestConsent(rs.getObject("consent_id", UUID.class), rs.getString("version"),
+                        rs.getString("action"), rs.getBoolean("age_confirmed")), studentId)
+                .stream().findFirst();
+    }
+
+    /** B7 หลักฐานการถอน (append-only) อ้างฉบับเดียวกับที่ให้ไว้ · คืนเวลาที่ถอน */
+    public OffsetDateTime insertWithdrawnConsent(UUID studentId, String version, boolean ageConfirmed, String ip,
+                                                 String userAgent) {
+        return jdbc.queryForObject("""
+                INSERT INTO consent_records (student_id, version, action, age_confirmed, ip_address, user_agent)
+                VALUES (?, ?, 'withdrawn', ?, ?::inet, ?)
+                RETURNING created_at
+                """, OffsetDateTime.class, studentId, version, ageConfirmed, ip, truncate(userAgent, 255));
+    }
+
+    /** หลักฐานการลบ (D7): ถอนเอง = ลบทันที → due_at = completed_at = now() */
+    public void insertCompletedDeletionJob(UUID studentId, int deletedCount) {
         jdbc.update("""
-                INSERT INTO student_face_embeddings
-                  (student_id, embedding, model_name, model_version, quality_score)
-                VALUES (?, ?::vector, ?, ?, ?)
-                """,
-                studentId, toVectorLiteral(item.embedding()), model, version, item.quality());
+                INSERT INTO data_deletion_jobs (student_id, reason, requested_at, due_at, completed_at, deleted_count)
+                VALUES (?, 'withdrawn', now(), now(), now(), ?)
+                """, studentId, deletedCount);
     }
 
-    /** เก็บหลักฐานยินยอม (PDPA) ถ้ามีฉบับที่ยังมีผลอยู่แล้วจะไม่เพิ่มซ้ำ (unique index จาก V6) */
-    public void recordConsent(UUID studentId, String textVersion, String ip) {
+    /** ลบจริง (ไม่ใช่ปิดใช้งาน) ตามข้อความยินยอม v1 */
+    public int deleteAll(UUID studentId) {
+        return jdbc.update("DELETE FROM face_embeddings WHERE student_id = ?", studentId);
+    }
+
+    public void insert(UUID studentId, UUID consentId, byte[] encryptedEmbedding, String model, String version) {
         jdbc.update("""
-                INSERT INTO biometric_consents
-                  (student_id, consent_given, consent_text_version, given_at, ip_address)
-                SELECT ?, TRUE, ?, now(), ?
-                WHERE NOT EXISTS (
-                  SELECT 1 FROM biometric_consents
-                  WHERE student_id = ? AND consent_given = TRUE AND revoked_at IS NULL)
-                ON CONFLICT DO NOTHING
-                """, studentId, textVersion, ip, studentId);
+                INSERT INTO face_embeddings (student_id, consent_id, embedding, model_name, model_version)
+                VALUES (?, ?, ?, ?, ?)
+                """, studentId, consentId, encryptedEmbedding, model, version);
     }
 
-    /** 1 นักศึกษามี 1 enrollment (unique index จาก V2) */
-    public void upsertRegistered(UUID studentId) {
-        jdbc.update("""
-                INSERT INTO biometric_enrollments (student_id, status, registered_at, updated_at)
-                VALUES (?, ?, now(), now())
-                ON CONFLICT (student_id) DO UPDATE SET
-                  status = EXCLUDED.status, registered_at = now(), updated_at = now()
-                """, studentId, STATUS_REGISTERED);
+    /**
+     * สถานะใบหน้า + ความยินยอมล่าสุด (ตรรกะเดียวกับ v_face_registration แต่ไม่หายเมื่อยังไม่มี consent ฉบับปัจจุบัน)
+     * registeredAt = เวลาที่บันทึก embedding ชุดปัจจุบัน
+     */
+    public record FaceStatusRow(boolean registered, LocalDateTime registeredAt, int activeFaces,
+                                String consentStatus, String consentVersion, LocalDateTime consentedAt,
+                                boolean needsReconsent) {}
+
+    public FaceStatusRow findStatus(UUID studentId) {
+        return jdbc.queryForObject("""
+                SELECT count(fe.embedding_id)::int AS embedding_count,
+                       max(fe.created_at)          AS registered_at,
+                       cc.action                   AS consent_status,
+                       cc.version                  AS consent_version,
+                       cc.action_at                AS consent_changed_at,
+                       COALESCE(cc.action = 'granted'
+                                AND cc.version <> (SELECT version FROM consent_versions WHERE is_current),
+                                false)             AS needs_reconsent
+                FROM student_profiles sp
+                LEFT JOIN face_embeddings fe ON fe.student_id = sp.student_id
+                LEFT JOIN v_current_consent cc ON cc.student_id = sp.student_id
+                WHERE sp.student_id = ?
+                GROUP BY cc.action, cc.version, cc.action_at
+                """, (rs, i) -> {
+                    int count = rs.getInt("embedding_count");
+                    return new FaceStatusRow(count > 0, local(rs.getObject("registered_at", OffsetDateTime.class)),
+                            count, rs.getString("consent_status"), rs.getString("consent_version"),
+                            local(rs.getObject("consent_changed_at", OffsetDateTime.class)),
+                            rs.getBoolean("needs_reconsent"));
+                }, studentId);
     }
 
-    public int countActiveFaces(UUID studentId) {
-        Integer n = jdbc.queryForObject(
-                "SELECT count(*) FROM student_face_embeddings WHERE student_id = ? AND is_active",
-                Integer.class, studentId);
-        return n == null ? 0 : n;
+    private static LocalDateTime local(OffsetDateTime t) {
+        return t == null ? null : t.atZoneSameInstant(BANGKOK).toLocalDateTime();
     }
 
-    public record EnrollmentRow(boolean registered, LocalDateTime registeredAt) {}
-
-    public EnrollmentRow findEnrollment(UUID studentId) {
-        List<EnrollmentRow> rows = jdbc.query(
-                "SELECT status, registered_at FROM biometric_enrollments WHERE student_id = ?",
-                (rs, i) -> new EnrollmentRow(STATUS_REGISTERED.equals(rs.getString("status")),
-                        rs.getTimestamp("registered_at") == null ? null
-                                : rs.getTimestamp("registered_at").toLocalDateTime()),
-                studentId);
-        return rows.isEmpty() ? new EnrollmentRow(false, null) : rows.get(0);
-    }
-
-    /** pgvector literal: "[0.1,0.2,...]" */
-    static String toVectorLiteral(List<Float> v) {
-        return v.stream().map(String::valueOf).collect(Collectors.joining(",", "[", "]"));
+    private static String truncate(String s, int max) {
+        return s == null || s.length() <= max ? s : s.substring(0, max);
     }
 }

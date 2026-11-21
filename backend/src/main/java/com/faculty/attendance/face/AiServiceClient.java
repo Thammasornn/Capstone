@@ -4,6 +4,10 @@ import com.faculty.attendance.face.FaceDtos.EmbeddingResponse;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.List;
+import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -21,10 +25,33 @@ public class AiServiceClient {
     /** body ของ error 422 จาก AI Service: {"detail": "..."} */
     record ErrorBody(String detail) {}
 
-    private final RestClient client;
+    private static final Logger log = LoggerFactory.getLogger(AiServiceClient.class);
 
-    public AiServiceClient(RestClient aiRestClient) {
+    private final RestClient client;
+    private final String internalKey;
+
+    public AiServiceClient(RestClient aiRestClient, @Value("${app.internal.api-key:}") String internalKey) {
         this.client = aiRestClient;
+        this.internalKey = internalKey;
+    }
+
+    /**
+     * B7: สั่ง AI Service ลบ embedding ของนักศึกษาออกจากหน่วยความจำ (DELETE /students/{id}/embeddings)
+     * เรียกหลัง commit แล้ว · ล้มเหลวไม่ทำให้การถอนล้ม (DB ลบแล้ว AI โหลดใหม่จาก DB จะไม่เจอ) แต่ log ไว้
+     * @return true = AI ยืนยันว่าลบแล้ว
+     */
+    public boolean forgetStudent(UUID studentId) {
+        try {
+            client.delete()
+                    .uri("/students/{id}/embeddings", studentId)
+                    .header("X-Internal-Key", internalKey)
+                    .retrieve()
+                    .toBodilessEntity();
+            return true;
+        } catch (RestClientException e) {
+            log.warn("แจ้ง AI Service ให้ลบ embedding ของนักศึกษา {} ไม่สำเร็จ: {}", studentId, e.getMessage());
+            return false;
+        }
     }
 
     public EmbeddingResponse extract(List<MultipartFile> files) {

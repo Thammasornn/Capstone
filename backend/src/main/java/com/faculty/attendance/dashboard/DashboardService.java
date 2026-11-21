@@ -40,7 +40,9 @@ public class DashboardService {
             byCourse.computeIfAbsent(r.courseId(),
                     k -> new CourseItem(r.courseId(), r.courseCode(), r.courseName(), new ArrayList<>()))
                     .sections().add(new SectionItem(r.sectionId(), r.sectionCode(), r.semester(),
-                            r.academicYear(), r.lecturerName()));
+                            r.academicYear(), r.lecturerName(), r.lecturerId(), r.roomId(), r.roomCode(),
+                            r.classDays(), r.startTime(), r.endTime(), r.checkInOpens(), r.checkInCloses(),
+                            r.cameraAttendanceEnabled()));
         }
         return new ArrayList<>(byCourse.values());
     }

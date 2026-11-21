@@ -9,8 +9,9 @@ import org.springframework.web.server.ResponseStatusException;
 /**
  * ตัดสินสิทธิ์ว่าใครดูข้อมูลอะไรได้ (เรียกก่อนทำงานทุก endpoint ที่มี id)
  *  - admin    : ทุกอย่าง
- *  - lecturer : เฉพาะ section ที่ตัวเองสอน (course_sections.lecturer_id)
+ *  - lecturer : เฉพาะ section ที่ตัวเองสอน (section_lecturers.lecturer_id = users.user_id)
  *  - student  : เฉพาะข้อมูลของตัวเอง
+ * section ที่ถูก soft delete (deleted_at) ถือว่าไม่มี
  */
 @Service
 public class AccessService {
@@ -28,13 +29,39 @@ public class AccessService {
     }
 
     /**
+     * หน้าของเจ้าหน้าที่ (Room Monitor, จัดการรายวิชา): admin หรือ lecturer เท่านั้น
+     * @return lecturerId ที่ใช้กรอง (null = admin เห็นทั้งหมด)
+     */
+    public UUID requireStaff() {
+        CurrentUser u = current.get();
+        if (u.isAdmin()) return null;
+        if (u.isLecturer()) return u.lecturerId();
+        throw forbidden();
+    }
+
+    /** แก้ไขกลุ่มเรียน (B5 / B6): admin หรืออาจารย์ที่สอน section นั้น */
+    public void requireSectionStaff(UUID sectionId) {
+        CurrentUser u = current.get();
+        if (u.isAdmin()) return;
+        if (u.isLecturer() && exists("""
+                SELECT 1 FROM sections s JOIN section_lecturers sl ON sl.section_id = s.section_id
+                WHERE s.section_id = ? AND sl.lecturer_id = ? AND s.deleted_at IS NULL""",
+                sectionId, u.lecturerId())) {
+            return;
+        }
+        throw forbidden();
+    }
+
+    /**
      * ดูข้อมูลระดับรายวิชา (summary / sessions / students) ได้เฉพาะ admin กับอาจารย์ผู้สอน
      * @return lecturerId ที่ใช้กรอง section (null = admin เห็นทุก section)
      */
     public UUID requireCourseStaff(UUID courseId) {
         CurrentUser u = current.get();
         if (u.isAdmin()) return null;
-        if (u.isLecturer() && exists("SELECT 1 FROM course_sections WHERE course_id = ? AND lecturer_id = ?",
+        if (u.isLecturer() && exists("""
+                SELECT 1 FROM sections s JOIN section_lecturers sl ON sl.section_id = s.section_id
+                WHERE s.course_id = ? AND sl.lecturer_id = ? AND s.deleted_at IS NULL""",
                 courseId, u.lecturerId())) {
             return u.lecturerId();
         }
@@ -45,8 +72,11 @@ public class AccessService {
         CurrentUser u = current.get();
         if (u.isAdmin()) return;
         if (u.isLecturer() && exists("""
-                SELECT 1 FROM class_sessions cs JOIN course_sections sec ON sec.id = cs.section_id
-                WHERE cs.id = ? AND sec.lecturer_id = ?""", sessionId, u.lecturerId())) {
+                SELECT 1 FROM class_sessions cs
+                JOIN sections s ON s.section_id = cs.section_id
+                JOIN section_lecturers sl ON sl.section_id = cs.section_id
+                WHERE cs.session_id = ? AND sl.lecturer_id = ? AND s.deleted_at IS NULL""",
+                sessionId, u.lecturerId())) {
             return;
         }
         throw forbidden();
@@ -58,22 +88,27 @@ public class AccessService {
         if (u.isAdmin()) return;
         if (u.isStudent() && u.studentId().equals(studentId)) return;
         if (u.isLecturer() && exists("""
-                SELECT 1 FROM course_enrollments ce JOIN course_sections sec ON sec.id = ce.section_id
-                WHERE ce.student_id = ? AND sec.course_id = ? AND sec.lecturer_id = ?""",
+                SELECT 1 FROM enrollments e
+                JOIN sections s ON s.section_id = e.section_id
+                JOIN section_lecturers sl ON sl.section_id = s.section_id
+                WHERE e.student_id = ? AND s.course_id = ? AND sl.lecturer_id = ? AND s.deleted_at IS NULL""",
                 studentId, courseId, u.lecturerId())) {
             return;
         }
         throw forbidden();
     }
 
-    /** ดูสถานะการลงทะเบียนใบหน้า: admin / นักศึกษาเอง / อาจารย์ที่สอนนักศึกษาคนนั้น */
+    /** ดูสถานะการลงทะเบียนใบหน้า: admin / นักศึกษาเอง / อาจารย์ที่สอนนักศึกษาคนนั้น (ยังไม่ถอนวิชา) */
     public void requireFaceView(UUID studentId) {
         CurrentUser u = current.get();
         if (u.isAdmin()) return;
         if (u.isStudent() && u.studentId().equals(studentId)) return;
         if (u.isLecturer() && exists("""
-                SELECT 1 FROM course_enrollments ce JOIN course_sections sec ON sec.id = ce.section_id
-                WHERE ce.student_id = ? AND sec.lecturer_id = ?""", studentId, u.lecturerId())) {
+                SELECT 1 FROM enrollments e
+                JOIN sections s ON s.section_id = e.section_id
+                JOIN section_lecturers sl ON sl.section_id = e.section_id
+                WHERE e.student_id = ? AND sl.lecturer_id = ?
+                  AND e.status = 'active' AND s.deleted_at IS NULL""", studentId, u.lecturerId())) {
             return;
         }
         throw forbidden();
