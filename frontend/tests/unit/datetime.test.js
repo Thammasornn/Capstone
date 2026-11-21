@@ -25,6 +25,8 @@ describe('datetime — เวลาไทยไม่มี timezone', () => {
 
   it('แสดงเวลาตามที่ Backend ส่งมา', () => {
     expect(formatTimeOfDateTime('2026-10-26T09:05:00')).toBe('09:05')
+    // Backend ส่งเศษวินาทีมาได้ (LocalDateTime ที่มี nano)
+    expect(formatTimeOfDateTime('2026-10-26T09:05:12.345678')).toBe('09:05')
     expect(formatTimeOfDateTime(null)).toBe('-')
     expect(formatTime('13:30:00')).toBe('13:30')
   })

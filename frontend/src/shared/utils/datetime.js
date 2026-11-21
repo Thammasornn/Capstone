@@ -7,7 +7,8 @@
 
 const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/
 const TIME_RE = /^(\d{2}):(\d{2})(?::(\d{2}))?$/
-const DATETIME_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/
+// Backend อาจส่งเศษวินาทีมาด้วย ("2026-11-16T09:05:12.345678") → ตัดทิ้ง
+const DATETIME_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?$/
 
 /** @param {string | null | undefined} value @returns {Date | null} */
 export function parseLocalDate(value) {

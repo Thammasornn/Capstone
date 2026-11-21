@@ -9,6 +9,8 @@ import { CONSENT_VERSION } from './constants'
  * @property {number} activeFaces
  * @property {string | null} [consentVersion]
  * @property {string | null} [consentedAt]
+ * @property {'granted'|'withdrawn'|null} [consentStatus]
+ * @property {boolean} [needsReconsent]  ข้อความยินยอมมีฉบับใหม่ ต้องยินยอมใหม่
  *
  * @typedef {object} RegisterFaceResult  (API 5.10)
  * @property {string} studentId
@@ -22,7 +24,8 @@ import { CONSENT_VERSION } from './constants'
  * ลงทะเบียนซ้ำ = แทนที่ใบหน้าเดิมทั้งหมด → หน้าจอต้องเตือนก่อนเรียก
  * @param {string} studentId
  * @param {File[]} files
- * @param {{ signal?: AbortSignal, onUploadProgress?: (e: import('axios').AxiosProgressEvent) => void }} [options]
+ * @param {{ ageConfirmed?: boolean, signal?: AbortSignal, onUploadProgress?: (e: import('axios').AxiosProgressEvent) => void }} [options]
+ *   ageConfirmed = checkbox "อายุ 20 ปีบริบูรณ์" บนหน้ายินยอม → consent_records.age_confirmed
  * @returns {Promise<RegisterFaceResult>}
  */
 export async function registerFace(studentId, files, options = {}) {
@@ -30,6 +33,7 @@ export async function registerFace(studentId, files, options = {}) {
   files.forEach((file) => form.append('files', file))
   form.append('consent', 'true')
   form.append('consentTextVersion', CONSENT_VERSION)
+  form.append('ageConfirmed', String(Boolean(options.ageConfirmed)))
   const { data } = await http.post(`/students/${studentId}/face/register`, form, {
     timeout: UPLOAD_TIMEOUT_MS,
     signal: options.signal,
@@ -45,8 +49,8 @@ export function getFaceStatus(studentId) {
 
 /**
  * B7 — ถอนความยินยอม + ลบข้อมูลใบหน้า
- * ⚠️ ยังไม่มีใน API v1.0 (ใช้ mock) — จำเป็นตาม PDPA: ถอนต้องง่ายเท่ากับตอนให้
- * @returns {Promise<{ studentId: string, registered: false, withdrawnAt: string }>}
+ * จำเป็นตาม PDPA: ถอนต้องง่ายเท่ากับตอนให้ · aiNotified = AI Service ลบข้อมูลในหน่วยความจำแล้ว
+ * @returns {Promise<{ studentId: string, registered: false, withdrawnAt: string, deletedCount: number, aiNotified: boolean }>}
  */
 export async function withdrawConsent(studentId) {
   const { data } = await http.delete(`/students/${studentId}/face`)
