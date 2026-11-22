@@ -36,6 +36,18 @@
 | `devops/` | `devops/README.md` |
 | `docs/` | `docs/README.md` |
 
+## กฎ git: push ขึ้น branch `Dev` เท่านั้น
+
+ใช้ทุกครั้งที่จะ commit / push งานขึ้น GitHub (เริ่ม 2026-11-22)
+
+1. **push ได้เฉพาะ branch `Dev`** — ห้าม push ขึ้น `main` และห้ามสร้าง branch ใหม่บน remote (เช่น `feat/...`, `docs/...`)
+2. ก่อนเริ่มงาน: `git fetch origin` แล้ว `git switch Dev && git pull --ff-only`
+   (ยังไม่มี `Dev` ในเครื่อง: `git switch -c Dev --track origin/Dev`)
+3. commit ลง `Dev` ตรง ๆ · ถ้า `main` มี commit ที่ `Dev` ยังไม่มี ให้ `git merge origin/main` เข้า `Dev` ก่อน — มี conflict ให้สรุปให้ผู้ใช้ดูก่อนแก้
+4. **ห้าม force push** (`--force`, `--force-with-lease`) และห้าม rebase commit ที่ push ไปแล้ว
+5. เอาขึ้น `main` ผ่าน PR จาก `Dev` → `main` เท่านั้น และเปิด PR เมื่อผู้ใช้สั่ง
+6. ข้อนี้ไม่ยกเว้นข้อห้ามบน VM — **บน VM ยังห้าม commit / push** (กฎการ deploy ข้อ 8)
+
 ## กฎการ deploy (K3s บน VM) — อ่านทุกครั้งก่อน deploy
 
 ใช้เมื่อถูกขอให้ deploy, build image, `kubectl apply`, `init-db.sh`, rollout หรือแก้อะไรใน cluster
