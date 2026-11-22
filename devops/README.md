@@ -104,8 +104,8 @@ sudo usermod -aG docker "$USER"
 ## Deploy ครั้งแรก (บน VM)
 
 ```bash
-# 0) โมเดลของ AI Service (ไม่อยู่ใน git) — ไม่มี = pod ai-service start ไม่ขึ้น ส่วนอื่นยังใช้ได้
-sudo mkdir -p /opt/bangmod/models   # ใส่ yolov8n-face-pose.pt และ face_recognition_sface_2021dec.onnx
+# 0) โมเดลของ AI Service (ไม่อยู่ใน git) — ดูหัวข้อ "ติดตั้งโมเดล AI" (ทำทีหลังได้ ไม่มี = ai-service ไม่ขึ้น ส่วนอื่นใช้ได้)
+sudo mkdir -p /opt/bangmod/models && sudo chown $USER /opt/bangmod/models && ./devops/models/fetch-models.sh
 
 # 1) build image แล้ว import เข้า K3s (ขั้น import ถามรหัส sudo · สคริปต์ตรวจว่าเข้าครบ 4 ตัวให้)
 ./devops/k8s/build-images.sh
@@ -128,6 +128,41 @@ curl http://cp26ms3.sit.kmutt.ac.th/uat/api/auth/login -H 'Content-Type: applica
 
 อัปเดตเวอร์ชัน: ใช้ CD (หัวข้อ "CD: deploy อัตโนมัติ") · ถ้ายังไม่ได้ติดตั้ง CD: `./devops/k8s/build-images.sh` แล้ว `kubectl -n <ns> rollout restart deployment/backend deployment/frontend`
 
+## ติดตั้งโมเดล AI (ครั้งเดียว · ใช้ร่วมกันทั้ง uat และ prod)
+
+โมเดลไม่อยู่ใน git · pod `ai-service` อ่านจาก `/opt/bangmod/models` บน VM (hostPath) · ไม่มีโมเดล = ai-service ไม่ขึ้น และลงทะเบียนใบหน้าได้ 502 (ส่วนอื่นใช้ได้)
+
+| ไฟล์ (ชื่อต้องตรง) | โมเดล | ที่มา · สัญญาอนุญาต | SHA-256 |
+|---|---|---|---|
+| `yolov8n-face-pose.pt` (6.1 MB) | YOLOv8n **PoseModel** 1 class (ใบหน้า) + **5 จุด** (ตา 2, จมูก, มุมปาก 2) · เทรนด้วย ultralytics 8.0.66 บน WIDER FACE | [derronqi/yolov8-face](https://github.com/derronqi/yolov8-face) (ไฟล์ yolov8n ใน Google Drive) · **GPL-3.0** | `d545bf1a…e626ca` |
+| `face_recognition_sface_2021dec.onnx` (36.9 MB) | SFace → embedding 128 มิติ | [OpenCV Zoo](https://github.com/opencv/opencv_zoo/tree/main/models/face_recognition_sface) · Apache-2.0 | `0ba9fbfa…c34e79` |
+
+hash เต็มอยู่ใน `models/fetch-models.sh` · ตรวจแล้วว่าเป็น PoseModel ที่ `kpt_shape` = 5 จุด (อ่านจาก metadata ในไฟล์)
+**ใช้ YOLO face แบบ detection อย่างเดียวไม่ได้** (เช่น `lindevs/yolov8-face` เป็น `DetectionModel` ไม่มีจุดบนหน้า) — `ai-service` จะ error "YOLO model ไม่มี keypoints" เพราะ SFace ต้องใช้ 5 จุดจัดหน้า (alignCrop)
+ultralytics เป็น AGPL-3.0 และโมเดล YOLO face เป็น GPL-3.0 — ถ้าจะใช้งานจริงนอกโครงงาน ให้ตรวจสัญญาอนุญาตกับอาจารย์ที่ปรึกษาก่อน
+
+```bash
+# 1) สร้างโฟลเดอร์ให้ user ที่ deploy เขียนได้ (ต้องใช้รหัส sudo · คนรันเอง)
+sudo mkdir -p /opt/bangmod/models && sudo chown $USER /opt/bangmod/models
+
+# 2) ดาวน์โหลด + ตรวจ SHA-256 (ไม่ต้อง sudo · รันซ้ำได้ · hash ไม่ตรง = ไม่ใช้ไฟล์)
+cd ~/Capstone && ./devops/models/fetch-models.sh
+
+# 3) ให้ ai-service โหลดโมเดล (ทุก namespace ที่ deploy แล้ว)
+kubectl -n uat rollout restart deployment/ai-service && kubectl -n uat rollout status deployment/ai-service --timeout=300s
+
+# 4) ตรวจ
+kubectl -n uat logs deployment/ai-service --tail=20             # ต้องเห็น Uvicorn running on http://0.0.0.0:8080
+kubectl -n uat port-forward deployment/ai-service 18080:8080 &  # แล้ว:
+curl -s localhost:18080/health && kill %1                       # {"status":"ok"}
+```
+
+ทดสอบจากหน้าเว็บ: login `69130500011@st.sit.kmutt.ac.th` (ยังไม่เคยลงทะเบียน) → ลงทะเบียนใบหน้า → **"เลือกรูปจากเครื่อง"** 3 รูป (ปุ่มเปิดกล้องใช้ไม่ได้บน HTTP) → ต้องได้ "ลงทะเบียนใบหน้าสำเร็จ" · รูปไม่ผ่าน (เบลอ / ใบหน้าเล็ก / หลายคน) จะได้ข้อความบอกเหตุผล
+
+**ถ้าดาวน์โหลดจาก Google Drive ไม่ได้** (โควตาเต็ม / ถูกบล็อก): เปิดลิงก์ yolov8n ใน [README ของ derronqi](https://github.com/derronqi/yolov8-face) ด้วย browser → ดาวน์โหลด → `scp` ไฟล์ขึ้น VM เป็น `/opt/bangmod/models/yolov8n-face-pose.pt` → ตรวจ `sha256sum /opt/bangmod/models/yolov8n-face-pose.pt` ให้ตรงกับใน `models/fetch-models.sh` แล้วทำข้อ 3
+
+> โมเดลชุดนี้ใช้กับ **การลงทะเบียนใบหน้า** (`POST /embedding`) · ตัวจับคู่ใบหน้าจากกล้องแบบ realtime (อ่าน RTSP → จับคู่ → ส่ง `/api/internal/.../sightings`) และ MediaMTX ยังไม่ได้ทำ
+
 ## ปัญหาที่เจอตอน deploy และวิธีแก้
 
 | อาการ | สาเหตุ | แก้ |
@@ -137,6 +172,8 @@ curl http://cp26ms3.sit.kmutt.ac.th/uat/api/auth/login -H 'Content-Type: applica
 | pod ขึ้น `ErrImageNeverPull` (เดิม `ErrImagePull` / `pull access denied` จาก docker.io) | image ยังไม่ได้ import เข้า K3s (K3s ไม่ใช้ image ของ docker) | `sudo k3s ctr -n k8s.io images ls -q \| grep bangmod` ต้องเห็น 4 ตัว · ไม่ครบ → `IMPORT_ONLY=1 ./devops/k8s/build-images.sh` แล้ว `kubectl -n <ns> rollout restart deployment/backend deployment/frontend` |
 | `sudo: 3 incorrect password attempts` | รหัสผิด — ใช้รหัสของ user ที่ login VM · แป้นพิมพ์ค้างภาษาไทย · จอไม่แสดงตัวอักษรตอนพิมพ์ | พิมพ์ใหม่ด้วยแป้นภาษาอังกฤษ แล้วใช้ `IMPORT_ONLY=1` (ไม่ต้อง build ใหม่) |
 | pip เตือน `Running pip as the 'root' user` ตอน build ai-service | เป็นคำเตือนใน container ตอน build ไม่ใช่บน VM | ไม่ต้องทำอะไร |
+| pod `ai-service` ไม่ขึ้น (`CrashLoopBackOff` / mount `/opt/bangmod/models` ไม่ได้) | ยังไม่ได้ติดตั้งโมเดล หรือชื่อไฟล์ไม่ตรง | หัวข้อ "ติดตั้งโมเดล AI" · `ls -l /opt/bangmod/models` ต้องมี 2 ไฟล์ชื่อตามตาราง |
+| ai-service log: `YOLO model ไม่มี keypoints (ต้องเป็นรุ่น face-pose)` | ใช้ YOLO face แบบ detection อย่างเดียว | ใช้ไฟล์ของ derronqi ตาม `models/fetch-models.sh` (ตรวจ SHA-256) |
 | Claude Code บน VM ใช้ sudo ไม่ได้ | sudo ถามรหัสผ่าน (ตั้งใจ — Claude ไม่ควรถือรหัส) | ขั้นที่ใช้ sudo ให้คนรันเอง แล้วบอก Claude ให้ทำต่อ |
 
 ## ข้อควรรู้
@@ -148,6 +185,15 @@ curl http://cp26ms3.sit.kmutt.ac.th/uat/api/auth/login -H 'Content-Type: applica
 - ไม่มี HTTPS ใน manifest ชุดนี้ (Traefik รับ HTTP) — กล้องในเบราว์เซอร์ (หน้าลงทะเบียนใบหน้า) ต้องใช้ HTTPS ยกเว้น localhost
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-22 — คู่มือ + สคริปต์ติดตั้งโมเดล AI
+- **ทำอะไร:** เพิ่มหัวข้อ "ติดตั้งโมเดล AI" (ที่มา, สัญญาอนุญาต, ขั้นตอน, ตรวจผล, ทางเลือกเมื่อ Google Drive ใช้ไม่ได้) และ `models/fetch-models.sh` (ดาวน์โหลดลง `/opt/bangmod/models` + ตรวจ SHA-256 · รันซ้ำได้ · hash ไม่ตรงไม่ใช้) · เพิ่ม 2 แถวในตารางปัญหา (ai-service ไม่ขึ้น, "YOLO model ไม่มี keypoints") · ขั้น 0 ของ Deploy ครั้งแรกชี้มาที่สคริปต์
+- **ไฟล์ที่เกี่ยวข้อง:** `models/fetch-models.sh` (ใหม่), `README.md`
+- **เหตุผล:** ai-service ยังไม่ขึ้นบน VM เพราะไม่มีโมเดล · โค้ดต้องการ YOLO face ที่มี 5 จุดบนหน้า ซึ่งไม่ใช่โมเดลมาตรฐานของ Ultralytics
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:**
+  - เลือก `derronqi/yolov8-face` yolov8n (ตรวจ metadata ในไฟล์: PoseModel, 1 class, `kpt_shape` 5 จุด, ultralytics 8.0.66) · ไม่ใช้ `lindevs/yolov8-face` เพราะเป็น DetectionModel (ไม่มีจุด)
+  - ทดสอบ `ai-service/main.py` จริงกับโมเดลทั้ง 2 บน ultralytics 8.4 / OpenCV 5.1: โหลดได้, ตรวจพบใบหน้าพร้อม 5 จุด, รูปหลายคนถูกปฏิเสธ, SFace จัดหน้าเป็น 112×112 → embedding 128 มิติ (คนละคน cosine 0.05), endpoint ลบข้อมูลตรวจ key ถูกต้อง · ยังไม่ได้ทดสอบรูป selfie ใบหน้าเดียวที่ผ่านเกณฑ์คุณภาพจนได้ 200 (ไม่มีรูปทดสอบที่เหมาะสม)
+  - ยังไม่ได้รันบน VM · ลิงก์ Google Drive อาจเปลี่ยน / ติดโควตา (มีวิธีดาวน์โหลดเองในคู่มือ) · ไฟล์ YOLO เป็น GPL-3.0
 
 ### 2026-11-22 — CD: push `Dev` → uat อัปเดตเอง
 - **ทำอะไร:** เพิ่ม `cd/deploy.sh` (cron ทุก 3 นาที: เจอ commit ใหม่บน `Dev` → build image tag = commit → push เข้า registry ในเครื่อง `localhost:5000` → `kubectl apply` ผ่าน kustomization ที่สร้างตอน deploy → รอ rollout → ตรวจหน้าเว็บ 200 / `/api/me` 401 / `/api/internal` 404 / ไม่ใช้โปรไฟล์ local → พังแล้ว `rollout undo`) · `prod` สั่งเองจาก terminal + พิมพ์ยืนยัน · commit ที่แก้ `backend/db/` หยุดรอคน (`ALLOW_DB_CHANGE=1`) · ไม่ลองซ้ำ commit ที่พัง · log / สถานะที่ `~/bangmod-cd/` · อัปเดตตัวเองหลัง uat ผ่าน · `cd/setup.sh` ติดตั้งครั้งแรก (registry container, clone แยก, secret, crontab) · `cd/registries.yaml` สำหรับ K3s

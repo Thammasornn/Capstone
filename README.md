@@ -97,6 +97,12 @@ Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/uat/` แยก 
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-22 — ติดตั้งโมเดล AI
+- **ทำอะไร:** คู่มือติดตั้งโมเดลใน `devops/README.md` และสคริปต์ `devops/models/fetch-models.sh` (ดาวน์โหลด + ตรวจ SHA-256) · เลือกโมเดล YOLO face ที่มี 5 จุดบนหน้า และทดสอบกับโค้ด `ai-service` จริงแล้ว
+- **ไฟล์ที่เกี่ยวข้อง:** `devops/README.md`, `devops/models/fetch-models.sh`
+- **เหตุผล:** ai-service บน VM ยังไม่ขึ้นเพราะไม่มีโมเดล → ลงทะเบียนใบหน้าไม่ได้
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ต้องรันบน VM (ใช้ sudo 1 คำสั่งสร้างโฟลเดอร์) · ตัวจับคู่ใบหน้าจากกล้องยังไม่ได้ทำ
+
 ### 2026-11-22 — CD: push ขึ้น `Dev` แล้ว uat deploy เอง
 - **ทำอะไร:** เพิ่มระบบ deploy อัตโนมัติบน VM (`devops/cd/`): cron ดึง `Dev` ทุก 3 นาที → build → registry ในเครื่อง → apply → ตรวจผล → rollback ถ้าพัง · prod สั่งเองพร้อมยืนยัน · กฎใน `CLAUDE.md` หัวข้อ CD
 - **ไฟล์ที่เกี่ยวข้อง:** `devops/cd/*`, `devops/README.md`, `CLAUDE.md`, `.gitignore`
