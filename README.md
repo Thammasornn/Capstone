@@ -97,6 +97,11 @@ Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/uat/` แยก 
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-22 — กฎ git: push ขึ้น branch `Dev` เท่านั้น
+- **ทำอะไร:** สร้าง branch `Dev` จาก `main` (`ed23377`) และเพิ่มหัวข้อ "กฎ git" ใน `CLAUDE.md`: push ได้เฉพาะ `Dev`, ห้าม push `main` / ห้ามสร้าง branch ใหม่บน remote, merge `main` เข้า `Dev` เมื่อตามไม่ทัน, ห้าม force push, ขึ้น `main` ผ่าน PR `Dev` → `main` เมื่อผู้ใช้สั่ง, บน VM ยังห้าม commit / push
+- **ไฟล์ที่เกี่ยวข้อง:** `CLAUDE.md`, `README.md`
+- **เหตุผล:** ให้งานทุกชิ้นรวมอยู่ที่ `Dev` ก่อนขึ้น `main` และไม่มี branch งานกระจายบน remote
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** branch งานเก่าบน remote (`feat/database-r1`, `docs/deploy-log`, `feat/student-test-accounts`, `claude/amazing-cannon-taa1h3`) merge เข้า `main` แล้ว ลบได้ถ้าไม่ใช้ · ถ้าต้องการกัน push `main` จริง ให้ตั้ง branch protection บน GitHub
 ### 2026-11-22 — บัญชีทดสอบนักศึกษาครบทุกสถานะ
 - **ทำอะไร:** เพิ่มนักศึกษาทดสอบ 5 คน (ต้องยินยอมใหม่, ยินยอมแต่ไม่มีใบหน้า, อายุไม่ถึง 20, ไม่มีวิชาเทอมนี้, ลาออก) ในข้อมูล mock · หน้า Login แสดงบัญชีทดสอบให้กดเลือกบนเครื่องและ uat (ไม่มีใน prod) · ตารางบัญชีทดสอบในหัวข้อ "ทดสอบบนเครื่อง"
 - **ไฟล์ที่เกี่ยวข้อง:** `backend/db/02_seed_mock.sql`, `backend/db/test/assertions.sql`, `frontend/src/features/auth/*`, `frontend/.env.*`
