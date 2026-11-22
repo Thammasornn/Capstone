@@ -24,6 +24,52 @@ FE เรียก API แบบ relative (`/prod/api`) แล้ว NGINX ใ�
 | `k8s/overlays/*/secret.env.example` | แบบไฟล์ความลับ → copy เป็น `secret.env` (อยู่ใน `.gitignore`) |
 | `k8s/build-images.sh` | build image ทั้ง 4 ตัวแล้ว import เข้า K3s (ไม่ต้องมี registry) |
 | `k8s/init-db.sh` | ใส่ schema ครั้งแรก (`uat --seed` = + ข้อมูล mock) |
+| `cd/deploy.sh` | **CD**: build → push เข้า registry ในเครื่อง → apply → ตรวจผล → rollback ถ้าพัง |
+| `cd/setup.sh` | ติดตั้ง CD บน VM ครั้งแรก (registry, clone แยก, cron) |
+| `cd/registries.yaml` | ให้ K3s ดึง image จาก `localhost:5000` (copy ไป `/etc/rancher/k3s/` ด้วย sudo) |
+
+## CD: deploy อัตโนมัติ
+
+**push ขึ้น `Dev` → uat อัปเดตเองภายใน ~3 นาที + เวลา build** · prod ต้องสั่งเองเสมอ
+
+```
+cron ทุก 3 นาที → ~/bangmod-cd/bin/deploy.sh uat --if-changed
+  └ origin/Dev มี commit ใหม่? ─ไม่─▶ จบเงียบ ๆ
+        └ใช่─▶ แก้ backend/db/? ─ใช่─▶ หยุด รอคนอัปเดต DB (blocked)
+                 └ไม่─▶ build image (tag = commit) → push localhost:5000 → kubectl apply
+                          → รอ backend/frontend → ตรวจ (หน้าเว็บ 200, /api/me 401, /api/internal 404, ไม่ใช้โปรไฟล์ local)
+                          ─ผ่าน─▶ ok   ─ไม่ผ่าน─▶ rollout undo (กลับเวอร์ชันก่อน) → failed
+```
+
+- VM **ดึงเอง** (ไม่ใช้ GitHub Actions runner) — repo เป็น public จึงไม่เปิดให้ GitHub สั่งรันโค้ดบน VM
+- image อยู่ใน registry ในเครื่อง (`docker` container `bangmod-registry` ฟังเฉพาะ `127.0.0.1:5000`) → **ไม่ต้องใช้ sudo** ตอน deploy · tag = commit จึงย้อนเวอร์ชันได้
+- commit ที่ deploy ไม่ผ่าน / ถูกกัน จะไม่ถูกลองซ้ำทุก 3 นาที — แก้แล้ว push commit ใหม่ หรือสั่ง `deploy.sh uat` เอง
+- **ไม่แตะฐานข้อมูล** — commit ที่แก้ `backend/db/` ต้องอัปเดต DB เอง แล้ว `ALLOW_DB_CHANGE=1 ~/bangmod-cd/bin/deploy.sh uat`
+- สคริปต์อัปเดตตัวเองเป็นเวอร์ชันของ commit ที่ deploy uat ผ่าน
+
+### ติดตั้ง (ครั้งเดียว · หลัง deploy uat ด้วยมือสำเร็จแล้ว)
+
+```bash
+cd ~/Capstone && git pull && ./devops/cd/setup.sh       # ไม่ต้อง sudo · ทำ registry, clone แยก, cron
+# setup.sh จะพิมพ์คำสั่ง sudo สำหรับ registries.yaml ของ K3s — รันเอง (k3s restart ไม่ทำให้ pod หยุด)
+~/bangmod-cd/bin/deploy.sh uat                          # deploy ครั้งแรกด้วยมือเพื่อดูผล
+```
+
+| งาน | คำสั่ง |
+|---|---|
+| ดูสถานะล่าสุด | `~/bangmod-cd/bin/deploy.sh status` |
+| ดู log | `ls -t ~/bangmod-cd/logs/` แล้ว `less ~/bangmod-cd/logs/<ไฟล์>` |
+| deploy uat เดี๋ยวนี้ (แม้ commit เดิม / เคยพัง) | `~/bangmod-cd/bin/deploy.sh uat` |
+| deploy prod (main ล่าสุด หรือระบุ commit) | `~/bangmod-cd/bin/deploy.sh prod` · `... prod <commit>` — ต้องพิมพ์ `prod` ยืนยัน |
+| ย้อนเวอร์ชัน | `kubectl -n <ns> rollout undo deployment/backend deployment/frontend` หรือ `deploy.sh <ns> <commit เก่า>` |
+| ปิด CD ชั่วคราว | `crontab -e` แล้วใส่ `#` หน้าบรรทัด `bangmod CD` |
+
+ไฟล์บน VM: `~/bangmod-cd/` — `repo/` (clone แยก), `bin/deploy.sh`, `secrets/<env>.env` (chmod 600 · สำรองไว้นอก VM), `config.env` (`PUBLIC_URL`, ไม่มีความลับ), `state/`, `logs/`, `registry/` (ข้อมูล image)
+
+> เมื่อเปิด CD แล้ว **อย่า `kubectl apply -k devops/k8s/overlays/<ns>` ตรง ๆ** — จะเปลี่ยน image กลับเป็นตัวที่ import เอง (`imagePullPolicy: Never`) ให้ใช้ `deploy.sh` แทน
+> registry โตขึ้นทุก commit (layer ที่ซ้ำไม่กินที่เพิ่ม) · ดูขนาด: `du -sh ~/bangmod-cd/registry` · ถ้าดิสก์ใกล้เต็ม ล้าง registry ทั้งหมดแล้ว deploy ใหม่
+> (pod ที่รันอยู่ไม่กระทบ แต่จะย้อนไป commit เก่าด้วย `deploy.sh <ns> <commit>` ไม่ได้จนกว่าจะ build ใหม่):
+> `docker rm -f bangmod-registry && rm -rf ~/bangmod-cd/registry/* && ./devops/cd/setup.sh && ~/bangmod-cd/bin/deploy.sh uat`
 
 ## ข้อมูล VM
 
@@ -80,7 +126,7 @@ curl http://cp26ms3.sit.kmutt.ac.th/uat/api/auth/login -H 'Content-Type: applica
   -d '{"email":"admin@sit.kmutt.ac.th","password":"Password@123"}'
 ```
 
-อัปเดตเวอร์ชัน: `./devops/k8s/build-images.sh` แล้ว `kubectl -n <ns> rollout restart deployment/backend deployment/frontend`
+อัปเดตเวอร์ชัน: ใช้ CD (หัวข้อ "CD: deploy อัตโนมัติ") · ถ้ายังไม่ได้ติดตั้ง CD: `./devops/k8s/build-images.sh` แล้ว `kubectl -n <ns> rollout restart deployment/backend deployment/frontend`
 
 ## ปัญหาที่เจอตอน deploy และวิธีแก้
 
@@ -102,6 +148,12 @@ curl http://cp26ms3.sit.kmutt.ac.th/uat/api/auth/login -H 'Content-Type: applica
 - ไม่มี HTTPS ใน manifest ชุดนี้ (Traefik รับ HTTP) — กล้องในเบราว์เซอร์ (หน้าลงทะเบียนใบหน้า) ต้องใช้ HTTPS ยกเว้น localhost
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-22 — CD: push `Dev` → uat อัปเดตเอง
+- **ทำอะไร:** เพิ่ม `cd/deploy.sh` (cron ทุก 3 นาที: เจอ commit ใหม่บน `Dev` → build image tag = commit → push เข้า registry ในเครื่อง `localhost:5000` → `kubectl apply` ผ่าน kustomization ที่สร้างตอน deploy → รอ rollout → ตรวจหน้าเว็บ 200 / `/api/me` 401 / `/api/internal` 404 / ไม่ใช้โปรไฟล์ local → พังแล้ว `rollout undo`) · `prod` สั่งเองจาก terminal + พิมพ์ยืนยัน · commit ที่แก้ `backend/db/` หยุดรอคน (`ALLOW_DB_CHANGE=1`) · ไม่ลองซ้ำ commit ที่พัง · log / สถานะที่ `~/bangmod-cd/` · อัปเดตตัวเองหลัง uat ผ่าน · `cd/setup.sh` ติดตั้งครั้งแรก (registry container, clone แยก, secret, crontab) · `cd/registries.yaml` สำหรับ K3s
+- **ไฟล์ที่เกี่ยวข้อง:** `cd/deploy.sh`, `cd/setup.sh`, `cd/registries.yaml`, `README.md`, `../CLAUDE.md`, `../.gitignore`
+- **เหตุผล:** ให้ uat อัปเดตเองเมื่อ push โดยไม่ต้อง SSH / sudo ทุกครั้ง · VM อยู่ในเครือข่ายภายในและ repo เป็น public จึงให้ VM ดึงเอง (ไม่ใช้ self-hosted runner) · registry ทำให้ไม่ต้อง sudo import และย้อนเวอร์ชันได้
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ทดสอบด้วยคำสั่งจำลอง (docker / kubectl / curl) + git จริง ครบ 9 กรณี (deploy ปกติ, ไม่มี commit ใหม่, กัน backend/db + ALLOW_DB_CHANGE, backend ไม่ขึ้น → rollback, โปรไฟล์ local → rollback, registry ไม่ตอบ, build พัง, prod จาก cron ถูกปฏิเสธ, setup ซ้ำไม่เพิ่ม cron) · **ยังไม่ได้รันบน VM จริง** และยังไม่ได้ทดสอบการพิมพ์ยืนยัน prod ใน terminal จริง · ต้องรัน `setup.sh` + คำสั่ง sudo ของ registries.yaml บน VM
 
 ### 2026-11-22 — บันทึก deploy uat ครั้งแรก + แก้ปัญหาที่เจอ
 - **ทำอะไร:**

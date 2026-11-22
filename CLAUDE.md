@@ -91,3 +91,10 @@
 
 ### บันทึกหลัง deploy
 21. เมื่อผู้ใช้ยืนยันว่า deploy สำเร็จ ให้เตรียมแถวใหม่ของตาราง "ประวัติการ deploy" ใน `devops/README.md` (วันที่, namespace, commit, ผล, หมายเหตุ) ส่งให้ผู้ใช้ไปเพิ่มใน repo หลัก (ห้าม commit จาก VM) — ห้ามมีค่าความลับ
+
+### CD (deploy อัตโนมัติ)
+22. uat deploy เองทุกครั้งที่ push ขึ้น `Dev` (cron บน VM → `~/bangmod-cd/bin/deploy.sh uat --if-changed`) — **push ขึ้น `Dev` = ขึ้น uat** ต้องผ่าน `./dev.sh test` ก่อน push
+23. เมื่อติดตั้ง CD แล้ว deploy ผ่าน `~/bangmod-cd/bin/deploy.sh <uat|prod>` เท่านั้น ห้าม `kubectl apply -k devops/k8s/overlays/<ns>` ตรง ๆ (จะเปลี่ยน image กลับเป็นตัวที่ import เอง)
+24. prod: `deploy.sh prod` ต้องให้ผู้ใช้รันเองใน terminal (สคริปต์ให้พิมพ์ `prod` ยืนยัน) — ห้ามใส่ prod ใน cron
+25. commit ที่แก้ `backend/db/` CD จะหยุด (blocked) — เตรียมคำสั่งอัปเดต DB ให้ผู้ใช้ตรวจ แล้วผู้ใช้สั่ง `ALLOW_DB_CHANGE=1 deploy.sh <ns>` เอง
+26. ดูผล: `deploy.sh status` และ log ที่ `~/bangmod-cd/logs/` · deploy พังแล้ว rollback ให้รายงานสาเหตุจาก log ไม่ต้อง deploy ซ้ำวน
