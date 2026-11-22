@@ -17,8 +17,8 @@ BEGIN
   IF n <> 4 THEN RAISE EXCEPTION 'expected 4 views, found %', n; END IF;
 
   -- mock data volumes
-  IF (SELECT count(*) FROM users)            <> 44  THEN RAISE EXCEPTION 'users';            END IF;
-  IF (SELECT count(*) FROM student_profiles) <> 37  THEN RAISE EXCEPTION 'student_profiles'; END IF;
+  IF (SELECT count(*) FROM users)            <> 49  THEN RAISE EXCEPTION 'users';            END IF;
+  IF (SELECT count(*) FROM student_profiles) <> 42  THEN RAISE EXCEPTION 'student_profiles'; END IF;
   IF (SELECT count(*) FROM sections)         <> 8   THEN RAISE EXCEPTION 'sections';         END IF;
   IF (SELECT count(*) FROM class_sessions                       -- excludes the 03 demo session
        WHERE session_date <= '2026-11-27' AND session_status <> 'in_progress') <> 150
@@ -61,6 +61,28 @@ BEGIN
   END IF;
   IF (SELECT count(*) FROM v_student_section_attendance WHERE risk_level = 'medium') < 5 THEN
     RAISE EXCEPTION 'too few medium-risk rows';
+  END IF;
+
+  -- student test personas end up in the state their name promises (README "บัญชีทดสอบ")
+  IF NOT EXISTS (SELECT 1 FROM v_face_registration
+                  WHERE student_code = '69130599001' AND face_registered AND needs_reconsent) THEN
+    RAISE EXCEPTION 'persona reconsent: expected registered + needs_reconsent';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM v_face_registration
+                  WHERE student_code = '69130599002' AND NOT face_registered AND consent_status = 'granted') THEN
+    RAISE EXCEPTION 'persona consentonly: expected granted consent without embeddings';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM student_profiles sp LEFT JOIN v_current_consent c USING (student_id)
+                  WHERE sp.student_code = '69130599003' AND sp.is_adult = false AND c.student_id IS NULL) THEN
+    RAISE EXCEPTION 'persona minor: expected is_adult = false and no consent';
+  END IF;
+  IF EXISTS (SELECT 1 FROM enrollments e JOIN student_profiles sp USING (student_id)
+              WHERE sp.student_code = '66130599004') THEN
+    RAISE EXCEPTION 'persona nocourse: expected no enrollments';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM users u JOIN student_profiles sp ON sp.student_id = u.user_id
+                  WHERE sp.student_code = '66130599005' AND NOT u.is_active AND sp.academic_status = 'withdrawn') THEN
+    RAISE EXCEPTION 'persona resigned: expected inactive account with academic_status withdrawn';
   END IF;
 
   -- consent_records is append-only

@@ -9,6 +9,7 @@ import { useRoute, useRouter } from 'vue-router'
 import BaseButton from '@/shared/components/BaseButton.vue'
 import { HOME_ROUTE_BY_ROLE } from '@/shared/constants/roles'
 import { useAuthStore } from '../store'
+import { TEST_ACCOUNTS } from '../test-accounts'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -19,19 +20,12 @@ const submitting = ref(false)
 const errorMessage = ref('')
 
 const sessionExpired = computed(() => route.query.reason === 'expired')
-const showMockAccounts = import.meta.env.VITE_MOCK_MODE === 'all'
+/** บัญชีทดสอบ (test-accounts.js) — โหมด mock หรือ local / uat เท่านั้น · Production = null */
+const testAccounts = TEST_ACCOUNTS
 
-/** บัญชีทดสอบจากคู่มือ API ข้อ 8 (แสดงเฉพาะโหมด mock ทั้งหมด) */
-const mockAccounts = [
-  { label: 'นักศึกษา (ลงทะเบียนใบหน้าแล้ว)', email: 'student01@mock.test' },
-  { label: 'นักศึกษา (ยังไม่ลงทะเบียน)', email: 'student08@mock.test' },
-  { label: 'อาจารย์', email: 'lecturer01@mock.test' },
-  { label: 'Admin', email: 'admin@mock.test' },
-]
-
-function useMockAccount(email) {
+function useTestAccount(email) {
   form.email = email
-  form.password = 'Passw0rd!'
+  form.password = testAccounts.password
   errorMessage.value = ''
 }
 
@@ -101,7 +95,7 @@ async function onSubmit() {
             inputmode="email"
             required
             class="rounded-field border border-line bg-page px-3.5 py-2.5 text-[13px] text-ink focus:border-primary"
-            placeholder="student01@mock.test"
+            placeholder="รหัสนักศึกษา@st.sit.kmutt.ac.th"
           />
         </div>
 
@@ -127,24 +121,32 @@ async function onSubmit() {
       </form>
 
       <section
-        v-if="showMockAccounts"
+        v-if="testAccounts"
         class="mt-6 border-t border-line pt-4"
-        aria-labelledby="mock-title"
+        aria-labelledby="test-accounts-title"
       >
-        <h2 id="mock-title" class="text-xs font-semibold text-muted">
-          บัญชีทดสอบ (โหมด mock · รหัสผ่าน Passw0rd!)
+        <h2 id="test-accounts-title" class="text-xs font-semibold text-muted">
+          บัญชีทดสอบ ({{
+            testAccounts.mode === 'mock' ? 'โหมด mock' : 'ข้อมูล mock · ไม่มีใน Production'
+          }}
+          · รหัสผ่าน {{ testAccounts.password }}) — กดเพื่อกรอกให้
         </h2>
-        <ul class="mt-2 flex flex-wrap gap-2">
-          <li v-for="account in mockAccounts" :key="account.email">
-            <button
-              type="button"
-              class="rounded-full border border-line px-3 py-1 text-xs text-ink hover:border-primary"
-              @click="useMockAccount(account.email)"
-            >
-              {{ account.label }}
-            </button>
-          </li>
-        </ul>
+        <div v-for="group in testAccounts.groups" :key="group.title" class="mt-3">
+          <p class="text-[11px] font-semibold text-muted">{{ group.title }}</p>
+          <ul class="mt-1.5 flex flex-wrap gap-2">
+            <li v-for="account in group.accounts" :key="account.email">
+              <button
+                type="button"
+                class="rounded-full border border-line px-3 py-1 text-xs text-ink hover:border-primary"
+                :title="[account.email, account.hint].filter(Boolean).join(' · ')"
+                :aria-label="`${account.label} (${account.email})`"
+                @click="useTestAccount(account.email)"
+              >
+                {{ account.label }}
+              </button>
+            </li>
+          </ul>
+        </div>
       </section>
     </div>
   </main>

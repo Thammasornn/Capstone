@@ -76,6 +76,12 @@ docker run -p 8080:80 -e BACKEND_URL=http://10.0.0.5:8081 bangmod-frontend:prod 
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-22 — บัญชีทดสอบในหน้า Login (local / uat)
+- **ทำอะไร:** ย้ายรายการบัญชีทดสอบไป `src/features/auth/test-accounts.js` · หน้า Login แสดงบัญชีจากข้อมูล mock ใน DB (admin, อาจารย์ 2, นักศึกษา 12 สถานะ) เมื่อ `VITE_SHOW_TEST_ACCOUNTS=true` (`.env.development`, `.env.uat`) — กดแล้วกรอกอีเมล + รหัสผ่านให้ · โหมด mock ยังแสดงบัญชี MSW เหมือนเดิม · ช่องอีเมลแสดงตัวอย่าง `รหัสนักศึกษา@st.sit.kmutt.ac.th` แทนบัญชี mock
+- **ไฟล์ที่เกี่ยวข้อง:** `src/features/auth/test-accounts.js` (ใหม่), `src/features/auth/pages/LoginPage.vue`, `.env.development`, `.env.uat`, `.env.production`
+- **เหตุผล:** เมื่อต่อ Backend จริง หน้า Login ไม่มีบัญชีให้เลือก โดยเฉพาะ student
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** Production (`VITE_SHOW_TEST_ACCOUNTS=false`) ตัดรายชื่อและรหัสผ่านทดสอบออกจาก bundle ทั้งหมด (ตรวจด้วย grep แล้ว) — ข้อมูลอยู่หลังเงื่อนไข `import.meta.env` ห้ามย้ายออกมาเป็นค่าคงที่
+
 ### 2026-11-22 — แก้ตารางจัดการรายวิชา: กลุ่มที่ 2 ขึ้นเป็น JSON และไม่มีปุ่ม
 - **ทำอะไร:** `CourseTable` แสดงรหัสวิชาและปุ่มแก้ไข / ลบ ทุกแถว (แถวที่ 2+ ของวิชาเดียวกันแสดงรหัสแบบจาง) · `DataTable` ค่าเริ่มต้นของช่องไม่แสดง object ดิบ (แสดง `-` แทน)
 - **ไฟล์ที่เกี่ยวข้อง:** `src/features/course-management/components/CourseTable.vue`, `src/shared/components/DataTable.vue`

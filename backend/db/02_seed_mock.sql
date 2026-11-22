@@ -25,7 +25,7 @@ CREATE FUNCTION pg_temp.uid(text) RETURNS uuid LANGUAGE sql IMMUTABLE AS $$ SELE
 CREATE FUNCTION pg_temp.h(text)   RETURNS int  LANGUAGE sql IMMUTABLE AS $$ SELECT abs(hashtext($1)) % 1000 $$;
 
 -- =====================================================================
--- 1. Users — 2 admins, 5 lecturers, 37 students
+-- 1. Users — 2 admins, 5 lecturers, 37 students + 5 test personas (42)
 -- =====================================================================
 
 -- Staff
@@ -47,6 +47,12 @@ FROM (VALUES
 --   noface    = never registered a face (lecturer checks them in by hand)
 --   withdrawn = withdrew face consent on 20 Oct 2026
 --   graduated = left the university (face data queued for deletion)
+-- Test personas (one per state the student screens must handle — see README "บัญชีทดสอบ"):
+--   reconsent   = agreed to an older consent text (v0) → needs_reconsent = true
+--   consentonly = agreed to v1 but no face vectors yet (upload failed / never sent photos)
+--   minor       = under 20 (is_adult = false, B9) — cannot consent alone, checked in by hand
+--   nocourse    = active year-4 student on internship, no classes this term
+--   resigned    = left the university (academic_status withdrawn) — account disabled
 CREATE TEMP TABLE mock_students (
   student_code text, title text, first_name text, last_name text,
   entry_year smallint, behaviour text, academic_status text
@@ -93,7 +99,13 @@ INSERT INTO mock_students VALUES
   ('67130500011','นาย',   'ศุภวิชญ์',    'ธรรมโชติ',     2567,'noface',   'active'),
   ('67130500012','นางสาว','พัชราภา',    'วิเศษสุวรรณ',   2567,'normal',   'active'),
   -- Graduated (no classes this term)
-  ('65130500017','นาย',   'ชนาธิป',     'นาคสุข',       2565,'graduated','graduated');
+  ('65130500017','นาย',   'ชนาธิป',     'นาคสุข',       2565,'graduated','graduated'),
+  -- Test personas (codes 0599xxx so they are easy to spot)
+  ('69130599001','นาย',   'ทดสอบ',      'ยินยอมฉบับเก่า', 2569,'reconsent',  'active'),
+  ('69130599002','นางสาว','ทดสอบ',      'ยินยอมแต่ไม่มีใบหน้า', 2569,'consentonly','active'),
+  ('69130599003','นาย',   'ทดสอบ',      'อายุไม่ถึง20',  2569,'minor',      'active'),
+  ('66130599004','นางสาว','ทดสอบ',      'ไม่มีวิชาเทอมนี้', 2566,'nocourse',   'active'),
+  ('66130599005','นาย',   'ทดสอบ',      'ลาออก',        2566,'resigned',   'withdrawn');
 
 INSERT INTO users (user_id, email, password_hash, title, first_name, last_name, role, is_active, created_at)
 SELECT pg_temp.uid('student:' || s.student_code),
@@ -108,9 +120,9 @@ INSERT INTO student_profiles (student_id, student_code, faculty, program, entry_
                               academic_status, status_changed_at)
 SELECT pg_temp.uid('student:' || s.student_code), s.student_code,
        'คณะเทคโนโลยีสารสนเทศ', 'IT', s.entry_year,
-       NULL,                                                 -- B9: waiting for the DPO decision
+       CASE WHEN s.behaviour = 'minor' THEN false END,        -- B9: waiting for the DPO decision (NULL = unknown)
        s.academic_status,
-       CASE WHEN s.academic_status = 'graduated' THEN timestamptz '2026-11-15 09:00' END
+       CASE WHEN s.academic_status IN ('graduated', 'withdrawn') THEN timestamptz '2026-11-15 09:00' END
 FROM mock_students s;
 
 -- =====================================================================
@@ -244,25 +256,29 @@ JOIN LATERAL (
 -- =====================================================================
 
 INSERT INTO consent_versions (version, content_sha256, effective_from, is_current) VALUES
+  -- older text kept for the 'reconsent' persona (D6: agreed to an outdated version)
+  ('v0', encode(digest('consent-text-v0 (pilot)', 'sha256'), 'hex'), '2025-08-01 00:00', false),
   -- replace the hash with sha256 of the exact text in consent-text.js before go-live
   ('v1', encode(digest('consent-text-v1 (claude/pdpa-consent-v1.md)', 'sha256'), 'hex'),
    '2026-08-01 00:00', true);
 
--- Everyone except 'noface' agreed during registration week (3–8 Aug); the graduate agreed a year earlier
+-- Everyone except 'noface' / 'minor' agreed during registration week (3–8 Aug);
+-- the graduate, the resigned student and 'reconsent' (on v0) agreed a year earlier
 INSERT INTO consent_records (consent_id, student_id, version, action, age_confirmed, ip_address, user_agent, created_at)
 SELECT pg_temp.uid('consent:granted:' || s.student_code),
-       pg_temp.uid('student:' || s.student_code), 'v1', 'granted', true,
+       pg_temp.uid('student:' || s.student_code),
+       CASE WHEN s.behaviour = 'reconsent' THEN 'v0' ELSE 'v1' END, 'granted', true,
        ('10.20.' || (pg_temp.h(s.student_code) % 200 + 1) || '.' || (pg_temp.h(s.student_code || 'ip') % 250 + 2))::inet,
        CASE pg_temp.h(s.student_code) % 3
             WHEN 0 THEN 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) Safari/604.1'
             WHEN 1 THEN 'Mozilla/5.0 (Linux; Android 15; SM-A556E) Chrome/131.0 Mobile Safari/537.36'
             ELSE        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131.0 Safari/537.36' END,
-       CASE WHEN s.behaviour = 'graduated' THEN timestamptz '2025-08-15 10:00'
+       CASE WHEN s.behaviour IN ('graduated', 'resigned', 'reconsent') THEN timestamptz '2025-08-15 10:00'
             ELSE timestamptz '2026-08-03 09:00'
                  + make_interval(days => pg_temp.h(s.student_code) % 6,
                                  mins => pg_temp.h(s.student_code || 'm') % 600) END
 FROM mock_students s
-WHERE s.behaviour <> 'noface';
+WHERE s.behaviour NOT IN ('noface', 'minor');
 
 -- 68130500005 withdrew consent on 20 Oct (B7)
 INSERT INTO consent_records (consent_id, student_id, version, action, age_confirmed, ip_address, user_agent, created_at)
@@ -279,13 +295,15 @@ SELECT pg_temp.uid('embedding:' || s.student_code || ':' || n),
 FROM mock_students s
 JOIN consent_records cr ON cr.consent_id = pg_temp.uid('consent:granted:' || s.student_code)
 CROSS JOIN LATERAL generate_series(1, CASE WHEN pg_temp.h(s.student_code || 'n') % 4 = 0 THEN 5 ELSE 3 END) n
-WHERE s.behaviour NOT IN ('noface', 'withdrawn');
+WHERE s.behaviour NOT IN ('noface', 'withdrawn', 'consentonly', 'minor');
 
 INSERT INTO data_deletion_jobs (job_id, student_id, reason, requested_at, due_at, completed_at, deleted_count) VALUES
   (pg_temp.uid('deletion:68130500005'), pg_temp.uid('student:68130500005'), 'withdrawn',
    '2026-10-20 14:05:00', '2026-11-19 14:05:00', '2026-10-20 14:05:02', 3),
   (pg_temp.uid('deletion:65130500017'), pg_temp.uid('student:65130500017'), 'graduated',
-   '2026-11-15 09:00:00', '2026-12-15 09:00:00', NULL, NULL);       -- pending: the daily job will delete
+   '2026-11-15 09:00:00', '2026-12-15 09:00:00', NULL, NULL),       -- pending: the daily job will delete
+  (pg_temp.uid('deletion:66130599005'), pg_temp.uid('student:66130599005'), 'graduated',
+   '2026-11-15 09:00:00', '2026-12-15 09:00:00', NULL, NULL);       -- resigned: same 30-day rule (no own reason value)
 
 -- =====================================================================
 -- 7. Attendance for every completed session
@@ -323,7 +341,7 @@ WITH base AS (
                 THEN 'late'
               ELSE 'on_time' END AS status,
          CASE WHEN NOT b.camera_attendance_enabled THEN 'camera_off'
-              WHEN b.behaviour = 'noface' THEN 'noface'
+              WHEN b.behaviour IN ('noface', 'consentonly', 'minor') THEN 'noface'
               WHEN b.behaviour = 'withdrawn' AND b.session_date >= '2026-10-20' THEN 'withdrawn'
               ELSE 'camera' END AS mode
   FROM base b
@@ -370,7 +388,9 @@ INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, before_data, a
   (pg_temp.uid('student:68130500005'), 'face.delete', 'student', pg_temp.uid('student:68130500005'),
    '{"embedding_count": 3}', '{"embedding_count": 0}', '10.20.77.14', '2026-10-20 14:05:02'),
   (pg_temp.uid('user:admin@sit.kmutt.ac.th'), 'student.status_change', 'student', pg_temp.uid('student:65130500017'),
-   '{"academic_status": "active"}', '{"academic_status": "graduated"}', '10.10.1.5', '2026-11-15 09:00');
+   '{"academic_status": "active"}', '{"academic_status": "graduated"}', '10.10.1.5', '2026-11-15 09:00'),
+  (pg_temp.uid('user:admin@sit.kmutt.ac.th'), 'student.status_change', 'student', pg_temp.uid('student:66130599005'),
+   '{"academic_status": "active"}', '{"academic_status": "withdrawn"}', '10.10.1.5', '2026-11-15 09:05');
 
 -- Every manual check-in leaves an audit row
 INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data, ip_address, created_at)
@@ -426,7 +446,7 @@ SELECT pg_temp.uid('student:' || s.student_code), 'face_registration_reminder',
        ts
 FROM mock_students s,
      unnest(ARRAY[timestamptz '2026-08-09 08:00', timestamptz '2026-08-16 08:00']) ts
-WHERE s.behaviour = 'noface';
+WHERE s.behaviour IN ('noface', 'consentonly', 'minor');
 
 -- Cancelled classes (public holidays), sent the day before
 INSERT INTO notifications (user_id, type, title, body, session_id, read_at, created_at)
