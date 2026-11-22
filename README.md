@@ -97,6 +97,12 @@ Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/uat/` แยก 
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-22 — CD: push ขึ้น `Dev` แล้ว uat deploy เอง
+- **ทำอะไร:** เพิ่มระบบ deploy อัตโนมัติบน VM (`devops/cd/`): cron ดึง `Dev` ทุก 3 นาที → build → registry ในเครื่อง → apply → ตรวจผล → rollback ถ้าพัง · prod สั่งเองพร้อมยืนยัน · กฎใน `CLAUDE.md` หัวข้อ CD
+- **ไฟล์ที่เกี่ยวข้อง:** `devops/cd/*`, `devops/README.md`, `CLAUDE.md`, `.gitignore`
+- **เหตุผล:** ไม่ต้อง deploy uat ด้วยมือทุกครั้ง
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ติดตั้งบน VM ตาม `devops/README.md` › "CD: deploy อัตโนมัติ" · ยังไม่ได้รันบน VM จริง
+
 ### 2026-11-22 — กฎ git: push ขึ้น branch `Dev` เท่านั้น
 - **ทำอะไร:** สร้าง branch `Dev` จาก `main` (`ed23377`) และเพิ่มหัวข้อ "กฎ git" ใน `CLAUDE.md`: push ได้เฉพาะ `Dev`, ห้าม push `main` / ห้ามสร้าง branch ใหม่บน remote, merge `main` เข้า `Dev` เมื่อตามไม่ทัน, ห้าม force push, ขึ้น `main` ผ่าน PR `Dev` → `main` เมื่อผู้ใช้สั่ง, บน VM ยังห้าม commit / push
 - **ไฟล์ที่เกี่ยวข้อง:** `CLAUDE.md`, `README.md`

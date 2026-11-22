@@ -1,0 +1,7 @@
+# ให้ K3s (containerd) ดึง image จาก registry ในเครื่องแบบ http (registry ฟังเฉพาะ 127.0.0.1:5000)
+# ติดตั้ง (ครั้งเดียว · ต้องใช้ sudo):
+#   sudo cp devops/cd/registries.yaml /etc/rancher/k3s/registries.yaml && sudo systemctl restart k3s
+mirrors:
+  "localhost:5000":
+    endpoint:
+      - "http://localhost:5000"

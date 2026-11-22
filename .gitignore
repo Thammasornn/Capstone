@@ -26,3 +26,6 @@ devops/k8s/overlays/*/secret.env
 
 # ./dev.sh (log ของ backend)
 .dev/
+
+# CD: kustomization ที่ deploy.sh สร้างตอน deploy
+devops/k8s/.generated/
