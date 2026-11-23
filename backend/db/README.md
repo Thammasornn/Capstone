@@ -39,11 +39,13 @@ done
 **เพิ่มบัญชีทีมเข้า uat ที่มีข้อมูลอยู่แล้ว** (ไม่อยากรัน `02` ใหม่เพราะจะลบใบหน้าที่ลงทะเบียนไว้) — `02` มีบัญชีทีมอยู่แล้ว ใช้ `04` เฉพาะ DB ที่ seed ไว้ก่อนหน้านี้:
 
 ```bash
-sudo k3s kubectl -n uat exec -i statefulset/postgres -- \
+cd ~/bangmod-cd/repo && git pull --ff-only   # clone ของ CD บน VM (ต้องมี 04)
+kubectl -n uat exec -i statefulset/postgres -- \
   psql -U postgres -d bangmod_attendance -v ON_ERROR_STOP=1 < backend/db/04_add_team_students.sql
+ALLOW_DB_CHANGE=1 ~/bangmod-cd/bin/deploy.sh uat   # CD หยุดเพราะ commit แก้ backend/db/
 ```
 
-`04` ตรวจก่อนว่ามีกลุ่มเรียน mock `INT201-001` — ไม่มี (เช่น Production) จะ error และไม่เพิ่มอะไร
+`kubectl` บน VM ใช้ได้โดยไม่ต้อง sudo (`KUBECONFIG` ตาม `devops/README.md`) · `04` ตรวจก่อนว่ามีกลุ่มเรียน mock `INT201-001` — ไม่มี (เช่น Production) จะ error และไม่เพิ่มอะไร
 
 ## บัญชี Mock (รหัสผ่านทุกบัญชี `Password@123`)
 
@@ -180,6 +182,11 @@ spring.jackson.time-zone=Asia/Bangkok
 - ถ้าจะใช้ Flyway: copy `01_schema.sql` เป็น `db/migration/V1__init_schema.sql` (ตัด `BEGIN;` / `COMMIT;` ออก) และวาง `02_seed_mock.sql` ไว้ใน location ที่เปิดเฉพาะ profile `local` / `uat`
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-23 — แก้คำสั่งรัน 04 บน uat
+- **ทำอะไร:** คำสั่งเพิ่มบัญชีทีมบน uat ใช้ `kubectl` (ไม่ต้อง `sudo k3s`) จาก clone ของ CD `~/bangmod-cd/repo` และต่อด้วย `ALLOW_DB_CHANGE=1 ~/bangmod-cd/bin/deploy.sh uat`
+- **ไฟล์ที่เกี่ยวข้อง:** `README.md`
+- **เหตุผล:** บน VM ตั้ง `KUBECONFIG` ไว้แล้ว และกฎข้อ 20 ห้ามรันคำสั่ง sudo เอง
 
 ### 2026-11-23 — หน้ายินยอมไม่ถามอายุแล้ว (อัปเดตเอกสารเท่านั้น)
 - **ทำอะไร:** แก้คำอธิบาย persona `69130599003` ในตารางบัญชี — หน้ายินยอมไม่มีข้อยืนยันอายุ 20 ปีแล้ว `is_adult` จึงมีแค่ในฐานข้อมูล · ไม่ได้แก้ SQL
