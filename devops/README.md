@@ -87,6 +87,7 @@ cd ~/Capstone && git pull && ./devops/cd/setup.sh       # ไม่ต้อง 
 
 | วันที่ | namespace | commit | ผล | หมายเหตุ |
 |---|---|---|---|---|
+| 2026-11-23 | uat | `c14d9e9` (Dev · CD) | ✅ ตรวจจากภายนอก: หน้าเว็บตัวใหม่, login ทุกบัญชีทดสอบตามที่ควร, `/api/me` 401, `/api/internal` 404 | ติดตั้ง CD ครั้งแรก · reseed 02 + 03 (users 52 · สำรองที่ `~/backups/uat-before-reseed-2026-11-23-1743.dump`) · deploy `a9c53be` รอบแรกตรวจไม่ผ่าน → rollback ทำ backend ล่มประมาณ 14 นาที → แก้ `deploy.sh` (`c14d9e9`) · โมเดล AI ติดตั้งแล้ว ai-service Running |
 | 2026-11-22 | uat | `d0d3dd8` (main) | ✅ ผู้ใช้ทดสอบผ่าน browser แล้ว | ข้อมูล mock (`--seed`) · ยังไม่มีโมเดล AI (ai-service ไม่ขึ้น), MediaMTX และ HTTPS · ใช้โดเมนตั้งแต่ `32ce386` |
 
 เพิ่มแถวใหม่ทุกครั้งที่ deploy (ใหม่อยู่บน) — ห้ามใส่ค่าความลับในตารางนี้
@@ -188,6 +189,12 @@ curl -s localhost:18080/health && kill %1                       # {"status":"ok"
 - ไม่มี HTTPS ใน manifest ชุดนี้ (Traefik รับ HTTP) — กล้องในเบราว์เซอร์ (หน้าลงทะเบียนใบหน้า) ต้องใช้ HTTPS ยกเว้น localhost
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-23 — บันทึกประวัติ deploy uat ผ่าน CD (`c14d9e9`)
+- **ทำอะไร:** เพิ่มแถวในตาราง "ประวัติการ deploy" สำหรับ uat ที่ `c14d9e9` (deploy ครั้งแรกที่ผ่านผ่าน CD)
+- **ไฟล์ที่เกี่ยวข้อง:** `README.md`
+- **เหตุผล:** ผู้ใช้ยืนยันว่า deploy สำเร็จ และตรวจจากภายนอกแล้ว (หน้าเว็บตัวใหม่ไม่มีข้อยืนยันอายุ 20 ปี มีปุ่มกล้องมือถือและบัญชีทีม · login 16 บัญชีได้ 200 · บัญชีปิดได้ 401 · `/api/me` 401 · `/api/internal` 404) ตามกฎ CLAUDE.md ข้อ 21
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ยังไม่ทราบสาเหตุแน่ชัดที่ตรวจ `/api/me` ไม่ผ่านใน deploy `a9c53be` (น่าจะตรวจเร็วเกินไป) — ถ้าเกิดอีก `deploy.sh` จะเก็บ pods + log backend ไว้ · ยังไม่ได้ทดสอบลงทะเบียนใบหน้าบนมือถือจริง · สำรองไฟล์ dump และ `~/bangmod-cd/secrets/uat.env` ไว้นอก VM
 
 ### 2026-11-23 — แก้ CD: deploy ครั้งแรกพังแล้ว rollback ทำให้ backend ล่ม
 - **ทำอะไร:** `cd/deploy.sh` (1) ตรวจผลหลัง rollout ลองซ้ำได้ถึง ~90 วินาที (`CHECK_TRIES` × 3 วินาที, curl `--max-time 10`) และบอก HTTP code ที่ได้ในข้อความ (2) ก่อน rollback เก็บ `kubectl get pods` + log backend 80 บรรทัดลง log ของรอบนั้น (pod ใหม่จะหายหลัง rollback) (3) rollback ใช้ `kubectl set image` กลับเป็น image ของ deploy ที่สำเร็จครั้งล่าสุด (`state/<env>.deployed`) แทน `rollout undo` · ถ้ายังไม่เคยสำเร็จผ่าน CD จะไม่ rollback · แผนภาพ CD + แถวใหม่ในตารางปัญหา
