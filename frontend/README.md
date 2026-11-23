@@ -76,6 +76,12 @@ docker run -p 8080:80 -e BACKEND_URL=http://10.0.0.5:8081 bangmod-frontend:prod 
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-24 — path ของเว็บใน NGINX มาจาก `VITE_BASE` ที่เดียว
+- **ทำอะไร:** `Dockerfile` อ่าน `VITE_BASE` จาก `.env.<MODE>` แล้วแทนค่าลงใน `nginx.conf` ตอน build (ตรวจว่าขึ้นต้นและลงท้ายด้วย `/`) · ไม่มี build arg `APP_BASE` แล้ว (ส่งมาก็ไม่มีผล) · `${BACKEND_URL}` ยังแทนค่าตอน container start เหมือนเดิม
+- **ไฟล์ที่เกี่ยวข้อง:** `Dockerfile`
+- **เหตุผล:** เตรียมย้าย uat ไป `/capstone26/uat/` (forward จาก `https://bscit.sit.kmutt.ac.th/capstone26/`) · เดิมต้องแก้ path ทั้งใน `.env.uat` และ `APP_BASE` ของสคริปต์ build ถ้าไม่ตรงกันหน้าเว็บจะขาว
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ยังไม่ได้เปลี่ยน path (ยังเป็น `/uat/`) — ทำใน commit ถัดไปหลัง CD บน VM อัปเดต `deploy.sh` ตัวเองแล้ว
+
 ### 2026-11-23 — เอาข้อยืนยันอายุ 20 ปีออกจากหน้ายินยอม
 - **ทำอะไร:** ลบ checkbox "ข้าพเจ้ามีอายุ 20 ปีบริบูรณ์แล้ว หรือบรรลุนิติภาวะแล้ว" และข้อความเตือน "ผู้ที่อายุยังไม่ถึง 20 ปี ต้องให้ผู้ปกครองยินยอมก่อน" ออกจากขั้นยินยอม — กดยินยอมได้เมื่อติ๊กข้อยินยอมข้อเดียว · ลบ `ageConfirmed` ออกจาก `useFaceRegistration` / `FaceRegistrationPage` และ `registerFace` ไม่ส่ง `ageConfirmed` แล้ว (Backend ใช้ค่าเริ่มต้น `false` → `consent_records.age_confirmed = false`) · ตาราง API หน้า `/student/face` ไม่มี `+ ageConfirmed`
 - **ไฟล์ที่เกี่ยวข้อง:** `src/features/face-registration/consent-text.js`, `src/features/face-registration/components/ConsentStep.vue`, `src/features/face-registration/composables/useFaceRegistration.js`, `src/features/face-registration/pages/FaceRegistrationPage.vue`, `src/features/face-registration/api.js`, `tests/unit/consent-step.test.js` (ใหม่: มี checkbox ข้อเดียว ไม่มีคำว่า 20 ปี / ผู้ปกครอง, ปุ่มยินยอมกดได้หลังติ๊ก)

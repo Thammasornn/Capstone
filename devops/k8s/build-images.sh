@@ -23,7 +23,7 @@ if [ -z "${IMPORT_ONLY:-}" ]; then
   docker build -t bangmod-backend:latest backend/
   docker build -t bangmod-ai-service:latest ai-service/
   docker build -t bangmod-frontend:prod frontend/
-  docker build --build-arg MODE=uat --build-arg APP_BASE=/uat/ -t bangmod-frontend:uat frontend/
+  docker build --build-arg MODE=uat -t bangmod-frontend:uat frontend/
 fi
 
 if [ -n "${NO_IMPORT:-}" ]; then

@@ -190,6 +190,12 @@ curl -s localhost:18080/health && kill %1                       # {"status":"ok"
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-24 — CD อ่าน path ของเว็บจาก commit ที่ deploy
+- **ทำอะไร:** `cd/deploy.sh` อ่าน `VITE_BASE` จาก `frontend/.env.<mode>` ของ commit ที่ deploy แล้วใช้ตรวจผลหลัง deploy (แทน `/<namespace>/` ที่เขียนตายตัว) · ก่อน `kubectl apply` ตรวจว่า path ของ Ingress ตรงกับ `VITE_BASE` ถ้าไม่ตรงหยุดโดยยังไม่ apply อะไร · ไม่ส่ง `APP_BASE` ตอน build frontend แล้ว (`Dockerfile` อ่านเอง) · `k8s/build-images.sh` เหมือนกัน
+- **ไฟล์ที่เกี่ยวข้อง:** `cd/deploy.sh`, `k8s/build-images.sh`, `../frontend/Dockerfile`
+- **เหตุผล:** เตรียมย้าย uat ไป `/capstone26/uat/` · cron รัน `deploy.sh` สำเนาใน `~/bangmod-cd/bin/` ซึ่งอัปเดตตัวเองหลัง deploy uat สำเร็จเท่านั้น จึงต้อง push ส่วนนี้ก่อน (path ยังเป็น `/uat/`) ให้ CD อัปเดตตัวเอง แล้วค่อย push commit ที่เปลี่ยน path — ไม่งั้นสคริปต์เก่าจะตรวจ `/uat/` ไม่ผ่านแล้ว rollback
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ทดสอบด้วย kubectl / docker / curl จำลองบนเครื่องที่แก้ (ไม่มี K3s จริง)
+
 ### 2026-11-23 — บันทึกประวัติ deploy uat ผ่าน CD (`c14d9e9`)
 - **ทำอะไร:** เพิ่มแถวในตาราง "ประวัติการ deploy" สำหรับ uat ที่ `c14d9e9` (deploy ครั้งแรกที่ผ่านผ่าน CD)
 - **ไฟล์ที่เกี่ยวข้อง:** `README.md`
