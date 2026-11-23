@@ -17,8 +17,8 @@ BEGIN
   IF n <> 4 THEN RAISE EXCEPTION 'expected 4 views, found %', n; END IF;
 
   -- mock data volumes
-  IF (SELECT count(*) FROM users)            <> 49  THEN RAISE EXCEPTION 'users';            END IF;
-  IF (SELECT count(*) FROM student_profiles) <> 42  THEN RAISE EXCEPTION 'student_profiles'; END IF;
+  IF (SELECT count(*) FROM users)            <> 52  THEN RAISE EXCEPTION 'users';            END IF;
+  IF (SELECT count(*) FROM student_profiles) <> 45  THEN RAISE EXCEPTION 'student_profiles'; END IF;
   IF (SELECT count(*) FROM sections)         <> 8   THEN RAISE EXCEPTION 'sections';         END IF;
   IF (SELECT count(*) FROM class_sessions                       -- excludes the 03 demo session
        WHERE session_date <= '2026-11-27' AND session_status <> 'in_progress') <> 150
@@ -83,6 +83,16 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM users u JOIN student_profiles sp ON sp.student_id = u.user_id
                   WHERE sp.student_code = '66130599005' AND NOT u.is_active AND sp.academic_status = 'withdrawn') THEN
     RAISE EXCEPTION 'persona resigned: expected inactive account with academic_status withdrawn';
+  END IF;
+
+  -- project team accounts: active, not registered, in INT201-001
+  IF (SELECT count(*) FROM student_profiles sp
+        JOIN users u ON u.user_id = sp.student_id AND u.is_active
+        JOIN v_face_registration fr ON fr.student_id = sp.student_id AND NOT fr.face_registered
+        JOIN enrollments e ON e.student_id = sp.student_id AND e.status = 'active'
+                          AND e.section_id = md5('section:INT201-001')::uuid
+       WHERE sp.student_code IN ('66130500013', '66130500036', '66130500041')) <> 3 THEN
+    RAISE EXCEPTION 'team accounts: expected 3 active, unregistered, enrolled in INT201-001';
   END IF;
 
   -- consent_records is append-only

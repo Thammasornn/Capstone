@@ -1,6 +1,7 @@
 import { computed, onScopeDispose, ref } from 'vue'
 import { useAuthStore } from '@/features/auth/store'
 import { registerFace } from '../api'
+import { prepareImage } from '../prepare-image'
 import {
   ALLOWED_TYPES,
   MAX_FILE_BYTES,
@@ -16,7 +17,6 @@ import {
 export function useFaceRegistration() {
   const auth = useAuthStore()
   const step = ref(/** @type {'consent'|'photos'|'done'} */ ('consent'))
-  const ageConfirmed = ref(false)
   /** @type {import('vue').Ref<{ id: number, file: File, url: string, label: string }[]>} */
   const photos = ref([])
   const submitting = ref(false)
@@ -27,33 +27,49 @@ export function useFaceRegistration() {
 
   const canSubmit = computed(() => photos.value.length >= MIN_PHOTOS && !submitting.value)
 
-  /** @param {File} file @returns {string} ข้อความ error หรือ '' */
-  function checkFile(file) {
-    if (!ALLOWED_TYPES.includes(file.type)) return `${file.name}: ต้องเป็นไฟล์ JPEG หรือ PNG`
-    if (file.size > MAX_FILE_BYTES) return `${file.name}: ไฟล์ใหญ่เกิน 5MB`
-    return ''
+  const preparing = ref(false)
+
+  /**
+   * รับรูปจากกล้อง / เครื่อง → ย่อ + แปลงเป็น JPEG (prepare-image.js) แล้วตรวจกติกา API 5.10
+   * @param {File[]} files @param {string | ((index: number) => string)} [label] ชื่อมุม (หรือฟังก์ชันจากลำดับรูป)
+   */
+  async function addFiles(files, label = '') {
+    error.value = ''
+    preparing.value = true
+    try {
+      for (const original of files) {
+        if (photos.value.length >= MAX_PHOTOS) {
+          error.value = `เลือกได้สูงสุด ${MAX_PHOTOS} รูป`
+          break
+        }
+        let file
+        try {
+          file = await prepareImage(original)
+        } catch (e) {
+          error.value = e.message
+          continue
+        }
+        if (!ALLOWED_TYPES.includes(file.type) || file.size > MAX_FILE_BYTES) {
+          error.value = `${original.name}: รูปใหญ่เกิน 5MB หลังย่อแล้ว — เลือกรูปอื่น`
+          continue
+        }
+        const name = typeof label === 'function' ? label(photos.value.length) : label
+        if (!pushPhoto(file, name)) break
+      }
+    } finally {
+      preparing.value = false
+    }
   }
 
-  /** @param {File[]} files @param {string} [label] */
-  function addFiles(files, label = '') {
-    error.value = ''
-    for (const file of files) {
-      if (photos.value.length >= MAX_PHOTOS) {
-        error.value = `เลือกได้สูงสุด ${MAX_PHOTOS} รูป`
-        break
-      }
-      const problem = checkFile(file)
-      if (problem) {
-        error.value = problem
-        continue
-      }
-      const total = photos.value.reduce((sum, p) => sum + p.file.size, 0) + file.size
-      if (total > MAX_TOTAL_BYTES) {
-        error.value = 'ขนาดรูปรวมเกิน 25MB'
-        break
-      }
-      photos.value.push({ id: nextId++, file, url: URL.createObjectURL(file), label })
+  /** @returns {boolean} false = เกินขนาดรวม */
+  function pushPhoto(file, label) {
+    const total = photos.value.reduce((sum, p) => sum + p.file.size, 0) + file.size
+    if (total > MAX_TOTAL_BYTES) {
+      error.value = 'ขนาดรูปรวมเกิน 25MB'
+      return false
     }
+    photos.value.push({ id: nextId++, file, url: URL.createObjectURL(file), label })
+    return true
   }
 
   function removePhoto(id) {
@@ -77,7 +93,6 @@ export function useFaceRegistration() {
         auth.studentId,
         photos.value.map((p) => p.file),
         {
-          ageConfirmed: ageConfirmed.value,
           onUploadProgress: (e) =>
             (progress.value = e.total ? Math.round((e.loaded / e.total) * 100) : 0),
         },
@@ -96,9 +111,9 @@ export function useFaceRegistration() {
 
   return {
     step,
-    ageConfirmed,
     photos,
     submitting,
+    preparing,
     progress,
     error,
     result,

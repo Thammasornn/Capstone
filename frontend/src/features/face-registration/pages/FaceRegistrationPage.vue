@@ -8,7 +8,7 @@ import { useRouter } from 'vue-router'
 import BaseButton from '@/shared/components/BaseButton.vue'
 import BaseCard from '@/shared/components/BaseCard.vue'
 import { useAuthStore } from '@/features/auth/store'
-import { MAX_PHOTOS, MIN_PHOTOS } from '../constants'
+import { CAPTURE_ANGLES, MAX_PHOTOS, MIN_PHOTOS } from '../constants'
 import { useFaceRegistration } from '../composables/useFaceRegistration'
 import AngleCaptureStep from '../components/AngleCaptureStep.vue'
 import ConsentStep from '../components/ConsentStep.vue'
@@ -31,9 +31,9 @@ const started = ref(!face.value.registered)
 
 const {
   step,
-  ageConfirmed,
   photos,
   submitting,
+  preparing,
   progress,
   error,
   result,
@@ -43,9 +43,10 @@ const {
   submit,
 } = useFaceRegistration()
 const stepIndex = computed(() => ({ consent: 0, photos: 1, done: 2 })[step.value])
+/** รูปจากกล้องมือถือ: ติดชื่อมุมตามลำดับ (หน้าตรง → หันซ้าย → หันขวา) */
+const angleLabel = (index) => CAPTURE_ANGLES[index % CAPTURE_ANGLES.length].label
 
-function onAccept(payload) {
-  ageConfirmed.value = payload.ageConfirmed
+function onAccept() {
   step.value = 'photos'
 }
 </script>
@@ -99,7 +100,12 @@ function onAccept(payload) {
           :taken="photos.length"
           @captured="(file, label) => addFiles([file], label)"
         />
-        <PhotoPicker v-if="photos.length < MAX_PHOTOS" @picked="addFiles" />
+        <PhotoPicker
+          v-if="photos.length < MAX_PHOTOS"
+          :disabled="preparing || submitting"
+          @picked="(files, fromCamera) => addFiles(files, fromCamera ? angleLabel : '')"
+        />
+        <p v-if="preparing" class="text-center text-xs text-muted" role="status">กำลังเตรียมรูป…</p>
         <PhotoPreviewGrid :photos="photos" :disabled="submitting" @remove="removePhoto" />
         <p class="text-sm" :class="photos.length >= MIN_PHOTOS ? 'text-success' : 'text-muted'">
           เลือกแล้ว {{ photos.length }}/{{ MAX_PHOTOS }} รูป (ขั้นต่ำ {{ MIN_PHOTOS }})

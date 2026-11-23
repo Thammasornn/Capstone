@@ -1,12 +1,12 @@
 <script setup>
-/** ข้อความยินยอม v1 + checkbox 2 ข้อ (ไม่ติ๊กไว้ล่วงหน้า) */
+/** ข้อความยินยอม v1 + checkbox ยินยอม (ไม่ติ๊กไว้ล่วงหน้า) */
 import { computed, ref } from 'vue'
 import BaseButton from '@/shared/components/BaseButton.vue'
 import { CONSENT_TEXT } from '../consent-text'
 
 const emit = defineEmits(['accept', 'decline'])
-const checked = ref({ consent: false, adult: false })
-const canAccept = computed(() => checked.value.consent && checked.value.adult)
+const checked = ref({ consent: false })
+const canAccept = computed(() => checked.value.consent)
 </script>
 
 <template>
@@ -38,16 +38,12 @@ const canAccept = computed(() => checked.value.consent && checked.value.adult)
         />
         <span>{{ box.label }}</span>
       </label>
-      <p v-if="checked.consent && !checked.adult" class="text-xs text-warning">
-        ผู้ที่อายุยังไม่ถึง 20 ปี ต้องให้ผู้ปกครองยินยอมก่อน —
-        ติดต่ออาจารย์ผู้สอนเพื่อเช็คชื่อด้วยวิธีอื่น
-      </p>
     </div>
     <div class="flex flex-wrap justify-end gap-2">
       <BaseButton variant="secondary" @click="emit('decline')">{{
         CONSENT_TEXT.declineLabel
       }}</BaseButton>
-      <BaseButton :disabled="!canAccept" @click="emit('accept', { ageConfirmed: checked.adult })">
+      <BaseButton :disabled="!canAccept" @click="emit('accept')">
         {{ CONSENT_TEXT.acceptLabel }}
       </BaseButton>
     </div>
