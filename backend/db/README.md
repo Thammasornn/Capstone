@@ -9,6 +9,7 @@
 | `01_schema.sql` | ตาราง, constraint, index, trigger, view | ทุก env |
 | `02_seed_mock.sql` | ข้อมูล Mock-Up ภาค 1/2569 (ล้างทุกตารางก่อนใส่) | **local / UAT เท่านั้น** |
 | `03_demo_live_session.sql` | สร้างคาบที่ "กำลังเรียนอยู่ตอนนี้" ไว้เดโม Room Live | local / UAT (ไม่บังคับ) |
+| `04_add_team_students.sql` | เพิ่มบัญชีสมาชิกทีม 3 คน (ยังไม่ลงทะเบียนใบหน้า) เข้า DB ที่มี mock อยู่แล้ว **โดยไม่ล้างข้อมูล** · รันซ้ำได้ | local / UAT (ไม่บังคับ · ห้าม Production) |
 | `test/assertions.sql` | ตรวจ schema + ข้อมูล mock (CI ใช้) | local / CI |
 
 > ⚠️ `02_seed_mock.sql` เริ่มด้วย `TRUNCATE` ทุกตาราง — **ห้ามรันบน Production**
@@ -34,6 +35,15 @@ done
 ```
 
 `02` และ `03` รันซ้ำได้ — `02` คืนข้อมูลกลับเป็นชุดเดิมทุกครั้ง, `03` ย้ายคาบเดโมมาที่เวลาปัจจุบัน
+
+**เพิ่มบัญชีทีมเข้า uat ที่มีข้อมูลอยู่แล้ว** (ไม่อยากรัน `02` ใหม่เพราะจะลบใบหน้าที่ลงทะเบียนไว้) — `02` มีบัญชีทีมอยู่แล้ว ใช้ `04` เฉพาะ DB ที่ seed ไว้ก่อนหน้านี้:
+
+```bash
+sudo k3s kubectl -n uat exec -i statefulset/postgres -- \
+  psql -U postgres -d bangmod_attendance -v ON_ERROR_STOP=1 < backend/db/04_add_team_students.sql
+```
+
+`04` ตรวจก่อนว่ามีกลุ่มเรียน mock `INT201-001` — ไม่มี (เช่น Production) จะ error และไม่เพิ่มอะไร
 
 ## บัญชี Mock (รหัสผ่านทุกบัญชี `Password@123`)
 
@@ -64,10 +74,11 @@ done
 | ไม่มีวิชาเทอมนี้ (ปี 4 ฝึกงาน) | `66130599004` | หน้าว่าง ("ยังไม่มีข้อมูล" / "ยังไม่มีรายวิชา") |
 | จบการศึกษา | `65130500017` | login ไม่ได้ (บัญชีถูกปิด) |
 | ลาออก | `66130599005` | login ไม่ได้ (บัญชีถูกปิด) |
+| สมาชิกทีม (ยังไม่ลงทะเบียนใบหน้า) | `66130500013`, `66130500036`, `66130500041` | ลงทะเบียนใบหน้าด้วยรูปตัวเองจริง · อยู่ใน INT201-001 |
 
 
 รหัสผ่านเก็บเป็น BCrypt (`$2a$`, cost 10) จาก `pgcrypto` — ใช้กับ `BCryptPasswordEncoder` ของ Spring Security ได้ตรงๆ
-ชื่อคนทั้งหมดเป็นชื่อสมมติ · embedding เป็น byte สุ่ม ไม่ใช่ใบหน้าจริง
+ชื่อคนเป็นชื่อสมมติ ยกเว้นสมาชิกทีม 3 คน (ชื่อจริงจาก README ที่ root · ไม่มีข้อมูลใบหน้าใน seed) · embedding เป็น byte สุ่ม ไม่ใช่ใบหน้าจริง
 
 ## ข้อมูล Mock-Up
 
@@ -80,7 +91,7 @@ done
 | INT101-002 | จ. 13:00–16:00 | 4301 | 13:00–13:30 | ปี 1 (6) |
 | INT102-001 Web Technology | พ. 09:00–12:00 | 4302 | 09:00–09:30 | ปี 1 (12) + persona (3) |
 | INT103-001 Programming Fundamentals | อ. + พฤ. 09:00–10:30 | 4303 | 09:00–09:20 (ตรงเวลา 10 นาที) | ปี 1 (12) + persona (3) |
-| INT201-001 Client-Side Web Programming | อ. 13:00–16:00 | 4302 | 13:00–13:30 | ปี 2 (12, ถอน 1) |
+| INT201-001 Client-Side Web Programming | อ. 13:00–16:00 | 4302 | 13:00–13:30 | ปี 2 (12, ถอน 1) + สมาชิกทีม 3 |
 | INT202-001 Database Management Systems | พ. 13:00–16:00 | 4303 | **ปิดกล้อง** — อาจารย์เช็คชื่อเอง | ปี 2 (12) + ปี 3 ลงซ้ำ 2 |
 | INT301-001 Software Engineering | จ. + พ. 13:00–14:30 | 4304 | 13:00–14:30, ตรงเวลา 20 นาที, **สายถึง 13:30** (กฎแบบ R2) | ปี 3 (12) |
 | INT302-001 Information Security | พฤ. 13:00–16:00 | 4305 (กล้อง `no_signal`) | 13:00–13:30 | ปี 3 (12) |
@@ -102,17 +113,18 @@ INT299 เป็นวิชาที่ถูก soft delete (`deleted_at`) ไ
 | 69130599003 | **persona** อายุไม่ถึง 20 (`is_adult = false`, B9) ยังไม่ได้ยินยอม → เช็คชื่อด้วยมือ |
 | 66130599004 | **persona** ปี 4 ฝึกงาน ไม่มีวิชาเทอมนี้ (ลงทะเบียนใบหน้าแล้ว) |
 | 66130599005 | **persona** ลาออก (`academic_status = withdrawn`) → บัญชีถูกปิด login ไม่ได้ · งานลบใบหน้ารอคิว |
+| 66130500013, 66130500036, 66130500041 | **สมาชิกทีม** (behaviour `noface`) ยังไม่ยินยอม / ไม่มีใบหน้า · INT201-001 → เช็คชื่อด้วยมือ + แจ้งเตือนลงทะเบียน |
 
 | ตาราง | แถว | ตาราง | แถว |
 |---|---|---|---|
-| users | 49 | attendance_records | 1,639 |
-| student_profiles | 42 | consent_records | 39 |
+| users | 52 | attendance_records | 1,670 |
+| student_profiles | 45 | consent_records | 39 |
 | rooms / cameras | 5 / 5 | face_embeddings | 122 |
 | semesters | 2 | data_deletion_jobs | 3 |
-| courses | 8 | audit_logs | 390 |
+| courses | 8 | audit_logs | 429 |
 | sections | 8 | follow_ups (R2) | 8 |
-| enrollments | 95 | occupancy_snapshots (R2) | 135 |
-| class_sessions | 150 | notifications (R3) | 104 |
+| enrollments | 98 | occupancy_snapshots (R2) | 135 |
+| class_sessions | 150 | notifications (R3) | 113 |
 | consent_versions | 2 (`v0` เก่า, `v1` ปัจจุบัน) | | |
 
 **ID คงที่ทุก env** — คำนวณจาก `md5('<key>')::uuid` ใช้ใน Postman / mock ฝั่ง Front-End ได้
@@ -168,6 +180,12 @@ spring.jackson.time-zone=Asia/Bangkok
 - ถ้าจะใช้ Flyway: copy `01_schema.sql` เป็น `db/migration/V1__init_schema.sql` (ตัด `BEGIN;` / `COMMIT;` ออก) และวาง `02_seed_mock.sql` ไว้ใน location ที่เปิดเฉพาะ profile `local` / `uat`
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-23 — บัญชีสมาชิกทีม 3 คน (ยังไม่ลงทะเบียนใบหน้า)
+- **ทำอะไร:** เพิ่ม `66130500013` จักรพงษ์, `66130500036` ทัตพล, `66130500041` ธรรมสรณ์ ใน `mock_students` (behaviour `noface`, ปี 2566, active) และลงทะเบียน INT201-001 · รหัสผ่าน `Password@123` เหมือนบัญชีอื่น · เพิ่ม `04_add_team_students.sql` สำหรับเพิ่มบัญชีเดียวกันเข้า DB ที่ seed ไว้แล้วโดยไม่ TRUNCATE (ON CONFLICT DO NOTHING, คาบที่จบแล้วได้ `on_time` แบบ manual, ไม่มีวิชา mock = error) · `assertions.sql`: users 52, student_profiles 45 และตรวจว่า 3 บัญชี active / ยังไม่ลงทะเบียน / อยู่ใน INT201-001 · อัปเดตตารางจำนวนแถว บัญชี และกรณีทดสอบ
+- **ไฟล์ที่เกี่ยวข้อง:** `02_seed_mock.sql`, `04_add_team_students.sql`, `test/assertions.sql`, `README.md`
+- **เหตุผล:** ให้สมาชิกทีมทดสอบลงทะเบียนใบหน้าด้วยหน้าตัวเองบน uat
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ทดสอบแล้วบน PostgreSQL ชั่วคราว: `04` เพิ่มเข้า DB เดิมได้ / รันซ้ำไม่ซ้ำ / ปฏิเสธ DB ที่ไม่มี mock · commit นี้แก้ `backend/db/` → CD บน VM จะหยุด ต้องรัน `04` บน uat แล้ว `ALLOW_DB_CHANGE=1 ~/bangmod-cd/bin/deploy.sh uat` เอง
 
 ### 2026-11-22 — นักศึกษาทดสอบครบทุกสถานะ (test personas)
 - **ทำอะไร:** เพิ่ม 5 คนใน `mock_students` (behaviour ใหม่): `69130599001` ยินยอม `v0` (เพิ่ม `consent_versions` v0 ที่ไม่ใช่ฉบับปัจจุบัน) → `needs_reconsent`, `69130599002` ยินยอม v1 แต่ไม่มี embedding, `69130599003` `is_adult = false` ยังไม่ยินยอม, `66130599004` ปี 4 ไม่มีวิชา, `66130599005` ลาออก (`academic_status = withdrawn`, บัญชีปิด, งานลบใบหน้ารอคิว) · คนที่ไม่มีใบหน้าได้เช็คชื่อแบบ manual + แจ้งเตือนลงทะเบียน · `assertions.sql`: users 49, student_profiles 42 และตรวจว่าแต่ละ persona อยู่ในสถานะที่ตั้งใจ · อัปเดตตารางจำนวนแถวและกรณีทดสอบ

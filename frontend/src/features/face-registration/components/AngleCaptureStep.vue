@@ -1,12 +1,15 @@
 <script setup>
 /**
- * ถ่ายรูปด้วยกล้องของเครื่องตามมุม (หน้าตรง → ซ้าย → ขวา) · ต้องใช้ HTTPS หรือ localhost
+ * ถ่ายรูปด้วยกล้องของเครื่องตามมุม (หน้าตรง → ซ้าย → ขวา) ในหน้าเว็บ
+ * เบราว์เซอร์ให้ใช้กล้องสด (getUserMedia) เฉพาะ HTTPS / localhost → เว็บเป็น HTTP จะไม่แสดงปุ่ม
+ * แต่บอกให้ใช้ "ถ่ายรูปด้วยกล้องมือถือ" (PhotoPicker) หรือ "เลือกรูปจากเครื่อง" แทน
  * emit captured(File, label)
  */
 import { computed, onBeforeUnmount, ref } from 'vue'
 import BaseButton from '@/shared/components/BaseButton.vue'
 import { CAPTURE_ANGLES } from '../constants'
 import FaceGuideOverlay from './FaceGuideOverlay.vue'
+import { canUseLiveCamera, isTouchDevice } from '../prepare-image'
 
 const props = defineProps({ taken: { type: Number, default: 0 } })
 const emit = defineEmits(['captured'])
@@ -16,6 +19,8 @@ const active = ref(false)
 const error = ref('')
 /** @type {MediaStream | null} */
 let stream = null
+const liveCamera = canUseLiveCamera()
+const touch = isTouchDevice()
 
 const angle = computed(() => CAPTURE_ANGLES[props.taken % CAPTURE_ANGLES.length])
 
@@ -30,8 +35,9 @@ async function startCamera() {
     await Promise.resolve()
     if (video.value) video.value.srcObject = stream
   } catch {
-    error.value =
-      'เปิดกล้องไม่ได้ — อนุญาตการใช้กล้องในเบราว์เซอร์ หรือใช้ “เลือกรูปจากเครื่อง” แทน'
+    error.value = touch
+      ? 'เปิดกล้องไม่ได้ — อนุญาตการใช้กล้องในเบราว์เซอร์ หรือใช้ “ถ่ายรูปด้วยกล้องมือถือ” แทน'
+      : 'เปิดกล้องไม่ได้ — อนุญาตการใช้กล้องในเบราว์เซอร์ หรือใช้ “เลือกรูปจากเครื่อง” แทน'
   }
 }
 
@@ -65,7 +71,22 @@ onBeforeUnmount(stopCamera)
 </script>
 
 <template>
-  <div class="flex flex-col gap-3">
+  <p
+    v-if="!liveCamera"
+    class="rounded-field bg-primary/5 px-4 py-3 text-center text-sm text-ink"
+    role="note"
+  >
+    <template v-if="touch"
+      >กดปุ่ม <strong>ถ่ายรูปด้วยกล้องมือถือ</strong> ด้านล่าง ถ่ายทีละมุม: หน้าตรง → หันซ้าย →
+      หันขวา</template
+    >
+    <template v-else>
+      หน้านี้เปิดผ่าน HTTP เบราว์เซอร์จึงไม่ให้ใช้กล้องสดในหน้าเว็บ — ใช้
+      <strong>เลือกรูปจากเครื่อง</strong> (รูปหน้าตรง หันซ้าย หันขวา)
+      หรือเปิดหน้านี้บนมือถือเพื่อถ่ายด้วยกล้อง
+    </template>
+  </p>
+  <div v-else class="flex flex-col gap-3">
     <div
       v-if="active"
       class="relative mx-auto aspect-[4/3] w-full max-w-md overflow-hidden rounded-card bg-dark"

@@ -25,7 +25,7 @@ CREATE FUNCTION pg_temp.uid(text) RETURNS uuid LANGUAGE sql IMMUTABLE AS $$ SELE
 CREATE FUNCTION pg_temp.h(text)   RETURNS int  LANGUAGE sql IMMUTABLE AS $$ SELECT abs(hashtext($1)) % 1000 $$;
 
 -- =====================================================================
--- 1. Users — 2 admins, 5 lecturers, 37 students + 5 test personas (42)
+-- 1. Users — 2 admins, 5 lecturers, 37 students + 5 test personas + 3 team members (45)
 -- =====================================================================
 
 -- Staff
@@ -105,7 +105,12 @@ INSERT INTO mock_students VALUES
   ('69130599002','นางสาว','ทดสอบ',      'ยินยอมแต่ไม่มีใบหน้า', 2569,'consentonly','active'),
   ('69130599003','นาย',   'ทดสอบ',      'อายุไม่ถึง20',  2569,'minor',      'active'),
   ('66130599004','นางสาว','ทดสอบ',      'ไม่มีวิชาเทอมนี้', 2566,'nocourse',   'active'),
-  ('66130599005','นาย',   'ทดสอบ',      'ลาออก',        2566,'resigned',   'withdrawn');
+  ('66130599005','นาย',   'ทดสอบ',      'ลาออก',        2566,'resigned',   'withdrawn'),
+  -- Project team (real members, see README "สมาชิก") — not registered yet, enrolled in INT201-001
+  -- so they can test face registration themselves (their real face data is NOT part of this seed)
+  ('66130500013','นาย',   'จักรพงษ์',    'สุขสมบรูณ์',    2566,'noface',     'active'),
+  ('66130500036','นาย',   'ทัตพล',      'สีล้ง',         2566,'noface',     'active'),
+  ('66130500041','นาย',   'ธรรมสรณ์',    'ฉัตรชยานุสรณ',   2566,'noface',     'active');
 
 INSERT INTO users (user_id, email, password_hash, title, first_name, last_name, role, is_active, created_at)
 SELECT pg_temp.uid('student:' || s.student_code),
@@ -222,6 +227,8 @@ FROM (
   UNION ALL SELECT 'INT301-001', student_code, NULL FROM mock_students WHERE entry_year = 2567
   UNION ALL SELECT 'INT302-001', student_code, NULL FROM mock_students WHERE entry_year = 2567
   UNION ALL SELECT 'INT202-001', c, NULL FROM unnest(ARRAY['67130500002', '67130500009']) c
+  -- Project team: INT201-001 (has the live demo session in room 4302)
+  UNION ALL SELECT 'INT201-001', c, NULL FROM unnest(ARRAY['66130500013', '66130500036', '66130500041']) c
 ) x(sec, code, dropped);
 
 -- =====================================================================
