@@ -38,7 +38,9 @@ cron ทุก 3 นาที → ~/bangmod-cd/bin/deploy.sh uat --if-changed
         └ใช่─▶ แก้ backend/db/? ─ใช่─▶ หยุด รอคนอัปเดต DB (blocked)
                  └ไม่─▶ build image (tag = commit) → push localhost:5000 → kubectl apply
                           → รอ backend/frontend → ตรวจ (หน้าเว็บ 200, /api/me 401, /api/internal 404, ไม่ใช้โปรไฟล์ local)
-                          ─ผ่าน─▶ ok   ─ไม่ผ่าน─▶ rollout undo (กลับเวอร์ชันก่อน) → failed
+                          (ตรวจซ้ำได้ ~90 วินาที)
+                          ─ผ่าน─▶ ok   ─ไม่ผ่าน─▶ เก็บ pod + log backend ลง log → กลับไปใช้ image ของ deploy ที่สำเร็จครั้งล่าสุด → failed
+                                                 (ยังไม่เคยสำเร็จผ่าน CD = ไม่ rollback ปล่อยเวอร์ชันใหม่ไว้)
 ```
 
 - VM **ดึงเอง** (ไม่ใช้ GitHub Actions runner) — repo เป็น public จึงไม่เปิดให้ GitHub สั่งรันโค้ดบน VM
@@ -175,6 +177,7 @@ curl -s localhost:18080/health && kill %1                       # {"status":"ok"
 | pod `ai-service` ไม่ขึ้น (`CrashLoopBackOff` / mount `/opt/bangmod/models` ไม่ได้) | ยังไม่ได้ติดตั้งโมเดล หรือชื่อไฟล์ไม่ตรง | หัวข้อ "ติดตั้งโมเดล AI" · `ls -l /opt/bangmod/models` ต้องมี 2 ไฟล์ชื่อตามตาราง |
 | ai-service log: `YOLO model ไม่มี keypoints (ต้องเป็นรุ่น face-pose)` | ใช้ YOLO face แบบ detection อย่างเดียว | ใช้ไฟล์ของ derronqi ตาม `models/fetch-models.sh` (ตรวจ SHA-256) |
 | Claude Code บน VM ใช้ sudo ไม่ได้ | sudo ถามรหัสผ่าน (ตั้งใจ — Claude ไม่ควรถือรหัส) | ขั้นที่ใช้ sudo ให้คนรันเอง แล้วบอก Claude ให้ทำต่อ |
+| `deploy.sh status`: `/uat/api/me ไม่ได้ 401 (backend ไม่ตอบ) (rollback แล้ว)` แล้ว backend `ImagePullBackOff` · `docker.io/library/bangmod-backend:latest` `pull access denied` (2026-11-23) | deploy ผ่าน CD ครั้งแรก: ตรวจ `/api/me` ครั้งเดียวไม่ลองซ้ำ แล้ว `rollout undo` กลับไป Deployment เดิมที่ใช้ image import เอง (`:latest` ไม่มี `imagePullPolicy` → K3s ไปดึงจาก docker.io) | `deploy.sh` ฉบับ 2026-11-23 ตรวจซ้ำ ~90 วินาที และครั้งแรกไม่ rollback · อัปเดตสคริปต์แล้ว deploy ใหม่: `cd ~/Capstone && git pull && ./devops/cd/setup.sh && ~/bangmod-cd/bin/deploy.sh uat` (setup.sh รันซ้ำได้ — copy `deploy.sh` ล่าสุดไป `~/bangmod-cd/bin/`) |
 
 ## ข้อควรรู้
 
@@ -185,6 +188,12 @@ curl -s localhost:18080/health && kill %1                       # {"status":"ok"
 - ไม่มี HTTPS ใน manifest ชุดนี้ (Traefik รับ HTTP) — กล้องในเบราว์เซอร์ (หน้าลงทะเบียนใบหน้า) ต้องใช้ HTTPS ยกเว้น localhost
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-23 — แก้ CD: deploy ครั้งแรกพังแล้ว rollback ทำให้ backend ล่ม
+- **ทำอะไร:** `cd/deploy.sh` (1) ตรวจผลหลัง rollout ลองซ้ำได้ถึง ~90 วินาที (`CHECK_TRIES` × 3 วินาที, curl `--max-time 10`) และบอก HTTP code ที่ได้ในข้อความ (2) ก่อน rollback เก็บ `kubectl get pods` + log backend 80 บรรทัดลง log ของรอบนั้น (pod ใหม่จะหายหลัง rollback) (3) rollback ใช้ `kubectl set image` กลับเป็น image ของ deploy ที่สำเร็จครั้งล่าสุด (`state/<env>.deployed`) แทน `rollout undo` · ถ้ายังไม่เคยสำเร็จผ่าน CD จะไม่ rollback · แผนภาพ CD + แถวใหม่ในตารางปัญหา
+- **ไฟล์ที่เกี่ยวข้อง:** `cd/deploy.sh`, `README.md`
+- **เหตุผล:** ติดตั้ง CD บน VM ครั้งแรก (2026-11-23) แล้ว deploy `a9c53be` ไม่ผ่านการตรวจ `/uat/api/me` (ตรวจครั้งเดียวทันทีหลัง rollout) → `rollout undo` กลับไป Deployment ที่ใช้ `bangmod-backend:latest` ซึ่ง K3s ไปดึงจาก docker.io ไม่ได้ → backend `ImagePullBackOff` · uat ใช้ API ไม่ได้
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ทดสอบด้วยคำสั่งจำลอง (docker / kubectl / curl) 3 กรณี: ครั้งแรก backend ตอบช้า (000, 000 แล้ว 401) → ok · ครั้งแรก backend ไม่ตอบเลย → failed ไม่ rollback · เคยสำเร็จแล้วพัง → `set image` กลับเป็น tag ของ commit ก่อนหน้า · ยังไม่รู้แน่ว่าทำไม `/api/me` ไม่ได้ 401 ตอนนั้น (log ของ pod ใหม่หายไปกับ rollback) — รอบหน้าถ้าพังจะมี log backend ในไฟล์ log · ต้องรัน `setup.sh` ซ้ำบน VM เพื่อให้ `~/bangmod-cd/bin/deploy.sh` เป็นฉบับใหม่
 
 ### 2026-11-22 — คู่มือ + สคริปต์ติดตั้งโมเดล AI
 - **ทำอะไร:** เพิ่มหัวข้อ "ติดตั้งโมเดล AI" (ที่มา, สัญญาอนุญาต, ขั้นตอน, ตรวจผล, ทางเลือกเมื่อ Google Drive ใช้ไม่ได้) และ `models/fetch-models.sh` (ดาวน์โหลดลง `/opt/bangmod/models` + ตรวจ SHA-256 · รันซ้ำได้ · hash ไม่ตรงไม่ใช้) · เพิ่ม 2 แถวในตารางปัญหา (ai-service ไม่ขึ้น, "YOLO model ไม่มี keypoints") · ขั้น 0 ของ Deploy ครั้งแรกชี้มาที่สคริปต์

@@ -163,10 +163,23 @@ kubectl apply -k "$GEN"
 rm -f "$WORK/devops/k8s/overlays/$ENV_NAME/secret.env"
 
 rollback() {
-  log "✗ $1 → rollback backend / frontend เป็นเวอร์ชันก่อนหน้า"
-  kubectl -n "$ENV_NAME" rollout undo deployment/backend  || true
-  kubectl -n "$ENV_NAME" rollout undo deployment/frontend || true
-  finish failed "$1 (rollback แล้ว)"
+  log "✗ $1"
+  log "▸ สถานะตอนพัง (ไว้หาสาเหตุ — pod ใหม่จะหายหลัง rollback)"
+  kubectl -n "$ENV_NAME" get pods -o wide || true
+  kubectl -n "$ENV_NAME" logs deployment/backend --tail=80 || true
+  if [ -z "$LAST_OK" ]; then
+    # deploy ผ่าน CD ครั้งแรก: เวอร์ชันก่อนหน้าใช้ image ที่ import เอง (bangmod-backend:latest)
+    # rollout undo จะกลับไปดึงจาก docker.io แล้วติด ImagePullBackOff → ปล่อยเวอร์ชันนี้ไว้ดีกว่า
+    log "! ไม่ rollback: ยังไม่เคย deploy ผ่าน CD สำเร็จ (เวอร์ชันก่อนหน้า start ใหม่ไม่ได้) — แก้ตามสาเหตุใน log"
+    finish failed "$1 (ไม่ rollback — ยังไม่เคย deploy ผ่าน CD สำเร็จ)"
+    exit 1
+  fi
+  # กลับไปใช้ image ของ deploy ที่สำเร็จครั้งล่าสุด (อยู่ใน registry) — แน่นอนกว่า rollout undo
+  local prev="${LAST_OK:0:12}"
+  log "▸ rollback backend / frontend เป็น $prev (deploy สำเร็จครั้งล่าสุด)"
+  kubectl -n "$ENV_NAME" set image deployment/backend backend="$REGISTRY/bangmod-backend:$prev" || true
+  kubectl -n "$ENV_NAME" set image deployment/frontend frontend="$REGISTRY/bangmod-frontend:$ENV_NAME-$prev" || true
+  finish failed "$1 (rollback เป็น $prev แล้ว)"
   exit 1
 }
 
@@ -180,10 +193,20 @@ log "▸ ตรวจผล"
 if kubectl -n "$ENV_NAME" logs deployment/backend --tail=500 | grep -q "โปรไฟล์ local"; then
   rollback "backend ใช้โปรไฟล์ local (key ทดสอบ)"
 fi
-code() { curl -s -o /dev/null -w '%{http_code}' "$@" || true; }
-[ "$(code "$PUBLIC_URL/$ENV_NAME/")" = 200 ]                || rollback "หน้าเว็บ /$ENV_NAME/ ไม่ได้ 200"
-[ "$(code "$PUBLIC_URL/$ENV_NAME/api/me")" = 401 ]          || rollback "/$ENV_NAME/api/me ไม่ได้ 401 (backend ไม่ตอบ)"
-[ "$(code -X POST "$PUBLIC_URL/$ENV_NAME/api/internal/x")" = 404 ] || rollback "/$ENV_NAME/api/internal ไม่ได้ 404"
+# ลองซ้ำได้ถึง ~90 วินาที: rollout เสร็จแล้วแต่ช่วงสลับ pod เก่า → ใหม่ Traefik / Service ยังอาจส่งไป pod ที่กำลังปิด
+CHECK_TRIES="${CHECK_TRIES:-30}"
+expect() {   # expect <http code ที่ต้องได้> <ข้อความถ้าไม่ผ่าน> <curl args...>
+  local want="$1" msg="$2" got=""; shift 2
+  for _ in $(seq 1 "$CHECK_TRIES"); do
+    got="$(curl -s -o /dev/null --max-time 10 -w '%{http_code}' "$@" || true)"
+    [ "$got" = "$want" ] && return 0
+    sleep 3
+  done
+  rollback "$msg (ได้ ${got:-ไม่มีคำตอบ})"
+}
+expect 200 "หน้าเว็บ /$ENV_NAME/ ไม่ได้ 200"                 "$PUBLIC_URL/$ENV_NAME/"
+expect 401 "/$ENV_NAME/api/me ไม่ได้ 401 (backend ไม่ตอบ)"   "$PUBLIC_URL/$ENV_NAME/api/me"
+expect 404 "/$ENV_NAME/api/internal ไม่ได้ 404"              -X POST "$PUBLIC_URL/$ENV_NAME/api/internal/x"
 
 echo "$TARGET" > "$STATE/$ENV_NAME.deployed"
 finish ok "$PUBLIC_URL/$ENV_NAME/"
