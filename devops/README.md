@@ -1,6 +1,6 @@
 # devops
 
-Deploy บน Faculty VM ด้วย **K3s** · 2 namespace: `prod` → `http://cp26ms3.sit.kmutt.ac.th/prod/` และ `uat` → `http://cp26ms3.sit.kmutt.ac.th/uat/`
+Deploy บน Faculty VM ด้วย **K3s** · 2 namespace: `prod` → `http://cp26ms3.sit.kmutt.ac.th/prod/` และ `uat` → `http://cp26ms3.sit.kmutt.ac.th/capstone26/uat/` (ภายนอก / HTTPS: `https://bscit.sit.kmutt.ac.th/capstone26/uat/` — ดู "forward จาก bscit")
 
 โดเมน `cp26ms3.sit.kmutt.ac.th` ชี้ไปที่ VM `10.4.56.69` (DNS ของคณะ) · Ingress ไม่ผูก host จึงเข้าด้วย IP ได้เหมือนกัน
 
@@ -38,7 +38,9 @@ cron ทุก 3 นาที → ~/bangmod-cd/bin/deploy.sh uat --if-changed
         └ใช่─▶ แก้ backend/db/? ─ใช่─▶ หยุด รอคนอัปเดต DB (blocked)
                  └ไม่─▶ build image (tag = commit) → push localhost:5000 → kubectl apply
                           → รอ backend/frontend → ตรวจ (หน้าเว็บ 200, /api/me 401, /api/internal 404, ไม่ใช้โปรไฟล์ local)
-                          ─ผ่าน─▶ ok   ─ไม่ผ่าน─▶ rollout undo (กลับเวอร์ชันก่อน) → failed
+                          (ตรวจซ้ำได้ ~90 วินาที)
+                          ─ผ่าน─▶ ok   ─ไม่ผ่าน─▶ เก็บ pod + log backend ลง log → กลับไปใช้ image ของ deploy ที่สำเร็จครั้งล่าสุด → failed
+                                                 (ยังไม่เคยสำเร็จผ่าน CD = ไม่ rollback ปล่อยเวอร์ชันใหม่ไว้)
 ```
 
 - VM **ดึงเอง** (ไม่ใช้ GitHub Actions runner) — repo เป็น public จึงไม่เปิดให้ GitHub สั่งรันโค้ดบน VM
@@ -78,13 +80,36 @@ cd ~/Capstone && git pull && ./devops/cd/setup.sh       # ไม่ต้อง 
 | host | `cp26ms3.sit.kmutt.ac.th` / `10.4.56.69` |
 | K3s | v1.37.2+k3s1 · node `cp26ms3` · Traefik รับ port 80 |
 | user ที่ deploy | `adminstudent` · repo ที่ `~/Capstone` |
-| uat | http://cp26ms3.sit.kmutt.ac.th/uat/ |
+| uat | http://cp26ms3.sit.kmutt.ac.th/capstone26/uat/ · https://bscit.sit.kmutt.ac.th/capstone26/uat/ (ผ่าน forward ของคณะ) |
 | prod | http://cp26ms3.sit.kmutt.ac.th/prod/ (ยังไม่ deploy) |
+
+## forward จาก bscit (HTTPS ของคณะ)
+
+`https://bscit.sit.kmutt.ac.th/capstone26/` เป็น NGINX ของคณะ (เราแก้เองไม่ได้ — ต้องขอผู้ดูแล) ให้ส่ง `/capstone26/...` ต่อมาที่ VM **โดยไม่ตัด prefix** · HTTPS จบที่ bscit จึงใช้กล้องสดในหน้าลงทะเบียนใบหน้าได้
+
+```nginx
+location /capstone26/ {
+    proxy_pass http://10.4.56.69;          # ไม่มี / ต่อท้าย = ส่ง /capstone26/... มาทั้งก้อน
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto https;
+    client_max_body_size 25m;              # อัปโหลดรูปใบหน้า 5 รูป (ค่าเริ่มต้น 1m → 413)
+    proxy_read_timeout 90s;                # ลงทะเบียนใบหน้ารอ AI
+    proxy_buffering off;                   # SSE หน้าห้องเรียนสด
+}
+```
+
+- ถ้าตัด prefix (`proxy_pass http://10.4.56.69/;`) หน้าเว็บจะขาว — ไฟล์ assets อ้าง `/capstone26/uat/assets/...`
+- uat อยู่ที่ `/capstone26/uat/` · `/capstone26/` เฉย ๆ ยังว่าง (404) เผื่อ prod
+- ย้าย path: แก้ `VITE_BASE` ใน `frontend/.env.<mode>` กับ path ของ Ingress ใน `k8s/overlays/<env>` ให้ตรงกัน (`deploy.sh` หยุดก่อน apply ถ้าไม่ตรง) · `Dockerfile` และการตรวจหลัง deploy อ่านจาก `VITE_BASE` เอง
+- ภาพสดจาก MediaMTX (`MEDIA_BASE_URL` = `http://...:8889`) จะถูกเบราว์เซอร์บล็อกบนหน้า HTTPS — ต้องขอ forward path ของภาพด้วยเมื่อติดตั้ง MediaMTX
 
 ## ประวัติการ deploy
 
 | วันที่ | namespace | commit | ผล | หมายเหตุ |
 |---|---|---|---|---|
+| 2026-11-23 | uat | `c14d9e9` (Dev · CD) | ✅ ตรวจจากภายนอก: หน้าเว็บตัวใหม่, login ทุกบัญชีทดสอบตามที่ควร, `/api/me` 401, `/api/internal` 404 | ติดตั้ง CD ครั้งแรก · reseed 02 + 03 (users 52 · สำรองที่ `~/backups/uat-before-reseed-2026-11-23-1743.dump`) · deploy `a9c53be` รอบแรกตรวจไม่ผ่าน → rollback ทำ backend ล่มประมาณ 14 นาที → แก้ `deploy.sh` (`c14d9e9`) · โมเดล AI ติดตั้งแล้ว ai-service Running |
 | 2026-11-22 | uat | `d0d3dd8` (main) | ✅ ผู้ใช้ทดสอบผ่าน browser แล้ว | ข้อมูล mock (`--seed`) · ยังไม่มีโมเดล AI (ai-service ไม่ขึ้น), MediaMTX และ HTTPS · ใช้โดเมนตั้งแต่ `32ce386` |
 
 เพิ่มแถวใหม่ทุกครั้งที่ deploy (ใหม่อยู่บน) — ห้ามใส่ค่าความลับในตารางนี้
@@ -122,7 +147,7 @@ kubectl apply -k devops/k8s/overlays/uat
 
 # 4) ตรวจ
 kubectl -n uat get pods
-curl http://cp26ms3.sit.kmutt.ac.th/uat/api/auth/login -H 'Content-Type: application/json' \
+curl http://cp26ms3.sit.kmutt.ac.th/capstone26/uat/api/auth/login -H 'Content-Type: application/json' \
   -d '{"email":"admin@sit.kmutt.ac.th","password":"Password@123"}'
 ```
 
@@ -175,6 +200,7 @@ curl -s localhost:18080/health && kill %1                       # {"status":"ok"
 | pod `ai-service` ไม่ขึ้น (`CrashLoopBackOff` / mount `/opt/bangmod/models` ไม่ได้) | ยังไม่ได้ติดตั้งโมเดล หรือชื่อไฟล์ไม่ตรง | หัวข้อ "ติดตั้งโมเดล AI" · `ls -l /opt/bangmod/models` ต้องมี 2 ไฟล์ชื่อตามตาราง |
 | ai-service log: `YOLO model ไม่มี keypoints (ต้องเป็นรุ่น face-pose)` | ใช้ YOLO face แบบ detection อย่างเดียว | ใช้ไฟล์ของ derronqi ตาม `models/fetch-models.sh` (ตรวจ SHA-256) |
 | Claude Code บน VM ใช้ sudo ไม่ได้ | sudo ถามรหัสผ่าน (ตั้งใจ — Claude ไม่ควรถือรหัส) | ขั้นที่ใช้ sudo ให้คนรันเอง แล้วบอก Claude ให้ทำต่อ |
+| `deploy.sh status`: `/uat/api/me ไม่ได้ 401 (backend ไม่ตอบ) (rollback แล้ว)` แล้ว backend `ImagePullBackOff` · `docker.io/library/bangmod-backend:latest` `pull access denied` (2026-11-23) | deploy ผ่าน CD ครั้งแรก: ตรวจ `/api/me` ครั้งเดียวไม่ลองซ้ำ แล้ว `rollout undo` กลับไป Deployment เดิมที่ใช้ image import เอง (`:latest` ไม่มี `imagePullPolicy` → K3s ไปดึงจาก docker.io) | `deploy.sh` ฉบับ 2026-11-23 ตรวจซ้ำ ~90 วินาที และครั้งแรกไม่ rollback · อัปเดตสคริปต์แล้ว deploy ใหม่: `cd ~/Capstone && git pull && ./devops/cd/setup.sh && ~/bangmod-cd/bin/deploy.sh uat` (setup.sh รันซ้ำได้ — copy `deploy.sh` ล่าสุดไป `~/bangmod-cd/bin/`) |
 
 ## ข้อควรรู้
 
@@ -185,6 +211,30 @@ curl -s localhost:18080/health && kill %1                       # {"status":"ok"
 - ไม่มี HTTPS ใน manifest ชุดนี้ (Traefik รับ HTTP) — กล้องในเบราว์เซอร์ (หน้าลงทะเบียนใบหน้า) ต้องใช้ HTTPS ยกเว้น localhost
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-24 — ย้าย uat ไป `/capstone26/uat/` (รับ forward จาก bscit)
+- **ทำอะไร:** Ingress ของ uat เป็น `/capstone26/uat` · เพิ่มหัวข้อ "forward จาก bscit" (ตัวอย่าง NGINX ที่ต้องขอคณะ) · อัปเดต URL ในเอกสารและกฎข้อ 15 ใน `CLAUDE.md`
+- **ไฟล์ที่เกี่ยวข้อง:** `k8s/overlays/uat/kustomization.yaml`, `k8s/base/ingress.yaml`, `README.md`, `../frontend/.env.uat`, `../CLAUDE.md`
+- **เหตุผล:** ให้เปิด uat จาก `https://bscit.sit.kmutt.ac.th/capstone26/uat/` ได้ (HTTPS ของคณะ → กล้องสดใช้ได้) · path ใน VM ตรงกับ path ภายนอก จึงไม่ต้องตัด prefix
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** URL เดิม `http://cp26ms3.sit.kmutt.ac.th/uat/` ใช้ไม่ได้แล้ว (404) · ต้องขอผู้ดูแล bscit ตั้ง forward ตามตัวอย่าง — ตอนนี้ bscit ยังได้ 404 · ยังไม่รู้ว่า bscit ต่อถึง `10.4.56.69` ได้หรือไม่
+
+### 2026-11-24 — CD อ่าน path ของเว็บจาก commit ที่ deploy
+- **ทำอะไร:** `cd/deploy.sh` อ่าน `VITE_BASE` จาก `frontend/.env.<mode>` ของ commit ที่ deploy แล้วใช้ตรวจผลหลัง deploy (แทน `/<namespace>/` ที่เขียนตายตัว) · ก่อน `kubectl apply` ตรวจว่า path ของ Ingress ตรงกับ `VITE_BASE` ถ้าไม่ตรงหยุดโดยยังไม่ apply อะไร · ไม่ส่ง `APP_BASE` ตอน build frontend แล้ว (`Dockerfile` อ่านเอง) · `k8s/build-images.sh` เหมือนกัน
+- **ไฟล์ที่เกี่ยวข้อง:** `cd/deploy.sh`, `k8s/build-images.sh`, `../frontend/Dockerfile`
+- **เหตุผล:** เตรียมย้าย uat ไป `/capstone26/uat/` · cron รัน `deploy.sh` สำเนาใน `~/bangmod-cd/bin/` ซึ่งอัปเดตตัวเองหลัง deploy uat สำเร็จเท่านั้น จึงต้อง push ส่วนนี้ก่อน (path ยังเป็น `/uat/`) ให้ CD อัปเดตตัวเอง แล้วค่อย push commit ที่เปลี่ยน path — ไม่งั้นสคริปต์เก่าจะตรวจ `/uat/` ไม่ผ่านแล้ว rollback
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ทดสอบด้วย kubectl / docker / curl จำลองบนเครื่องที่แก้ (ไม่มี K3s จริง)
+
+### 2026-11-23 — บันทึกประวัติ deploy uat ผ่าน CD (`c14d9e9`)
+- **ทำอะไร:** เพิ่มแถวในตาราง "ประวัติการ deploy" สำหรับ uat ที่ `c14d9e9` (deploy ครั้งแรกที่ผ่านผ่าน CD)
+- **ไฟล์ที่เกี่ยวข้อง:** `README.md`
+- **เหตุผล:** ผู้ใช้ยืนยันว่า deploy สำเร็จ และตรวจจากภายนอกแล้ว (หน้าเว็บตัวใหม่ไม่มีข้อยืนยันอายุ 20 ปี มีปุ่มกล้องมือถือและบัญชีทีม · login 16 บัญชีได้ 200 · บัญชีปิดได้ 401 · `/api/me` 401 · `/api/internal` 404) ตามกฎ CLAUDE.md ข้อ 21
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ยังไม่ทราบสาเหตุแน่ชัดที่ตรวจ `/api/me` ไม่ผ่านใน deploy `a9c53be` (น่าจะตรวจเร็วเกินไป) — ถ้าเกิดอีก `deploy.sh` จะเก็บ pods + log backend ไว้ · ยังไม่ได้ทดสอบลงทะเบียนใบหน้าบนมือถือจริง · สำรองไฟล์ dump และ `~/bangmod-cd/secrets/uat.env` ไว้นอก VM
+
+### 2026-11-23 — แก้ CD: deploy ครั้งแรกพังแล้ว rollback ทำให้ backend ล่ม
+- **ทำอะไร:** `cd/deploy.sh` (1) ตรวจผลหลัง rollout ลองซ้ำได้ถึง ~90 วินาที (`CHECK_TRIES` × 3 วินาที, curl `--max-time 10`) และบอก HTTP code ที่ได้ในข้อความ (2) ก่อน rollback เก็บ `kubectl get pods` + log backend 80 บรรทัดลง log ของรอบนั้น (pod ใหม่จะหายหลัง rollback) (3) rollback ใช้ `kubectl set image` กลับเป็น image ของ deploy ที่สำเร็จครั้งล่าสุด (`state/<env>.deployed`) แทน `rollout undo` · ถ้ายังไม่เคยสำเร็จผ่าน CD จะไม่ rollback · แผนภาพ CD + แถวใหม่ในตารางปัญหา
+- **ไฟล์ที่เกี่ยวข้อง:** `cd/deploy.sh`, `README.md`
+- **เหตุผล:** ติดตั้ง CD บน VM ครั้งแรก (2026-11-23) แล้ว deploy `a9c53be` ไม่ผ่านการตรวจ `/uat/api/me` (ตรวจครั้งเดียวทันทีหลัง rollout) → `rollout undo` กลับไป Deployment ที่ใช้ `bangmod-backend:latest` ซึ่ง K3s ไปดึงจาก docker.io ไม่ได้ → backend `ImagePullBackOff` · uat ใช้ API ไม่ได้
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ทดสอบด้วยคำสั่งจำลอง (docker / kubectl / curl) 3 กรณี: ครั้งแรก backend ตอบช้า (000, 000 แล้ว 401) → ok · ครั้งแรก backend ไม่ตอบเลย → failed ไม่ rollback · เคยสำเร็จแล้วพัง → `set image` กลับเป็น tag ของ commit ก่อนหน้า · ยังไม่รู้แน่ว่าทำไม `/api/me` ไม่ได้ 401 ตอนนั้น (log ของ pod ใหม่หายไปกับ rollback) — รอบหน้าถ้าพังจะมี log backend ในไฟล์ log · ต้องรัน `setup.sh` ซ้ำบน VM เพื่อให้ `~/bangmod-cd/bin/deploy.sh` เป็นฉบับใหม่
 
 ### 2026-11-22 — คู่มือ + สคริปต์ติดตั้งโมเดล AI
 - **ทำอะไร:** เพิ่มหัวข้อ "ติดตั้งโมเดล AI" (ที่มา, สัญญาอนุญาต, ขั้นตอน, ตรวจผล, ทางเลือกเมื่อ Google Drive ใช้ไม่ได้) และ `models/fetch-models.sh` (ดาวน์โหลดลง `/opt/bangmod/models` + ตรวจ SHA-256 · รันซ้ำได้ · hash ไม่ตรงไม่ใช้) · เพิ่ม 2 แถวในตารางปัญหา (ai-service ไม่ขึ้น, "YOLO model ไม่มี keypoints") · ขั้น 0 ของ Deploy ครั้งแรกชี้มาที่สคริปต์

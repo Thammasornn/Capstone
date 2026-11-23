@@ -28,7 +28,7 @@ export function configureSse(options) {
 }
 
 /**
- * ต่อ path เข้ากับ VITE_API_BASE_URL (รองรับทั้ง URL เต็มและ path แบบ /uat/api)
+ * ต่อ path เข้ากับ VITE_API_BASE_URL (รองรับทั้ง URL เต็มและ path แบบ /capstone26/uat/api)
  * @param {string} path เช่น `/rooms/${roomId}/events`
  * @param {Record<string, string | number | boolean | null | undefined>} [params]
  */

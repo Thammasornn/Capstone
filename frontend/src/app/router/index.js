@@ -4,7 +4,7 @@ import { routes } from './routes'
 import { installGuards } from './guards'
 
 /**
- * history base = import.meta.env.BASE_URL (มาจาก VITE_BASE) → build เดียวใช้ได้ใต้ /prod/ และ /uat/
+ * history base = import.meta.env.BASE_URL (มาจาก VITE_BASE) → build เดียวใช้ได้ใต้ /prod/ และ /capstone26/uat/
  * NGINX ต้อง fallback ทุก path ไป index.html (ดู nginx.conf)
  */
 export const router = createRouter({

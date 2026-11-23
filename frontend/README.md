@@ -24,7 +24,7 @@ npm run dev        # http://localhost:5173 · /api ถูก proxy ไป Backen
 | `npm run fix` | แก้ lint อัตโนมัติ |
 | `npm test` | Vitest (ใช้ MSW ของ API v1.0) |
 | `npm run build` | build Production (base `/prod/`, ไม่มีโค้ด mock) |
-| `npm run build:uat` | build UAT (base `/uat/`, ไม่มีโค้ด mock) |
+| `npm run build:uat` | build UAT (base `/capstone26/uat/`, ไม่มีโค้ด mock) |
 
 ## Environment และการเชื่อม Backend
 
@@ -38,7 +38,7 @@ FE เรียก API แบบ **relative path เสมอ** (`<base>api/...`
 | ไฟล์ | `VITE_BASE` | `VITE_API_BASE_URL` | `VITE_MOCK_MODE` |
 |---|---|---|---|
 | `.env.development` | `/` | `/api` | `off` (ใส่ `all` ใน `.local` เพื่อใช้ mock) |
-| `.env.uat` | `/uat/` | `/uat/api` | `off` |
+| `.env.uat` | `/capstone26/uat/` | `/capstone26/uat/api` | `off` |
 | `.env.production` | `/prod/` | `/prod/api` | `off` |
 | `.env.test` | `/` | `http://localhost:8081/api` | `all` (Vitest) |
 
@@ -75,6 +75,18 @@ docker run -p 8080:80 -e BACKEND_URL=http://10.0.0.5:8081 bangmod-frontend:prod 
 `app → features → entities → shared` — ฟีเจอร์ห้าม import ฟีเจอร์อื่น (ESLint ตรวจให้ที่ `shared/` และ `entities/`)
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-24 — uat ย้ายไป `/capstone26/uat/`
+- **ทำอะไร:** `.env.uat`: `VITE_BASE=/capstone26/uat/`, `VITE_API_BASE_URL=/capstone26/uat/api` · อัปเดต comment ที่อ้าง `/uat/` (`vite.config.js`, `nginx.conf`, `router/index.js`, `mocks/browser.js`, `shared/api/sse.js`)
+- **ไฟล์ที่เกี่ยวข้อง:** `.env.uat`, `vite.config.js`, `nginx.conf`, `src/app/router/index.js`, `src/mocks/browser.js`, `src/shared/api/sse.js`, `README.md`
+- **เหตุผล:** คณะ forward `https://bscit.sit.kmutt.ac.th/capstone26/` มาที่ VM (ไม่ตัด prefix) → uat เปิดผ่าน HTTPS ได้ กล้องสดในหน้าลงทะเบียนใบหน้าจะใช้ได้
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** path ต้องตรงกับ Ingress ใน `devops/k8s/overlays/uat` · ดูหัวข้อ "forward จาก bscit" ใน `devops/README.md`
+
+### 2026-11-24 — path ของเว็บใน NGINX มาจาก `VITE_BASE` ที่เดียว
+- **ทำอะไร:** `Dockerfile` อ่าน `VITE_BASE` จาก `.env.<MODE>` แล้วแทนค่าลงใน `nginx.conf` ตอน build (ตรวจว่าขึ้นต้นและลงท้ายด้วย `/`) · ไม่มี build arg `APP_BASE` แล้ว (ส่งมาก็ไม่มีผล) · `${BACKEND_URL}` ยังแทนค่าตอน container start เหมือนเดิม
+- **ไฟล์ที่เกี่ยวข้อง:** `Dockerfile`
+- **เหตุผล:** เตรียมย้าย uat ไป `/capstone26/uat/` (forward จาก `https://bscit.sit.kmutt.ac.th/capstone26/`) · เดิมต้องแก้ path ทั้งใน `.env.uat` และ `APP_BASE` ของสคริปต์ build ถ้าไม่ตรงกันหน้าเว็บจะขาว
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ยังไม่ได้เปลี่ยน path (ยังเป็น `/uat/`) — ทำใน commit ถัดไปหลัง CD บน VM อัปเดต `deploy.sh` ตัวเองแล้ว
 
 ### 2026-11-23 — เอาข้อยืนยันอายุ 20 ปีออกจากหน้ายินยอม
 - **ทำอะไร:** ลบ checkbox "ข้าพเจ้ามีอายุ 20 ปีบริบูรณ์แล้ว หรือบรรลุนิติภาวะแล้ว" และข้อความเตือน "ผู้ที่อายุยังไม่ถึง 20 ปี ต้องให้ผู้ปกครองยินยอมก่อน" ออกจากขั้นยินยอม — กดยินยอมได้เมื่อติ๊กข้อยินยอมข้อเดียว · ลบ `ageConfirmed` ออกจาก `useFaceRegistration` / `FaceRegistrationPage` และ `registerFace` ไม่ส่ง `ageConfirmed` แล้ว (Backend ใช้ค่าเริ่มต้น `false` → `consent_records.age_confirmed = false`) · ตาราง API หน้า `/student/face` ไม่มี `+ ageConfirmed`
