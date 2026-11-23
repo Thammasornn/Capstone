@@ -24,8 +24,8 @@ import { CONSENT_VERSION } from './constants'
  * ลงทะเบียนซ้ำ = แทนที่ใบหน้าเดิมทั้งหมด → หน้าจอต้องเตือนก่อนเรียก
  * @param {string} studentId
  * @param {File[]} files
- * @param {{ ageConfirmed?: boolean, signal?: AbortSignal, onUploadProgress?: (e: import('axios').AxiosProgressEvent) => void }} [options]
- *   ageConfirmed = checkbox "อายุ 20 ปีบริบูรณ์" บนหน้ายินยอม → consent_records.age_confirmed
+ * @param {{ signal?: AbortSignal, onUploadProgress?: (e: import('axios').AxiosProgressEvent) => void }} [options]
+ *   ไม่ส่ง ageConfirmed แล้ว (เอาข้อยืนยันอายุ 20 ปีออกจากหน้ายินยอม) → backend ใช้ค่าเริ่มต้น false
  * @returns {Promise<RegisterFaceResult>}
  */
 export async function registerFace(studentId, files, options = {}) {
@@ -33,7 +33,6 @@ export async function registerFace(studentId, files, options = {}) {
   files.forEach((file) => form.append('files', file))
   form.append('consent', 'true')
   form.append('consentTextVersion', CONSENT_VERSION)
-  form.append('ageConfirmed', String(Boolean(options.ageConfirmed)))
   const { data } = await http.post(`/students/${studentId}/face/register`, form, {
     timeout: UPLOAD_TIMEOUT_MS,
     signal: options.signal,

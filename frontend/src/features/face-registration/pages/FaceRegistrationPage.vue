@@ -31,7 +31,6 @@ const started = ref(!face.value.registered)
 
 const {
   step,
-  ageConfirmed,
   photos,
   submitting,
   preparing,
@@ -47,8 +46,7 @@ const stepIndex = computed(() => ({ consent: 0, photos: 1, done: 2 })[step.value
 /** รูปจากกล้องมือถือ: ติดชื่อมุมตามลำดับ (หน้าตรง → หันซ้าย → หันขวา) */
 const angleLabel = (index) => CAPTURE_ANGLES[index % CAPTURE_ANGLES.length].label
 
-function onAccept(payload) {
-  ageConfirmed.value = payload.ageConfirmed
+function onAccept() {
   step.value = 'photos'
 }
 </script>

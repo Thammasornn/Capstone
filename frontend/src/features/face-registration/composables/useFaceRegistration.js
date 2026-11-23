@@ -17,7 +17,6 @@ import {
 export function useFaceRegistration() {
   const auth = useAuthStore()
   const step = ref(/** @type {'consent'|'photos'|'done'} */ ('consent'))
-  const ageConfirmed = ref(false)
   /** @type {import('vue').Ref<{ id: number, file: File, url: string, label: string }[]>} */
   const photos = ref([])
   const submitting = ref(false)
@@ -94,7 +93,6 @@ export function useFaceRegistration() {
         auth.studentId,
         photos.value.map((p) => p.file),
         {
-          ageConfirmed: ageConfirmed.value,
           onUploadProgress: (e) =>
             (progress.value = e.total ? Math.round((e.loaded / e.total) * 100) : 0),
         },
@@ -113,7 +111,6 @@ export function useFaceRegistration() {
 
   return {
     step,
-    ageConfirmed,
     photos,
     submitting,
     preparing,

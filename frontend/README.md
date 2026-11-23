@@ -67,7 +67,7 @@ docker run -p 8080:80 -e BACKEND_URL=http://10.0.0.5:8081 bangmod-frontend:prod 
 | รายงานรายคาบ | `/reports/sessions/:sessionId` | 5.7–5.8, B8 |
 | หน้าแรกนักศึกษา / วิชาของฉัน | `/student`, `/student/courses` | 5.3 + 5.9 ของทุกวิชา |
 | ประวัติการเข้าเรียน | `/student/attendance` | 5.9 |
-| ลงทะเบียนใบหน้า | `/student/face` | 5.10 (+ `ageConfirmed`), `/me` |
+| ลงทะเบียนใบหน้า | `/student/face` | 5.10, `/me` |
 | จัดการข้อมูลใบหน้า | `/student/face/manage` | 5.11, B7 |
 
 ## ชั้นของโค้ด
@@ -75,6 +75,12 @@ docker run -p 8080:80 -e BACKEND_URL=http://10.0.0.5:8081 bangmod-frontend:prod 
 `app → features → entities → shared` — ฟีเจอร์ห้าม import ฟีเจอร์อื่น (ESLint ตรวจให้ที่ `shared/` และ `entities/`)
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-23 — เอาข้อยืนยันอายุ 20 ปีออกจากหน้ายินยอม
+- **ทำอะไร:** ลบ checkbox "ข้าพเจ้ามีอายุ 20 ปีบริบูรณ์แล้ว หรือบรรลุนิติภาวะแล้ว" และข้อความเตือน "ผู้ที่อายุยังไม่ถึง 20 ปี ต้องให้ผู้ปกครองยินยอมก่อน" ออกจากขั้นยินยอม — กดยินยอมได้เมื่อติ๊กข้อยินยอมข้อเดียว · ลบ `ageConfirmed` ออกจาก `useFaceRegistration` / `FaceRegistrationPage` และ `registerFace` ไม่ส่ง `ageConfirmed` แล้ว (Backend ใช้ค่าเริ่มต้น `false` → `consent_records.age_confirmed = false`) · ตาราง API หน้า `/student/face` ไม่มี `+ ageConfirmed`
+- **ไฟล์ที่เกี่ยวข้อง:** `src/features/face-registration/consent-text.js`, `src/features/face-registration/components/ConsentStep.vue`, `src/features/face-registration/composables/useFaceRegistration.js`, `src/features/face-registration/pages/FaceRegistrationPage.vue`, `src/features/face-registration/api.js`, `tests/unit/consent-step.test.js` (ใหม่: มี checkbox ข้อเดียว ไม่มีคำว่า 20 ปี / ผู้ปกครอง, ปุ่มยินยอมกดได้หลังติ๊ก)
+- **เหตุผล:** ผู้ใช้ขอเอาเนื้อหาเรื่องอายุ 20 ปีออกจากหน้าลงทะเบียน
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ไม่ได้แก้ Backend / DB (คอลัมน์ `age_confirmed`, `is_adult` ยังอยู่ · Backend ไม่ได้บังคับค่านี้) · ข้อความยินยอมหลักไม่เปลี่ยน จึงยังเป็นฉบับ `v1` (ไม่ต้องให้คนที่ยินยอมแล้วยินยอมใหม่) — ถ้า DPO ต้องการให้ถือเป็นฉบับใหม่ ต้องเพิ่ม `consent_versions` v2 และเปลี่ยน `CONSENT_VERSION`
 
 ### 2026-11-23 — หน้าลงทะเบียนใบหน้าใช้ได้บน HTTP (uat) + บัญชีทดสอบสมาชิกทีม
 - **ทำอะไร:** เบราว์เซอร์อนุญาต `getUserMedia` เฉพาะ HTTPS / localhost → บน uat (HTTP) ขึ้น "เปิดกล้องไม่ได้" · แก้: `PhotoPicker` มีปุ่ม "ถ่ายรูปด้วยกล้องมือถือ" (`<input capture="user">` เปิดแอปกล้องได้แม้เป็น HTTP · แสดงเฉพาะจอสัมผัส) รูปที่ถ่ายได้ชื่อมุมตามลำดับ (หน้าตรง → หันซ้าย → หันขวา) · `AngleCaptureStep` ถ้าไม่มีกล้องสด (`canUseLiveCamera()`) แสดงคำอธิบายแทนปุ่มเปิดกล้อง (มือถือ / คอมคนละข้อความ) · `prepare-image.js` ใหม่: ย่อรูปทุกรูปเหลือด้านยาว ≤ 1600 px แปลงเป็น JPEG 0.9 หมุนตาม EXIF และตัด EXIF (รวม GPS) ทิ้ง — รูปมือถือมักเกิน 5MB และ iPhone เป็น HEIC · `useFaceRegistration.addFiles` เป็น async + `preparing` (ปุ่มปิดระหว่างเตรียมรูป) · หน้า Login เพิ่มกลุ่ม "สมาชิกทีม" 3 บัญชี
