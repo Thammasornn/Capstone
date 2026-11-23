@@ -3,7 +3,7 @@ import { getHandlers } from './handlers'
 
 /**
  * เปิด Mock Service Worker ในเบราว์เซอร์ (เรียกจาก main.js เมื่อ VITE_MOCK_MODE=all)
- * ไฟล์ worker อยู่ที่ public/mockServiceWorker.js และต้องเสิร์ฟใต้ base เดียวกับแอป (/, /uat/)
+ * ไฟล์ worker อยู่ที่ public/mockServiceWorker.js และต้องเสิร์ฟใต้ base เดียวกับแอป (/, /capstone26/uat/)
  */
 export async function startMockWorker() {
   const worker = setupWorker(...getHandlers())

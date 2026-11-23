@@ -17,7 +17,7 @@
 [Browser] --HTTPS (REST + SSE)--> [NGINX + Vue] --> [Spring Boot] --> [PostgreSQL]
 ```
 
-Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/uat/` แยก namespace
+Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/capstone26/uat/` แยก namespace · uat เปิดจากภายนอกได้ที่ `https://bscit.sit.kmutt.ac.th/capstone26/uat/` (เมื่อคณะตั้ง forward แล้ว)
 
 ## ทดสอบบนเครื่อง (local)
 
@@ -97,6 +97,12 @@ Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/uat/` แยก 
 อาจารย์ที่ปรึกษา: อ.มนตรี สุภัททธรรม
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-24 — uat ย้ายไป `/capstone26/uat/` เพื่อรับ forward จาก bscit (HTTPS)
+- **ทำอะไร:** (1) path ของเว็บมาจาก `VITE_BASE` ใน `frontend/.env.<mode>` ที่เดียว — `frontend/Dockerfile` ใส่ลง `nginx.conf` เอง, `devops/cd/deploy.sh` ใช้ตรวจผลและหยุดก่อน apply ถ้า Ingress ไม่ตรง (2) uat ย้ายจาก `/uat/` ไป `/capstone26/uat/`
+- **ไฟล์ที่เกี่ยวข้อง:** `frontend/.env.uat`, `frontend/Dockerfile`, `devops/cd/deploy.sh`, `devops/k8s/overlays/uat/kustomization.yaml`, `devops/k8s/build-images.sh`, `devops/README.md`, `frontend/README.md`, `CLAUDE.md`
+- **เหตุผล:** ให้เปิด uat ที่ `https://bscit.sit.kmutt.ac.th/capstone26/uat/` — HTTPS ทำให้กล้องสดในเบราว์เซอร์ใช้ได้
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** push 2 รอบ (รอบแรกให้ CD บน VM อัปเดต `deploy.sh` ตัวเองก่อน) · URL เดิม `/uat/` ใช้ไม่ได้แล้ว · ต้องขอผู้ดูแล bscit ตั้ง forward (ตัวอย่างใน `devops/README.md`)
 
 ### 2026-11-23 — เอาข้อยืนยันอายุ 20 ปีออกจากหน้ายินยอม (ลงทะเบียนใบหน้า)
 - **ทำอะไร:** หน้ายินยอมเหลือ checkbox ยินยอมข้อเดียว ไม่ถามอายุ 20 ปี / บรรลุนิติภาวะ และไม่มีข้อความเตือนเรื่องผู้ปกครอง · FE ไม่ส่ง `ageConfirmed` (บันทึกเป็น `false`) · อัปเดตตารางบัญชีทดสอบ persona อายุไม่ถึง 20

@@ -76,7 +76,7 @@
 ### ตรวจผลหลัง deploy (ทุก namespace)
 13. `kubectl -n <ns> get pods` ทุกตัว Running (ai-service ไม่ขึ้นเพราะไม่มีโมเดล = ปกติ แค่รายงาน)
 14. log backend ไม่มี error และ**ต้องไม่มี** WARN "โปรไฟล์ local"
-15. `http://cp26ms3.sit.kmutt.ac.th/<ns>/` ได้ 200 (โดเมนของ VM · IP `10.4.56.69`) · login ผ่าน `/<ns>/api/auth/login` ได้ token · `/<ns>/api/internal/...` ต้องได้ 404
+15. `http://cp26ms3.sit.kmutt.ac.th/<path>/` ได้ 200 (โดเมนของ VM · IP `10.4.56.69` · path = `VITE_BASE`: prod `/prod/`, uat `/capstone26/uat/`) · login ผ่าน `/<path>/api/auth/login` ได้ token · `/<path>/api/internal/...` ต้องได้ 404
 16. สรุปเป็นตาราง ผ่าน / ไม่ผ่าน + URL ที่ผู้ใช้เปิดใน browser ได้ · ขั้นตอนใน README ไม่ตรงกับของจริง ให้จดแล้วบอกตอนจบ
 
 ### prod ครั้งแรก

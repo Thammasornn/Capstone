@@ -1,6 +1,6 @@
 # devops
 
-Deploy บน Faculty VM ด้วย **K3s** · 2 namespace: `prod` → `http://cp26ms3.sit.kmutt.ac.th/prod/` และ `uat` → `http://cp26ms3.sit.kmutt.ac.th/uat/`
+Deploy บน Faculty VM ด้วย **K3s** · 2 namespace: `prod` → `http://cp26ms3.sit.kmutt.ac.th/prod/` และ `uat` → `http://cp26ms3.sit.kmutt.ac.th/capstone26/uat/` (ภายนอก / HTTPS: `https://bscit.sit.kmutt.ac.th/capstone26/uat/` — ดู "forward จาก bscit")
 
 โดเมน `cp26ms3.sit.kmutt.ac.th` ชี้ไปที่ VM `10.4.56.69` (DNS ของคณะ) · Ingress ไม่ผูก host จึงเข้าด้วย IP ได้เหมือนกัน
 
@@ -80,8 +80,30 @@ cd ~/Capstone && git pull && ./devops/cd/setup.sh       # ไม่ต้อง 
 | host | `cp26ms3.sit.kmutt.ac.th` / `10.4.56.69` |
 | K3s | v1.37.2+k3s1 · node `cp26ms3` · Traefik รับ port 80 |
 | user ที่ deploy | `adminstudent` · repo ที่ `~/Capstone` |
-| uat | http://cp26ms3.sit.kmutt.ac.th/uat/ |
+| uat | http://cp26ms3.sit.kmutt.ac.th/capstone26/uat/ · https://bscit.sit.kmutt.ac.th/capstone26/uat/ (ผ่าน forward ของคณะ) |
 | prod | http://cp26ms3.sit.kmutt.ac.th/prod/ (ยังไม่ deploy) |
+
+## forward จาก bscit (HTTPS ของคณะ)
+
+`https://bscit.sit.kmutt.ac.th/capstone26/` เป็น NGINX ของคณะ (เราแก้เองไม่ได้ — ต้องขอผู้ดูแล) ให้ส่ง `/capstone26/...` ต่อมาที่ VM **โดยไม่ตัด prefix** · HTTPS จบที่ bscit จึงใช้กล้องสดในหน้าลงทะเบียนใบหน้าได้
+
+```nginx
+location /capstone26/ {
+    proxy_pass http://10.4.56.69;          # ไม่มี / ต่อท้าย = ส่ง /capstone26/... มาทั้งก้อน
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto https;
+    client_max_body_size 25m;              # อัปโหลดรูปใบหน้า 5 รูป (ค่าเริ่มต้น 1m → 413)
+    proxy_read_timeout 90s;                # ลงทะเบียนใบหน้ารอ AI
+    proxy_buffering off;                   # SSE หน้าห้องเรียนสด
+}
+```
+
+- ถ้าตัด prefix (`proxy_pass http://10.4.56.69/;`) หน้าเว็บจะขาว — ไฟล์ assets อ้าง `/capstone26/uat/assets/...`
+- uat อยู่ที่ `/capstone26/uat/` · `/capstone26/` เฉย ๆ ยังว่าง (404) เผื่อ prod
+- ย้าย path: แก้ `VITE_BASE` ใน `frontend/.env.<mode>` กับ path ของ Ingress ใน `k8s/overlays/<env>` ให้ตรงกัน (`deploy.sh` หยุดก่อน apply ถ้าไม่ตรง) · `Dockerfile` และการตรวจหลัง deploy อ่านจาก `VITE_BASE` เอง
+- ภาพสดจาก MediaMTX (`MEDIA_BASE_URL` = `http://...:8889`) จะถูกเบราว์เซอร์บล็อกบนหน้า HTTPS — ต้องขอ forward path ของภาพด้วยเมื่อติดตั้ง MediaMTX
 
 ## ประวัติการ deploy
 
@@ -125,7 +147,7 @@ kubectl apply -k devops/k8s/overlays/uat
 
 # 4) ตรวจ
 kubectl -n uat get pods
-curl http://cp26ms3.sit.kmutt.ac.th/uat/api/auth/login -H 'Content-Type: application/json' \
+curl http://cp26ms3.sit.kmutt.ac.th/capstone26/uat/api/auth/login -H 'Content-Type: application/json' \
   -d '{"email":"admin@sit.kmutt.ac.th","password":"Password@123"}'
 ```
 
@@ -189,6 +211,12 @@ curl -s localhost:18080/health && kill %1                       # {"status":"ok"
 - ไม่มี HTTPS ใน manifest ชุดนี้ (Traefik รับ HTTP) — กล้องในเบราว์เซอร์ (หน้าลงทะเบียนใบหน้า) ต้องใช้ HTTPS ยกเว้น localhost
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-24 — ย้าย uat ไป `/capstone26/uat/` (รับ forward จาก bscit)
+- **ทำอะไร:** Ingress ของ uat เป็น `/capstone26/uat` · เพิ่มหัวข้อ "forward จาก bscit" (ตัวอย่าง NGINX ที่ต้องขอคณะ) · อัปเดต URL ในเอกสารและกฎข้อ 15 ใน `CLAUDE.md`
+- **ไฟล์ที่เกี่ยวข้อง:** `k8s/overlays/uat/kustomization.yaml`, `k8s/base/ingress.yaml`, `README.md`, `../frontend/.env.uat`, `../CLAUDE.md`
+- **เหตุผล:** ให้เปิด uat จาก `https://bscit.sit.kmutt.ac.th/capstone26/uat/` ได้ (HTTPS ของคณะ → กล้องสดใช้ได้) · path ใน VM ตรงกับ path ภายนอก จึงไม่ต้องตัด prefix
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** URL เดิม `http://cp26ms3.sit.kmutt.ac.th/uat/` ใช้ไม่ได้แล้ว (404) · ต้องขอผู้ดูแล bscit ตั้ง forward ตามตัวอย่าง — ตอนนี้ bscit ยังได้ 404 · ยังไม่รู้ว่า bscit ต่อถึง `10.4.56.69` ได้หรือไม่
 
 ### 2026-11-24 — CD อ่าน path ของเว็บจาก commit ที่ deploy
 - **ทำอะไร:** `cd/deploy.sh` อ่าน `VITE_BASE` จาก `frontend/.env.<mode>` ของ commit ที่ deploy แล้วใช้ตรวจผลหลัง deploy (แทน `/<namespace>/` ที่เขียนตายตัว) · ก่อน `kubectl apply` ตรวจว่า path ของ Ingress ตรงกับ `VITE_BASE` ถ้าไม่ตรงหยุดโดยยังไม่ apply อะไร · ไม่ส่ง `APP_BASE` ตอน build frontend แล้ว (`Dockerfile` อ่านเอง) · `k8s/build-images.sh` เหมือนกัน
