@@ -24,7 +24,7 @@ npm run dev        # http://localhost:5173 · /api ถูก proxy ไป Backen
 | `npm run fix` | แก้ lint อัตโนมัติ |
 | `npm test` | Vitest (ใช้ MSW ของ API v1.0) |
 | `npm run build` | build Production (base `/prod/`, ไม่มีโค้ด mock) |
-| `npm run build:uat` | build UAT (base `/capstone26/uat/`, ไม่มีโค้ด mock) |
+| `npm run build:uat` | build UAT (base `/capstone26/cp26ms3/uat/`, NGINX บน VM `/uat/`, ไม่มีโค้ด mock) |
 
 ## Environment และการเชื่อม Backend
 
@@ -38,7 +38,7 @@ FE เรียก API แบบ **relative path เสมอ** (`<base>api/...`
 | ไฟล์ | `VITE_BASE` | `VITE_API_BASE_URL` | `VITE_MOCK_MODE` |
 |---|---|---|---|
 | `.env.development` | `/` | `/api` | `off` (ใส่ `all` ใน `.local` เพื่อใช้ mock) |
-| `.env.uat` | `/capstone26/uat/` | `/capstone26/uat/api` | `off` |
+| `.env.uat` (+ `APP_PATH=/uat/`) | `/capstone26/cp26ms3/uat/` | `/capstone26/cp26ms3/uat/api` | `off` |
 | `.env.production` | `/prod/` | `/prod/api` | `off` |
 | `.env.test` | `/` | `http://localhost:8081/api` | `all` (Vitest) |
 
@@ -75,6 +75,18 @@ docker run -p 8080:80 -e BACKEND_URL=http://10.0.0.5:8081 bangmod-frontend:prod 
 `app → features → entities → shared` — ฟีเจอร์ห้าม import ฟีเจอร์อื่น (ESLint ตรวจให้ที่ `shared/` และ `entities/`)
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-24 — uat: `VITE_BASE=/capstone26/cp26ms3/uat/`, `APP_PATH=/uat/`
+- **ทำอะไร:** `.env.uat` ตั้ง path ที่เบราว์เซอร์เห็นเป็น `/capstone26/cp26ms3/uat/` และ path บน VM (`APP_PATH`) เป็น `/uat/` · อัปเดต comment ใน `vite.config.js`, `nginx.conf`, `router/index.js`, `mocks/browser.js`, `shared/api/sse.js`
+- **ไฟล์ที่เกี่ยวข้อง:** `.env.uat`, `vite.config.js`, `nginx.conf`, `src/app/router/index.js`, `src/mocks/browser.js`, `src/shared/api/sse.js`, `README.md`
+- **เหตุผล:** เว็บ uat อยู่ที่ `https://bscit.sit.kmutt.ac.th/capstone26/cp26ms3/uat/` (bscit ตัด `/capstone26/cp26ms3` ออกก่อนส่งมา VM) · HTTPS → กล้องสดใช้ได้
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** เปิด `http://cp26ms3.sit.kmutt.ac.th/uat/` ตรง ๆ ใน browser หน้าจะขาว (assets อ้าง path ของ bscit)
+
+### 2026-11-24 — แยก path บน VM (`APP_PATH`) ออกจาก path ที่เบราว์เซอร์เห็น (`VITE_BASE`)
+- **ทำอะไร:** `Dockerfile` ใช้ `APP_PATH` ใน `.env.<MODE>` เป็น location ของ NGINX ถ้ามี (ไม่มี = ใช้ `VITE_BASE` เหมือนเดิม)
+- **ไฟล์ที่เกี่ยวข้อง:** `Dockerfile`
+- **เหตุผล:** bscit forward `https://bscit.sit.kmutt.ac.th/capstone26/cp26ms3/*` มาที่ VM โดยตัด `/capstone26/cp26ms3` ออก — เบราว์เซอร์เห็น `/capstone26/cp26ms3/uat/` แต่ VM ได้ `/uat/`
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ยังไม่ได้เปลี่ยนค่าใน `.env.uat` — ทำใน commit ถัดไปหลัง CD อัปเดต `deploy.sh` ตัวเอง
 
 ### 2026-11-24 — uat ย้ายไป `/capstone26/uat/`
 - **ทำอะไร:** `.env.uat`: `VITE_BASE=/capstone26/uat/`, `VITE_API_BASE_URL=/capstone26/uat/api` · อัปเดต comment ที่อ้าง `/uat/` (`vite.config.js`, `nginx.conf`, `router/index.js`, `mocks/browser.js`, `shared/api/sse.js`)

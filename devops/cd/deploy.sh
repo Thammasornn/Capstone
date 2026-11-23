@@ -121,15 +121,19 @@ git -C "$REPO" worktree add --quiet --detach "$WORK" "$TARGET"
 cleanup() { git -C "$REPO" worktree remove --force "$WORK" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
-# path ของเว็บมาจาก VITE_BASE ใน frontend/.env.<mode> ของ commit ที่ deploy (Dockerfile ใช้ค่าเดียวกัน)
+# path บน VM = APP_PATH (ไม่มี = VITE_BASE) ใน frontend/.env.<mode> ของ commit ที่ deploy (Dockerfile ใช้ค่าเดียวกัน)
+# VITE_BASE = path ที่เบราว์เซอร์เห็น — ต่างจาก APP_PATH เมื่อ proxy ข้างหน้า (bscit) ตัด prefix
 if [ "$ENV_NAME" = uat ]; then FE_MODE=uat; FE_ARGS=(--build-arg MODE=uat); else FE_MODE=production; FE_ARGS=(); fi
-WEB_BASE="$(sed -n 's/^VITE_BASE=//p' "$WORK/frontend/.env.$FE_MODE")"
+FE_ENV="$WORK/frontend/.env.$FE_MODE"
+BROWSER_BASE="$(sed -n 's/^VITE_BASE=//p' "$FE_ENV")"
+WEB_BASE="$(sed -n 's/^APP_PATH=//p' "$FE_ENV")"
+WEB_BASE="${WEB_BASE:-$BROWSER_BASE}"
 case "$WEB_BASE" in
   /*/) ;;
-  *) finish failed "VITE_BASE ใน frontend/.env.$FE_MODE ไม่ถูกต้อง"; fail "VITE_BASE ใน frontend/.env.$FE_MODE ต้องขึ้นต้นและลงท้ายด้วย / (ได้ '$WEB_BASE')" ;;
+  *) finish failed "APP_PATH / VITE_BASE ใน frontend/.env.$FE_MODE ไม่ถูกต้อง"; fail "APP_PATH / VITE_BASE ใน frontend/.env.$FE_MODE ต้องขึ้นต้นและลงท้ายด้วย / (ได้ '$WEB_BASE')" ;;
 esac
 WEB_URL="$PUBLIC_URL$WEB_BASE"
-log "▸ path ของเว็บ: $WEB_BASE"
+log "▸ path บน VM: $WEB_BASE · path ที่เบราว์เซอร์เห็น: $BROWSER_BASE"
 BACKEND="$REGISTRY/bangmod-backend:$SHA"
 AI="$REGISTRY/bangmod-ai-service:$SHA"
 FRONTEND="$REGISTRY/bangmod-frontend:$ENV_NAME-$SHA"
@@ -166,13 +170,13 @@ for d in backend frontend ai-service; do
 EOF
 done
 
-# Ingress ต้องส่ง path เดียวกับ VITE_BASE มาที่ frontend (ไม่แสดงผล kustomize — มีค่าความลับ)
+# Ingress ต้องส่ง path เดียวกับ APP_PATH (หรือ VITE_BASE) มาที่ frontend (ไม่แสดงผล kustomize — มีค่าความลับ)
 # เก็บผลก่อนแล้วค่อย grep (grep -q ใน pipe + pipefail ทำให้ kubectl โดน SIGPIPE แล้วนับเป็นพัง)
 INGRESS_PATHS="$(kubectl kustomize "$GEN" | sed -n 's|^[[:space:]]*\(- \)\{0,1\}path: \(/[^[:space:]]*\)$|\2|p')"
 if ! grep -qxF "${WEB_BASE%/}" <<<"$INGRESS_PATHS"; then
   rm -f "$WORK/devops/k8s/overlays/$ENV_NAME/secret.env"
-  finish failed "path ของ Ingress ไม่ตรงกับ VITE_BASE ($WEB_BASE)"
-  fail "path ของ Ingress ใน devops/k8s/overlays/$ENV_NAME ไม่ตรงกับ VITE_BASE ${WEB_BASE%/} — ยังไม่ได้ apply อะไร"
+  finish failed "path ของ Ingress ไม่ตรงกับ APP_PATH / VITE_BASE ($WEB_BASE)"
+  fail "path ของ Ingress ใน devops/k8s/overlays/$ENV_NAME ไม่ตรงกับ ${WEB_BASE%/} (APP_PATH / VITE_BASE ใน frontend/.env.$FE_MODE) — ยังไม่ได้ apply อะไร"
 fi
 
 log "▸ kubectl apply"

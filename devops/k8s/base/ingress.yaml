@@ -1,5 +1,5 @@
 # Traefik (Ingress ของ K3s) ส่ง /<env>/* ทั้งหมดไป frontend โดยไม่ตัด prefix
-# /api ผ่าน NGINX ของ frontend ต่อไป backend (ตัวเลือก "proxy /api") · overlay uat เปลี่ยน path เป็น /capstone26/uat
+# /api ผ่าน NGINX ของ frontend ต่อไป backend (ตัวเลือก "proxy /api") · overlay uat เปลี่ยน path เป็น /uat
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:

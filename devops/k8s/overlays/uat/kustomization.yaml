@@ -1,4 +1,4 @@
-# namespace uat · เว็บอยู่ที่ https://bscit.sit.kmutt.ac.th/capstone26/uat/ (คณะ forward มา) และ http://cp26ms3.sit.kmutt.ac.th/capstone26/uat/ · ใส่ข้อมูล mock ได้ (init-db.sh uat --seed)
+# namespace uat · เว็บอยู่ที่ https://bscit.sit.kmutt.ac.th/capstone26/cp26ms3/uat/ (bscit ตัด /capstone26/cp26ms3 แล้วส่งมาที่ /uat/ ของ VM) · ใส่ข้อมูล mock ได้ (init-db.sh uat --seed)
 #   kubectl apply -k devops/k8s/overlays/uat
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
@@ -14,8 +14,8 @@ patches:
     patch: |-
       - op: replace
         path: /spec/rules/0/http/paths/0/path
-        # ต้องตรงกับ VITE_BASE ใน frontend/.env.uat (deploy.sh ตรวจก่อน apply)
-        value: /capstone26/uat
+        # ต้องตรงกับ APP_PATH ใน frontend/.env.uat (deploy.sh ตรวจก่อน apply)
+        value: /uat
 configMapGenerator:
   - name: app-config
     literals:

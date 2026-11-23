@@ -17,7 +17,7 @@
 [Browser] --HTTPS (REST + SSE)--> [NGINX + Vue] --> [Spring Boot] --> [PostgreSQL]
 ```
 
-Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/capstone26/uat/` แยก namespace · uat เปิดจากภายนอกได้ที่ `https://bscit.sit.kmutt.ac.th/capstone26/uat/` (เมื่อคณะตั้ง forward แล้ว)
+Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/uat/` แยก namespace · เปิด uat ที่ `https://bscit.sit.kmutt.ac.th/capstone26/cp26ms3/uat/` (NGINX ของคณะ forward มาที่ VM)
 
 ## ทดสอบบนเครื่อง (local)
 
@@ -97,6 +97,12 @@ Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/capstone26/uat/`
 อาจารย์ที่ปรึกษา: อ.มนตรี สุภัททธรรม
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-24 — uat เปิดผ่าน HTTPS ของคณะที่ `https://bscit.sit.kmutt.ac.th/capstone26/cp26ms3/uat/`
+- **ทำอะไร:** แยก path ที่เบราว์เซอร์เห็น (`VITE_BASE`) กับ path ที่มาถึง VM (`APP_PATH`) ใน `frontend/.env.<mode>` · `frontend/Dockerfile` และ `devops/cd/deploy.sh` ใช้ `APP_PATH` · uat: เบราว์เซอร์ `/capstone26/cp26ms3/uat/`, VM `/uat/` (แทน `/capstone26/uat/` ที่ย้ายไปก่อนหน้า)
+- **ไฟล์ที่เกี่ยวข้อง:** `frontend/.env.uat`, `frontend/Dockerfile`, `devops/cd/deploy.sh`, `devops/k8s/overlays/uat/kustomization.yaml`, `devops/README.md`, `frontend/README.md`, `CLAUDE.md`
+- **เหตุผล:** คณะ forward `/capstone26/cp26ms3/*` มาที่ VM แบบตัด prefix — HTTPS ทำให้กล้องสดในหน้าลงทะเบียนใบหน้าใช้ได้
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** เปิดตรงที่ VM ใน browser หน้าจะขาว ต้องเปิดผ่าน bscit · prod ตั้งค่าตามหัวข้อ "forward จาก bscit" ใน `devops/README.md` ตอน deploy ครั้งแรก
 
 ### 2026-11-24 — uat ย้ายไป `/capstone26/uat/` เพื่อรับ forward จาก bscit (HTTPS)
 - **ทำอะไร:** (1) path ของเว็บมาจาก `VITE_BASE` ใน `frontend/.env.<mode>` ที่เดียว — `frontend/Dockerfile` ใส่ลง `nginx.conf` เอง, `devops/cd/deploy.sh` ใช้ตรวจผลและหยุดก่อน apply ถ้า Ingress ไม่ตรง (2) uat ย้ายจาก `/uat/` ไป `/capstone26/uat/`

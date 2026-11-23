@@ -1,8 +1,10 @@
 # Build → NGINX · ใช้ทั้ง UAT และ Production (K3s แยก namespace)
 #   docker build -t bangmod-frontend:prod .
 #   docker build --build-arg MODE=uat -t bangmod-frontend:uat .
-# path ของเว็บ (เช่น /prod/, /capstone26/uat/) มาจาก VITE_BASE ใน .env.<MODE> ที่เดียว
-# ทั้ง Vue (vite build) และ NGINX (location) ใช้ค่านี้ — ไม่ต้องส่ง APP_BASE แยก
+# path มาจาก .env.<MODE> ที่เดียว:
+#   VITE_BASE = path ที่เบราว์เซอร์เห็น (Vue ใช้อ้าง assets / router)
+#   APP_PATH  = path ที่ request มาถึง VM จริง (NGINX location, ต้องตรงกับ Ingress) — ไม่ใส่ = เท่ากับ VITE_BASE
+#   ต่างกันเมื่อมี proxy ข้างหน้าตัด prefix ออก (เช่น bscit ตัด /capstone26/cp26ms3 ก่อนส่งมา VM)
 FROM node:22-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -10,9 +12,10 @@ RUN npm ci
 COPY . .
 ARG MODE=production
 RUN npx vite build --mode ${MODE}
-# ใส่ VITE_BASE ลงใน nginx.conf ตอน build (${BACKEND_URL} เหลือไว้ให้ nginx แทนค่าตอน start)
-RUN APP_BASE="$(sed -n 's/^VITE_BASE=//p' .env.${MODE})" \
-  && case "$APP_BASE" in /*/) ;; *) echo "VITE_BASE ใน .env.${MODE} ต้องขึ้นต้นและลงท้ายด้วย / (ได้ '$APP_BASE')"; exit 1 ;; esac \
+# ใส่ APP_PATH (หรือ VITE_BASE) ลงใน nginx.conf ตอน build (${BACKEND_URL} เหลือไว้ให้ nginx แทนค่าตอน start)
+RUN APP_BASE="$(sed -n 's/^APP_PATH=//p' .env.${MODE})" \
+  && APP_BASE="${APP_BASE:-$(sed -n 's/^VITE_BASE=//p' .env.${MODE})}" \
+  && case "$APP_BASE" in /*/) ;; *) echo "APP_PATH / VITE_BASE ใน .env.${MODE} ต้องขึ้นต้นและลงท้ายด้วย / (ได้ '$APP_BASE')"; exit 1 ;; esac \
   && sed "s#\${APP_BASE}#${APP_BASE}#g" nginx.conf > /app/nginx.conf.template \
   && echo "APP_BASE=${APP_BASE}"
 

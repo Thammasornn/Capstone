@@ -1,6 +1,6 @@
 # devops
 
-Deploy บน Faculty VM ด้วย **K3s** · 2 namespace: `prod` → `http://cp26ms3.sit.kmutt.ac.th/prod/` และ `uat` → `http://cp26ms3.sit.kmutt.ac.th/capstone26/uat/` (ภายนอก / HTTPS: `https://bscit.sit.kmutt.ac.th/capstone26/uat/` — ดู "forward จาก bscit")
+Deploy บน Faculty VM ด้วย **K3s** · 2 namespace: `prod` → `http://cp26ms3.sit.kmutt.ac.th/prod/` และ `uat` → `http://cp26ms3.sit.kmutt.ac.th/uat/` · เปิดใน browser ผ่าน HTTPS ของคณะ: `https://bscit.sit.kmutt.ac.th/capstone26/cp26ms3/uat/` (ดู "forward จาก bscit")
 
 โดเมน `cp26ms3.sit.kmutt.ac.th` ชี้ไปที่ VM `10.4.56.69` (DNS ของคณะ) · Ingress ไม่ผูก host จึงเข้าด้วย IP ได้เหมือนกัน
 
@@ -80,30 +80,23 @@ cd ~/Capstone && git pull && ./devops/cd/setup.sh       # ไม่ต้อง 
 | host | `cp26ms3.sit.kmutt.ac.th` / `10.4.56.69` |
 | K3s | v1.37.2+k3s1 · node `cp26ms3` · Traefik รับ port 80 |
 | user ที่ deploy | `adminstudent` · repo ที่ `~/Capstone` |
-| uat | http://cp26ms3.sit.kmutt.ac.th/capstone26/uat/ · https://bscit.sit.kmutt.ac.th/capstone26/uat/ (ผ่าน forward ของคณะ) |
+| uat | https://bscit.sit.kmutt.ac.th/capstone26/cp26ms3/uat/ (browser) · http://cp26ms3.sit.kmutt.ac.th/uat/api/... (เรียก API ตรง) |
 | prod | http://cp26ms3.sit.kmutt.ac.th/prod/ (ยังไม่ deploy) |
 
 ## forward จาก bscit (HTTPS ของคณะ)
 
-`https://bscit.sit.kmutt.ac.th/capstone26/` เป็น NGINX ของคณะ (เราแก้เองไม่ได้ — ต้องขอผู้ดูแล) ให้ส่ง `/capstone26/...` ต่อมาที่ VM **โดยไม่ตัด prefix** · HTTPS จบที่ bscit จึงใช้กล้องสดในหน้าลงทะเบียนใบหน้าได้
+NGINX ของคณะที่ `bscit.sit.kmutt.ac.th` (เราแก้เองไม่ได้) ส่ง `https://bscit.sit.kmutt.ac.th/capstone26/cp26ms3/<x>` มาที่ VM เป็น `http://<VM>/<x>` — **ตัด `/capstone26/cp26ms3` ออก** (ตรวจ 2026-11-24) · HTTPS จบที่ bscit จึงใช้กล้องสดในหน้าลงทะเบียนใบหน้าได้
 
-```nginx
-location /capstone26/ {
-    proxy_pass http://10.4.56.69;          # ไม่มี / ต่อท้าย = ส่ง /capstone26/... มาทั้งก้อน
-    proxy_http_version 1.1;
-    proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto https;
-    client_max_body_size 25m;              # อัปโหลดรูปใบหน้า 5 รูป (ค่าเริ่มต้น 1m → 413)
-    proxy_read_timeout 90s;                # ลงทะเบียนใบหน้ารอ AI
-    proxy_buffering off;                   # SSE หน้าห้องเรียนสด
-}
-```
+| | เบราว์เซอร์ | มาถึง VM |
+|---|---|---|
+| uat | `https://bscit.sit.kmutt.ac.th/capstone26/cp26ms3/uat/` | `/uat/` |
+| prod (ยังไม่ deploy) | `https://bscit.sit.kmutt.ac.th/capstone26/cp26ms3/prod/` | `/prod/` |
 
-- ถ้าตัด prefix (`proxy_pass http://10.4.56.69/;`) หน้าเว็บจะขาว — ไฟล์ assets อ้าง `/capstone26/uat/assets/...`
-- uat อยู่ที่ `/capstone26/uat/` · `/capstone26/` เฉย ๆ ยังว่าง (404) เผื่อ prod
-- ย้าย path: แก้ `VITE_BASE` ใน `frontend/.env.<mode>` กับ path ของ Ingress ใน `k8s/overlays/<env>` ให้ตรงกัน (`deploy.sh` หยุดก่อน apply ถ้าไม่ตรง) · `Dockerfile` และการตรวจหลัง deploy อ่านจาก `VITE_BASE` เอง
-- ภาพสดจาก MediaMTX (`MEDIA_BASE_URL` = `http://...:8889`) จะถูกเบราว์เซอร์บล็อกบนหน้า HTTPS — ต้องขอ forward path ของภาพด้วยเมื่อติดตั้ง MediaMTX
+- `frontend/.env.<mode>`: `VITE_BASE` = path ที่เบราว์เซอร์เห็น, `APP_PATH` = path ที่มาถึง VM (ไม่ใส่ = เท่ากับ `VITE_BASE`) · `APP_PATH` ต้องตรงกับ path ของ Ingress ใน `k8s/overlays/<env>` (`deploy.sh` หยุดก่อน apply ถ้าไม่ตรง)
+- เปิด `http://cp26ms3.sit.kmutt.ac.th/uat/` ตรง ๆ ใน browser หน้าจะขาว (assets อ้าง `/capstone26/cp26ms3/uat/...`) — API ยังเรียกตรงได้ (`/uat/api/...`) และ CD ใช้ตรวจผล
+- prod: ตอน deploy ครั้งแรก ตั้ง `VITE_BASE=/capstone26/cp26ms3/prod/`, `VITE_API_BASE_URL=/capstone26/cp26ms3/prod/api`, `APP_PATH=/prod/` ใน `.env.production`
+- ภาพสดจาก MediaMTX (`MEDIA_BASE_URL` = `http://...:8889`) จะถูกเบราว์เซอร์บล็อกบนหน้า HTTPS — ต้องขอคณะ forward path ของภาพด้วยเมื่อติดตั้ง MediaMTX
+- อัปโหลดรูปใบหน้า (สูงสุด 25MB) และ SSE ผ่าน NGINX ของคณะ — ถ้าได้ 413 / SSE ขาด ต้องขอคณะปรับ `client_max_body_size` / `proxy_buffering off`
 
 ## ประวัติการ deploy
 
@@ -147,7 +140,7 @@ kubectl apply -k devops/k8s/overlays/uat
 
 # 4) ตรวจ
 kubectl -n uat get pods
-curl http://cp26ms3.sit.kmutt.ac.th/capstone26/uat/api/auth/login -H 'Content-Type: application/json' \
+curl http://cp26ms3.sit.kmutt.ac.th/uat/api/auth/login -H 'Content-Type: application/json' \
   -d '{"email":"admin@sit.kmutt.ac.th","password":"Password@123"}'
 ```
 
@@ -211,6 +204,18 @@ curl -s localhost:18080/health && kill %1                       # {"status":"ok"
 - ไม่มี HTTPS ใน manifest ชุดนี้ (Traefik รับ HTTP) — กล้องในเบราว์เซอร์ (หน้าลงทะเบียนใบหน้า) ต้องใช้ HTTPS ยกเว้น localhost
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-24 — uat เปิดที่ `https://bscit.sit.kmutt.ac.th/capstone26/cp26ms3/uat/`
+- **ทำอะไร:** Ingress ของ uat กลับเป็น `/uat` · `.env.uat` ตั้ง `VITE_BASE=/capstone26/cp26ms3/uat/` + `APP_PATH=/uat/` · เขียนหัวข้อ "forward จาก bscit" ใหม่ตามของจริง · อัปเดต URL ในเอกสารและกฎข้อ 15 ใน `CLAUDE.md`
+- **ไฟล์ที่เกี่ยวข้อง:** `k8s/overlays/uat/kustomization.yaml`, `k8s/base/ingress.yaml`, `README.md`, `../frontend/.env.uat`, `../CLAUDE.md`
+- **เหตุผล:** คณะตั้ง forward ไว้แล้วที่ `/capstone26/cp26ms3/` และตัด prefix ก่อนส่งมา VM (ไม่ใช่แบบไม่ตัดที่เตรียมไว้ใน commit ก่อน) · `/capstone26/uat/` ที่ย้ายไปก่อนหน้าจึงไม่ใช้แล้ว
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** เปิดตรงที่ VM ใน browser หน้าจะขาว ต้องเปิดผ่าน bscit · ยังไม่ได้ทดสอบอัปโหลดรูปใบหน้าและ SSE ผ่าน bscit
+
+### 2026-11-24 — CD รองรับ `APP_PATH` (path บน VM ต่างจาก path ที่เบราว์เซอร์เห็น)
+- **ทำอะไร:** `cd/deploy.sh` ใช้ `APP_PATH` (ไม่มี = `VITE_BASE`) จาก `frontend/.env.<mode>` สำหรับตรวจ Ingress และตรวจผลหลัง deploy · log บอกทั้ง 2 path
+- **ไฟล์ที่เกี่ยวข้อง:** `cd/deploy.sh`, `../frontend/Dockerfile`
+- **เหตุผล:** bscit ตัด prefix `/capstone26/cp26ms3` ก่อนส่งมา VM (ตรวจแล้ว: `https://bscit.sit.kmutt.ac.th/capstone26/cp26ms3/capstone26/uat/` ได้หน้าเว็บของเรา) · push ก่อนเปลี่ยน path เพื่อให้สคริปต์บน VM อัปเดตตัวเอง
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ยังไม่เปลี่ยนพฤติกรรม (ยังไม่มี `APP_PATH` ใน `.env`)
 
 ### 2026-11-24 — ย้าย uat ไป `/capstone26/uat/` (รับ forward จาก bscit)
 - **ทำอะไร:** Ingress ของ uat เป็น `/capstone26/uat` · เพิ่มหัวข้อ "forward จาก bscit" (ตัวอย่าง NGINX ที่ต้องขอคณะ) · อัปเดต URL ในเอกสารและกฎข้อ 15 ใน `CLAUDE.md`
