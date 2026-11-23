@@ -76,6 +76,12 @@ docker run -p 8080:80 -e BACKEND_URL=http://10.0.0.5:8081 bangmod-frontend:prod 
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-24 — แยก path บน VM (`APP_PATH`) ออกจาก path ที่เบราว์เซอร์เห็น (`VITE_BASE`)
+- **ทำอะไร:** `Dockerfile` ใช้ `APP_PATH` ใน `.env.<MODE>` เป็น location ของ NGINX ถ้ามี (ไม่มี = ใช้ `VITE_BASE` เหมือนเดิม)
+- **ไฟล์ที่เกี่ยวข้อง:** `Dockerfile`
+- **เหตุผล:** bscit forward `https://bscit.sit.kmutt.ac.th/capstone26/cp26ms3/*` มาที่ VM โดยตัด `/capstone26/cp26ms3` ออก — เบราว์เซอร์เห็น `/capstone26/cp26ms3/uat/` แต่ VM ได้ `/uat/`
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ยังไม่ได้เปลี่ยนค่าใน `.env.uat` — ทำใน commit ถัดไปหลัง CD อัปเดต `deploy.sh` ตัวเอง
+
 ### 2026-11-24 — uat ย้ายไป `/capstone26/uat/`
 - **ทำอะไร:** `.env.uat`: `VITE_BASE=/capstone26/uat/`, `VITE_API_BASE_URL=/capstone26/uat/api` · อัปเดต comment ที่อ้าง `/uat/` (`vite.config.js`, `nginx.conf`, `router/index.js`, `mocks/browser.js`, `shared/api/sse.js`)
 - **ไฟล์ที่เกี่ยวข้อง:** `.env.uat`, `vite.config.js`, `nginx.conf`, `src/app/router/index.js`, `src/mocks/browser.js`, `src/shared/api/sse.js`, `README.md`

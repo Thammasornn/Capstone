@@ -212,6 +212,12 @@ curl -s localhost:18080/health && kill %1                       # {"status":"ok"
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-24 — CD รองรับ `APP_PATH` (path บน VM ต่างจาก path ที่เบราว์เซอร์เห็น)
+- **ทำอะไร:** `cd/deploy.sh` ใช้ `APP_PATH` (ไม่มี = `VITE_BASE`) จาก `frontend/.env.<mode>` สำหรับตรวจ Ingress และตรวจผลหลัง deploy · log บอกทั้ง 2 path
+- **ไฟล์ที่เกี่ยวข้อง:** `cd/deploy.sh`, `../frontend/Dockerfile`
+- **เหตุผล:** bscit ตัด prefix `/capstone26/cp26ms3` ก่อนส่งมา VM (ตรวจแล้ว: `https://bscit.sit.kmutt.ac.th/capstone26/cp26ms3/capstone26/uat/` ได้หน้าเว็บของเรา) · push ก่อนเปลี่ยน path เพื่อให้สคริปต์บน VM อัปเดตตัวเอง
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ยังไม่เปลี่ยนพฤติกรรม (ยังไม่มี `APP_PATH` ใน `.env`)
+
 ### 2026-11-24 — ย้าย uat ไป `/capstone26/uat/` (รับ forward จาก bscit)
 - **ทำอะไร:** Ingress ของ uat เป็น `/capstone26/uat` · เพิ่มหัวข้อ "forward จาก bscit" (ตัวอย่าง NGINX ที่ต้องขอคณะ) · อัปเดต URL ในเอกสารและกฎข้อ 15 ใน `CLAUDE.md`
 - **ไฟล์ที่เกี่ยวข้อง:** `k8s/overlays/uat/kustomization.yaml`, `k8s/base/ingress.yaml`, `README.md`, `../frontend/.env.uat`, `../CLAUDE.md`
