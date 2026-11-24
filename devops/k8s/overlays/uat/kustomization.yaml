@@ -29,8 +29,9 @@ configMapGenerator:
       # เบราว์เซอร์เปิดผ่าน https://bscit.sit.kmutt.ac.th (bscit ส่งต่อมาเป็น HTTP host อื่น) → Spring มองว่าข้ามโดเมน
       # ไม่ใส่ = POST ทุกตัว (login, อัปโหลดใบหน้า) ได้ 403 "Invalid CORS request" ทั้งที่หน้าเว็บโหลดได้
       - CORS_ORIGINS=https://bscit.sit.kmutt.ac.th,http://localhost:5173
-      # B2: URL ที่เบราว์เซอร์เปิดภาพจาก MediaMTX (โดเมนของ VM · DNS ชี้ไป 10.4.56.69)
-      - MEDIA_BASE_URL=http://cp26ms3.sit.kmutt.ac.th:8889
+      # B2: URL ภาพสด (WHEP) = <VITE_BASE>media → NGINX ของ frontend ส่งต่อไป MediaMTX (namespace media)
+      # ไม่ใส่โดเมน = เบราว์เซอร์เรียกใน origin เดียวกับหน้าเว็บ (HTTPS ไม่โดน mixed content) · เปลี่ยน VITE_BASE ต้องเปลี่ยนตาม (/capstone26/cp26ms3/uat/)
+      - MEDIA_BASE_URL=/capstone26/cp26ms3/uat/media
 # ความลับ: copy secret.env.example → secret.env (ไม่ถูก commit) แล้วใส่ค่าจริง
 secretGenerator:
   - name: app-secret

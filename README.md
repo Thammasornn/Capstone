@@ -98,6 +98,12 @@ Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/uat/` แยก 
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-24 — ภาพสดผ่าน HTTPS (WHEP ผ่าน NGINX ของ frontend)
+- **ทำอะไร:** `frontend/nginx.conf` ส่ง `<base>media/*` ไป MediaMTX · overlay uat / prod ตั้ง `MEDIA_BASE_URL=<VITE_BASE>media`
+- **ไฟล์ที่เกี่ยวข้อง:** `frontend/nginx.conf`, `frontend/Dockerfile`, `devops/k8s/overlays/*/kustomization.yaml`, `devops/k8s/mediamtx/*`
+- **เหตุผล:** หน้าเว็บผ่าน bscit (HTTPS) เรียก WHEP แบบ HTTP ไม่ได้ (mixed content)
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ยังไม่มีกล้องจริง · ตัวภาพ (UDP) ดูได้เฉพาะในคณะ / VPN
+
 ### 2026-11-24 — MediaMTX + RTSPS ผ่าน Tailscale
 - **ทำอะไร:** เพิ่ม MediaMTX ใน `devops/k8s/mediamtx/` (namespace `media` ใช้ร่วม uat / prod) ดึงภาพกล้องที่อยู่คนละ network ด้วย `rtsps://` ผ่าน Tailscale บน VM · `.gitignore` เพิ่ม `devops/k8s/mediamtx/mediamtx.yml` (มีรหัสกล้อง)
 - **ไฟล์ที่เกี่ยวข้อง:** `devops/k8s/mediamtx/*`, `.gitignore`, `devops/README.md`

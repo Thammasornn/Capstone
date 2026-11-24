@@ -25,8 +25,9 @@ configMapGenerator:
       - AI_SERVICE_URL=http://ai-service:8080
       # FE เรียกผ่าน NGINX (same origin) จึงไม่ต้องใช้ CORS · ใส่ไว้เผื่อเปิด FE จากโดเมนอื่น
       - CORS_ORIGINS=http://localhost:5173
-      # B2: URL ที่เบราว์เซอร์เปิดภาพจาก MediaMTX (โดเมนของ VM · DNS ชี้ไป 10.4.56.69)
-      - MEDIA_BASE_URL=http://cp26ms3.sit.kmutt.ac.th:8889
+      # B2: URL ภาพสด (WHEP) = <VITE_BASE>media → NGINX ของ frontend ส่งต่อไป MediaMTX (namespace media)
+      # ไม่ใส่โดเมน = เบราว์เซอร์เรียกใน origin เดียวกับหน้าเว็บ (HTTPS ไม่โดน mixed content) · เปลี่ยน VITE_BASE ต้องเปลี่ยนตาม (/prod/)
+      - MEDIA_BASE_URL=/prod/media
 # ความลับ: copy secret.env.example → secret.env (ไม่ถูก commit) แล้วใส่ค่าจริง
 secretGenerator:
   - name: app-secret

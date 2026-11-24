@@ -26,7 +26,7 @@ spec:
               containerPort: 8554          # ใน cluster เท่านั้น (ai-service)
             - name: whep
               containerPort: 8889
-              hostPort: 8889               # เบราว์เซอร์: MEDIA_BASE_URL=http://cp26ms3.sit.kmutt.ac.th:8889
+              hostPort: 8889               # ไว้ตรวจจากนอก cluster · เบราว์เซอร์เรียกผ่าน NGINX ของ frontend (<VITE_BASE>media/)
             - name: webrtc-udp
               containerPort: 8189
               hostPort: 8189               # ภาพ WebRTC (UDP) ต้องเปิด firewall ของ VM ด้วย
