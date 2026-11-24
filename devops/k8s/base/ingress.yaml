@@ -1,5 +1,6 @@
 # Traefik (Ingress ของ K3s) ส่ง /<env>/* ทั้งหมดไป frontend โดยไม่ตัด prefix
 # /api ผ่าน NGINX ของ frontend ต่อไป backend (ตัวเลือก "proxy /api") · overlay uat เปลี่ยน path เป็น /uat
+# ทางนี้คือทางที่ bscit ใช้ (HTTP port 80 · ไม่ผูก host) — ห้ามใส่ host / tls / redirect ที่ Ingress ตัวนี้ ไม่งั้น bscit เข้าไม่ได้
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -15,3 +16,106 @@ spec:
                 name: frontend
                 port:
                   number: 80
+
+## ============================================================================================
+## HTTPS ตรงที่ VM (ทางที่ 2) — ยังไม่เปิดใช้ · ทำตามขั้น 0–6 ด้านล่าง
+## ============================================================================================
+## เป้าหมาย: เปิดเว็บได้ 2 ทาง ด้วย build เดียวกัน (path ในเบราว์เซอร์เหมือนกัน → ไม่ต้องแก้ VITE_BASE / APP_PATH)
+##   ทาง 1 (เดิม): https://bscit.sit.kmutt.ac.th/capstone26/cp26ms3/uat/  → bscit ตัด prefix → http://VM/uat/   (Ingress "web")
+##   ทาง 2 (ใหม่): https://cp26ms3.sit.kmutt.ac.th/capstone26/cp26ms3/uat/ → Traefik :443 ตัด /capstone26/cp26ms3 → /uat/ (Ingress "web-https")
+## ทาง 2 ใช้ได้เฉพาะในเครือข่ายคณะ / VPN (DNS ชี้ IP ภายใน 10.4.56.69) และใบรับรองออกโดย SITCertAuthCA (CA ของคณะ)
+##   → เครื่องที่ไม่ได้ติดตั้ง SITCertAuthCA เป็น root จะขึ้นเตือน "การเชื่อมต่อไม่เป็นส่วนตัว" · ผู้ใช้ทั่วไปให้ใช้ทาง 1
+##
+## ขั้น 0 — ตรวจบน VM ก่อน (ไม่ต้อง sudo ยกเว้น kubectl)
+##   a) Middleware ของ Traefik ใช้ apiVersion ไหน:
+##        sudo k3s kubectl api-resources | grep -i middleware
+##      เห็น traefik.io → ใช้กรอบ B ตามที่เขียนไว้ · เห็นแต่ traefik.containo.us → เปลี่ยน apiVersion ในกรอบ B เป็น traefik.containo.us/v1alpha1
+##   b) ไฟล์ใบรับรอง: cp26ms3.sit.kmutt.ac.th.pem มี key อยู่ในไฟล์เดียวกันไหม (ห้ามส่งเนื้อไฟล์ให้ใคร)
+##        grep -c 'PRIVATE KEY' cp26ms3.sit.kmutt.ac.th.pem      # 0 = ไม่มี key → ต้องมีไฟล์ key แยก
+##        grep -c 'BEGIN CERTIFICATE' cp26ms3.sit.kmutt.ac.th.pem # 1 = มีแค่ใบของ VM → ต่อ CA ท้ายไฟล์ (ข้อ c)
+##   c) ทำ fullchain (ใบ VM ก่อน ตามด้วย CA) ถ้ามีไฟล์ CA ของ SITCertAuthCA:
+##        cat cp26ms3.sit.kmutt.ac.th.pem SITCertAuthCA.pem > fullchain.pem
+##        openssl x509 -in fullchain.pem -noout -subject -issuer -enddate   # ต้องเป็น CN=cp26ms3.sit.kmutt.ac.th · ดูวันหมดอายุ
+##   d) ใบกับ key ต้องเป็นคู่กัน (สองบรรทัดต้องเหมือนกัน):
+##        openssl x509 -in fullchain.pem -noout -pubkey | openssl sha256
+##        openssl pkey -in <ไฟล์ key> -pubout | openssl sha256
+##
+## ขั้น 1 — ใส่ใบรับรองเป็น Secret ชื่อ web-tls ทุก namespace ที่จะเปิดทาง 2 (ใช้ sudo → ผู้ใช้รันเอง)
+##        sudo k3s kubectl -n uat  create secret tls web-tls --cert=fullchain.pem --key=<ไฟล์ key>
+##        sudo k3s kubectl -n prod create secret tls web-tls --cert=fullchain.pem --key=<ไฟล์ key>
+##   - Secret นี้อยู่บน VM เท่านั้น ห้าม commit ไฟล์ .pem / key เข้า git · เก็บไฟล์ key ให้ chmod 600
+##   - ต่ออายุใบ: สร้างใหม่ทับด้วย
+##        sudo k3s kubectl -n uat create secret tls web-tls --cert=... --key=... --dry-run=client -o yaml | sudo k3s kubectl apply -f -
+##
+## ขั้น 2 — เปิดกรอบ A และ B ในไฟล์นี้: ลบ "# " หน้าทุกบรรทัดในกรอบ (ไม่ต้องลบบรรทัดที่ขึ้นต้นด้วย "##")
+##   ค่าในกรอบเป็นของ prod (เหมือน Ingress "web" ด้านบน) · uat เปลี่ยนด้วย patch ในขั้น 3
+##
+## ขั้น 3 — overlays/uat/kustomization.yaml: เพิ่ม patch นี้ต่อจาก patch ของ Ingress "web" ใต้ patches:
+##        - target: { kind: Ingress, name: web-https }
+##          patch: |-
+##            - op: replace
+##              path: /spec/rules/0/http/paths/0/path
+##              value: /capstone26/cp26ms3/uat
+##            - op: replace
+##              path: /metadata/annotations/traefik.ingress.kubernetes.io~1router.middlewares
+##              value: uat-strip-bscit-prefix@kubernetescrd
+##   - ชื่อ middleware ต้องเป็น <namespace>-strip-bscit-prefix@kubernetescrd (kustomize ไม่เปลี่ยนชื่อใน annotation ให้)
+##   - ไม่ patch = uat ใช้ path ของ prod → ชนกับ prod (host + path เดียวกัน)
+##   - prod ไม่ต้อง patch แต่ทาง 2 ของ prod ใช้ได้จริงเมื่อ frontend/.env.production เปลี่ยนเป็นแบบ bscit แล้ว
+##     (VITE_BASE=/capstone26/cp26ms3/prod/ + APP_PATH=/prod/ เหมือน .env.uat)
+##
+## ขั้น 4 — CORS: เพิ่ม https://cp26ms3.sit.kmutt.ac.th ใน CORS_ORIGINS ของ overlay ที่เปิดทาง 2
+##        - CORS_ORIGINS=https://bscit.sit.kmutt.ac.th,https://cp26ms3.sit.kmutt.ac.th,http://localhost:5173
+##   ไม่ใส่ = หน้าเว็บขึ้นแต่ login / POST ทุกตัวได้ 403 (อาการเดียวกับตอน bscit)
+##
+## ขั้น 5 — push ขึ้น Dev (./dev.sh test ก่อน) → CD deploy uat เอง · ไม่ต้อง kubectl apply ตรง ๆ
+##
+## ขั้น 6 — ตรวจ (จากเครื่องในคณะ / VPN · SITCertAuthCA.pem = ไฟล์ CA ของคณะ)
+##        curl -sS -o /dev/null -w '%{http_code}\n' --cacert SITCertAuthCA.pem https://cp26ms3.sit.kmutt.ac.th/capstone26/cp26ms3/uat/          # 200
+##        curl -sS -o /dev/null -w '%{http_code}\n' --cacert SITCertAuthCA.pem -H 'Origin: https://cp26ms3.sit.kmutt.ac.th' \
+##             https://cp26ms3.sit.kmutt.ac.th/capstone26/cp26ms3/uat/api/me                                                                    # 401 (403 = ลืมขั้น 4)
+##        curl -sS -o /dev/null -w '%{http_code}\n' https://bscit.sit.kmutt.ac.th/capstone26/cp26ms3/uat/                                        # 200 (ทาง 1 ยังใช้ได้)
+##        echo | openssl s_client -connect cp26ms3.sit.kmutt.ac.th:443 -servername cp26ms3.sit.kmutt.ac.th 2>/dev/null | openssl x509 -noout -issuer
+##          # ต้องเห็น SITCertAuthCA · ถ้ายังเป็น "TRAEFIK DEFAULT CERT" = Secret web-tls ไม่มี / ชื่อผิด / ผิด namespace
+##
+## ยังไม่รวม: redirect http://cp26ms3.../capstone26/... → https (ตอนนี้ได้ 404) · MediaMTX (ส่ง WHEP ผ่าน NGINX ใน origin เดียวกัน
+##   แทนการเปิด HTTPS ที่ port 8889 — fetch ไป port อื่นที่ใบไม่ถูกเชื่อถือจะพังเงียบ ๆ)
+
+## ---- กรอบ A: Ingress ของทาง 2 (HTTPS · ผูก host · ตัด prefix ของ bscit) ----
+# ---
+# apiVersion: networking.k8s.io/v1
+# kind: Ingress
+# metadata:
+#   name: web-https
+#   annotations:
+#     traefik.ingress.kubernetes.io/router.entrypoints: websecure
+#     traefik.ingress.kubernetes.io/router.tls: "true"
+#     # <namespace>-<ชื่อ Middleware ในกรอบ B>@kubernetescrd · uat เปลี่ยนในขั้น 3
+#     traefik.ingress.kubernetes.io/router.middlewares: prod-strip-bscit-prefix@kubernetescrd
+# spec:
+#   tls:
+#     - hosts:
+#         - cp26ms3.sit.kmutt.ac.th
+#       secretName: web-tls        # Secret จากขั้น 1 (ต้องอยู่ namespace เดียวกัน)
+#   rules:
+#     - host: cp26ms3.sit.kmutt.ac.th
+#       http:
+#         paths:
+#           - path: /capstone26/cp26ms3/prod   # uat เปลี่ยนในขั้น 3 · ตัด prefix แล้วต้องเหลือ APP_PATH (/prod, /uat)
+#             pathType: Prefix
+#             backend:
+#               service:
+#                 name: frontend
+#                 port:
+#                   number: 80
+
+## ---- กรอบ B: ตัด /capstone26/cp26ms3 ให้เหลือ path เดียวกับที่ bscit ส่งมา ----
+# ---
+# apiVersion: traefik.io/v1alpha1   # ขั้น 0a: บาง K3s ต้องเป็น traefik.containo.us/v1alpha1
+# kind: Middleware
+# metadata:
+#   name: strip-bscit-prefix
+# spec:
+#   stripPrefix:
+#     prefixes:
+#       - /capstone26/cp26ms3
