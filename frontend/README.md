@@ -76,6 +76,12 @@ docker run -p 8080:80 -e BACKEND_URL=http://10.0.0.5:8081 bangmod-frontend:prod 
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-24 — ปุ่มบัญชีทดสอบในหน้า Login ใช้ข้อมูลจาก DB
+- **ทำอะไร:** โหมด Backend จริง (local / uat) โหลดรายชื่อจาก `GET /test-accounts` ตอนเปิดหน้า แล้ว `groupTestAccounts()` จัดกลุ่ม: เจ้าหน้าที่ (admin + อาจารย์ พร้อมวิชาที่สอน) แล้วนักศึกษาตามสถานะ (ยังไม่ลงทะเบียนใบหน้า → ยินยอมแล้วแต่ยังไม่มีใบหน้า → ต้องยินยอมใหม่ → ถอนความยินยอม → ลงทะเบียนแล้ว → บัญชีถูกปิด) · กลุ่มเกิน 8 บัญชีพับไว้ (`<details>`) · โหลดไม่ได้แสดงข้อความแทน · ลบรายชื่อที่เขียนตายตัว (โหมด MSW ยังใช้รายชื่อ mock เดิม)
+- **ไฟล์ที่เกี่ยวข้อง:** `src/features/auth/test-accounts.js`, `src/features/auth/api.js`, `src/features/auth/pages/LoginPage.vue`, `tests/unit/test-accounts.test.js`
+- **เหตุผล:** ผู้ใช้ขอให้เอารายชื่อ mock ที่เขียนไว้ใน frontend ออกและใช้ข้อมูลที่มีอยู่ใน DB จริง
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ต้องเปิด `TEST_ACCOUNTS_ENABLED=true` ที่ backend ด้วย (uat ตั้งใน overlay แล้ว) · ป้าย "กลุ่มเสี่ยงสูง / ปานกลาง" แบบเดิมไม่มีแล้ว (ไม่ได้คำนวณจาก DB)
+
 ### 2026-11-24 — uat: `VITE_BASE=/capstone26/cp26ms3/uat/`, `APP_PATH=/uat/`
 - **ทำอะไร:** `.env.uat` ตั้ง path ที่เบราว์เซอร์เห็นเป็น `/capstone26/cp26ms3/uat/` และ path บน VM (`APP_PATH`) เป็น `/uat/` · อัปเดต comment ใน `vite.config.js`, `nginx.conf`, `router/index.js`, `mocks/browser.js`, `shared/api/sse.js`
 - **ไฟล์ที่เกี่ยวข้อง:** `.env.uat`, `vite.config.js`, `nginx.conf`, `src/app/router/index.js`, `src/mocks/browser.js`, `src/shared/api/sse.js`, `README.md`
