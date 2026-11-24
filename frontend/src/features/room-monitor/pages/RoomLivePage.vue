@@ -3,6 +3,7 @@
  * Room Live (B2–B4 + 5.7–5.8 + B8)
  *  - ข้อมูลห้อง + คาบปัจจุบันจาก B4 (รีเฟรชทุก 30 วินาที และเมื่อมี event session)
  *  - SSE (B3): camera → สถานะกล้อง · faces → จำนวนใบหน้า · check_in → อัปเดตรายชื่อทันที
+ *  - SSE ยังไม่ต่อ / หลุด (เช่น proxy ข้างหน้า buffer) → โหลดรายชื่อใหม่ทุก 15 วินาทีแทน ข้อมูลยังเดิน
  *  - เช็คชื่อด้วยมือ (B8) ผ่าน ManualAttendanceDialog
  */
 import { computed, ref, watch } from 'vue'
@@ -25,6 +26,7 @@ import PresenceCounters from '../components/PresenceCounters.vue'
 import RoomSwitcher from '../components/RoomSwitcher.vue'
 
 const props = defineProps({ roomId: { type: String, required: true } })
+const ROSTER_FALLBACK_MS = 15_000
 const toast = useToast()
 
 const room = useAsyncState(() => getRoom(props.roomId), { immediate: false })
@@ -40,7 +42,8 @@ async function loadRoom() {
   const r = await room.run()
   if (r) cameraStatus.value = r.cameraStatus
 }
-async function loadRoster() {
+/** @param {{ silent?: boolean }} [options] silent = โหลดเบื้องหลัง (poll) ไม่แสดง toast เมื่อพลาด */
+async function loadRoster({ silent = false } = {}) {
   if (!session.value) {
     roster.value = []
     return
@@ -50,7 +53,7 @@ async function loadRoster() {
     roster.value = result.items
     sessionDate.value = result.sessionDate
   } catch (e) {
-    toast.show(e?.message ?? 'โหลดรายชื่อไม่สำเร็จ', { tone: 'danger' })
+    if (!silent) toast.show(e?.message ?? 'โหลดรายชื่อไม่สำเร็จ', { tone: 'danger' })
   }
 }
 
@@ -63,7 +66,10 @@ watch(
   },
   { immediate: true },
 )
-watch(() => session.value?.sessionId, loadRoster)
+watch(
+  () => session.value?.sessionId,
+  () => loadRoster(),
+)
 usePolling(loadRoom, 30_000)
 
 const { status: streamStatus } = useRoomEvents(() => props.roomId, {
@@ -83,6 +89,11 @@ const { status: streamStatus } = useRoomEvents(() => props.roomId, {
   },
   session: () => loadRoom(),
 })
+
+// SSE ยังไม่ open = ไม่ได้รับ check_in → โหลดรายชื่อเองทุก 15 วินาที (SSE ใช้ได้แล้วจะหยุดเอง)
+usePolling(async () => {
+  if (streamStatus.value !== 'open') await loadRoster({ silent: true })
+}, ROSTER_FALLBACK_MS)
 
 const counts = computed(() => {
   const c = { on_time: 0, late: 0, absent: 0 }

@@ -98,6 +98,12 @@ Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/uat/` แยก 
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-25 — หน้าห้องอัปเดตข้อมูลจริงผ่าน bscit
+- **ทำอะไร:** NGINX ของ frontend ส่ง `X-Accel-Buffering: no` ใน SSE ให้ bscit ไม่กัก event · หน้าห้อง poll รายชื่อทุก 15 วินาทีเมื่อ SSE ไม่ต่อ
+- **ไฟล์ที่เกี่ยวข้อง:** `frontend/nginx.conf`, `frontend/src/features/room-monitor/pages/RoomLivePage.vue`, `devops/README.md`
+- **เหตุผล:** ทดสอบผ่าน bscit แล้วข้อมูลไม่ dynamic (ป้ายค้าง "กำลังเชื่อมต่อ")
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ยังไม่ได้ยืนยันบน bscit จริง · เช็คชื่อด้วยกล้องยังต้องมีคาบในห้องกล้อง (4303) ที่ทีมลงทะเบียน — mock data ปัจจุบันไม่มี (ทีมอยู่ INT201-001 ห้อง 4302, คาบ mock หมด 26 พ.ย.)
+
 ### 2026-11-25 — เช็คชื่อด้วยกล้องจริง (ai-service อ่าน RTSP จาก MediaMTX)
 - **ทำอะไร:** backend เพิ่ม `GET /api/internal/cameras` และ `/rooms/{roomId}/gallery` · ai-service เพิ่มตัวอ่านกล้อง (`camera_worker.py`, `gallery.py`, `vision.py`) ส่ง heartbeat / จำนวนใบหน้า / ผลจับคู่ไป backend · K3s เปิด `CAMERA_WORKER=true` และส่ง `FACE_EMBEDDING_KEY` ให้ ai-service
 - **ไฟล์ที่เกี่ยวข้อง:** `backend/src/main/java/com/faculty/attendance/internal/*`, `ai-service/*`, `devops/k8s/base/ai-service.yaml`

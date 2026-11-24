@@ -76,6 +76,12 @@ docker run -p 8080:80 -e BACKEND_URL=http://10.0.0.5:8081 bangmod-frontend:prod 
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-25 — หน้าห้องอัปเดตข้อมูลจริงเมื่อเปิดผ่าน bscit (SSE)
+- **ทำอะไร:** `nginx.conf` ส่วน SSE (`<base>api/rooms/{id}/events`) เพิ่ม `add_header X-Accel-Buffering no always` · `RoomLivePage.vue` เมื่อ SSE ยังไม่ `open` (เชื่อมต่อไม่ได้ / หลุด) โหลดรายชื่อใหม่ทุก 15 วินาที (`loadRoster({ silent: true })` ไม่แสดง toast)
+- **ไฟล์ที่เกี่ยวข้อง:** `nginx.conf`, `src/features/room-monitor/pages/RoomLivePage.vue`
+- **เหตุผล:** ผู้ใช้ทดสอบผ่าน bscit แล้วข้อมูลไม่อัปเดต หน้าห้องค้างป้าย "กำลังเชื่อมต่อ" · รายชื่ออัปเดตผ่าน event `check_in` อย่างเดียว · จำลองด้วย nginx 2 ชั้นในเครื่อง: nginx ข้างหน้าที่ตั้งค่าแบบเริ่มต้น (ต่อ upstream ด้วย HTTP/1.0 หรือเปิด gzip) กัก event ไว้จน stream จบ — ใส่ header แล้ว event มาทีละวินาทีตามจริง (nginx เคารพ `X-Accel-Buffering` จาก upstream)
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ยังไม่ได้ยืนยันกับ bscit จริง (ต้อง login) — หลัง deploy ป้ายต้องเปลี่ยนเป็น "เชื่อมต่อแล้ว" · ถ้ายังค้าง รายชื่อจะอัปเดตทุก 15 วินาทีจาก poll แทน · faces / camera ยังมาจาก SSE (สถานะกล้อง poll กับข้อมูลห้องทุก 30 วินาทีอยู่แล้ว)
+
 ### 2026-11-24 — NGINX ส่ง `<base>media/*` ไป MediaMTX (ภาพสด WHEP)
 - **ทำอะไร:** `nginx.conf` เพิ่ม `location ${APP_BASE}media/` → `${MEDIAMTX_URL}` (ตัด prefix ด้วย rewrite) ใช้ `resolver ${NGINX_LOCAL_RESOLVERS}` + ตัวแปร ให้หาชื่อ service ตอนมี request · `Dockerfile` เพิ่ม `ENV MEDIAMTX_URL=http://mediamtx.media.svc.cluster.local:8889` และ `NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1` (entrypoint ของ nginx image อ่าน nameserver จาก `/etc/resolv.conf`)
 - **ไฟล์ที่เกี่ยวข้อง:** `nginx.conf`, `Dockerfile`
