@@ -39,6 +39,7 @@ Spring Boot 4 · Java · PostgreSQL ([`db/`](db/)) · แบบฐานข้�
 | `CORS_ORIGINS` | โดเมนของ FE คั่นด้วย `,` | `http://localhost:5173` | เหมือนกัน |
 | `FLYWAY_ENABLED` | ให้ Flyway ดูแล schema (ปกติใช้ `db/*.sql`) | `false` | เหมือนกัน |
 | `FORWARD_HEADERS_STRATEGY` | เชื่อ `X-Forwarded-For` จาก proxy ภายใน | `native` | เหมือนกัน |
+| `TEST_ACCOUNTS_ENABLED` | เปิด `GET /api/test-accounts` (ไม่ต้อง login) ให้หน้า Login แสดงบัญชีใน DB · **ห้ามเปิดใน prod** | `false` (= 404) | `true` |
 
 สร้างฐานข้อมูลด้วย `./dev.sh db` ที่ root (หรือตาม [`db/README.md`](db/README.md): `00` → `01` → `02`) แล้ว:
 
@@ -51,6 +52,7 @@ mvn spring-boot:run        # http://localhost:8081
 | เส้น | ข้อ | สิทธิ์ |
 |---|---|---|
 | `POST /auth/login`, `GET /me` | 5.1–5.2 | ทุกคน |
+| `GET /test-accounts` (อีเมล ชื่อ role สถานะใบหน้า / ความยินยอม จำนวนวิชา · ไม่มีรหัสผ่าน) | หน้า Login (local / uat) | ไม่ต้อง login · มีเฉพาะเมื่อ `TEST_ACCOUNTS_ENABLED=true` |
 | `GET /courses` (+ ตารางเรียนของ section ตาม B5) | 5.3 | ตาม role |
 | `GET /courses/{id}/attendance/summary · sessions · students` | 5.4–5.6 | admin, อาจารย์ผู้สอน |
 | `GET /class-sessions/{id}/attendance/summary`, `GET /class-sessions/{id}/attendance` (+ `source`) | 5.7–5.8 | admin, อาจารย์ผู้สอน |
@@ -81,6 +83,12 @@ mvn spring-boot:run        # http://localhost:8081
 > SSE และ event อยู่ในหน่วยความจำของ instance เดียว ถ้ารันหลาย replica ต้องเปลี่ยน `RoomEventHub` ไปใช้ pub/sub กลาง
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-24 — `GET /api/test-accounts` ให้หน้า Login แสดงบัญชีจาก DB
+- **ทำอะไร:** เพิ่ม `TestAccountsController` คืนรายชื่อ users ทั้งหมด (อีเมล ชื่อ role is_active รหัสนักศึกษา มีใบหน้าหรือไม่ ความยินยอมล่าสุด ต้องยินยอมใหม่ จำนวนวิชาเทอมนี้ / วิชาที่สอน) · ไม่มีรหัสผ่าน / hash / embedding · มี bean เฉพาะเมื่อ `app.test-accounts.enabled=true` (`TEST_ACCOUNTS_ENABLED`, ค่าเริ่มต้น `false` = 404, โปรไฟล์ `local` = `true`) · `SecurityConfig` ให้ GET path นี้ไม่ต้องมี token · เปิดอยู่จะมี WARN ใน log
+- **ไฟล์ที่เกี่ยวข้อง:** `src/main/java/com/faculty/attendance/auth/TestAccountsController.java`, `src/main/java/com/faculty/attendance/auth/SecurityConfig.java`, `src/main/resources/application.yml`, `src/main/resources/application-local.yml`, `README.md`
+- **เหตุผล:** หน้า Login เคยใช้รายชื่อที่เขียนตายตัวใน frontend (ต้องแก้ตาม seed ทุกครั้ง) — ตอนนี้แสดงข้อมูลที่อยู่ใน DB จริง
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ทดสอบกับ DB ในเครื่อง: เปิด → 200 (44 บัญชี), ปิด → 404 · ห้ามตั้ง `TEST_ACCOUNTS_ENABLED=true` ใน prod (เปิดเผยรายชื่อผู้ใช้โดยไม่ต้อง login) · `db/README.md` ยังอ้างว่าปุ่มในหน้า Login มาจาก `test-accounts.js` — ไม่ได้แก้ใน commit นี้เพราะแก้ไฟล์ใน `backend/db/` จะทำให้ CD หยุด (แก้พร้อม commit ที่เปลี่ยน DB ครั้งถัดไป)
 
 ### 2026-11-22 — ตัวเลือกห้อง / อาจารย์สำหรับฟอร์มรายวิชา
 - **ทำอะไร:** เพิ่ม `GET /api/rooms/options` (ทุกห้องที่ใช้งานได้) และ `GET /api/lecturers` (อาจารย์ที่ใช้งานได้) สำหรับฟอร์มเพิ่ม/แก้ไขรายวิชาของ FE · staff เท่านั้น

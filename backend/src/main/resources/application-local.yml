@@ -16,6 +16,9 @@ app:
     secret: ${JWT_SECRET:local-only-jwt-secret-do-not-use-on-any-server-0123456789}
   face:
     embedding-key: ${FACE_EMBEDDING_KEY:tRv4JpHroo070kKtVEXa4ZSpXMBSgNa0GYxnZKhPp0Y=}
+  test-accounts:
+    # หน้า Login แสดงบัญชีจาก DB ในเครื่อง (frontend .env.development: VITE_SHOW_TEST_ACCOUNTS=true)
+    enabled: ${TEST_ACCOUNTS_ENABLED:true}
   internal:
     # ใช้ทดสอบ /api/internal/** ด้วย curl (header X-Internal-Key) และให้ AI Service ที่รันในเครื่องใช้ค่าเดียวกัน
     api-key: ${INTERNAL_API_KEY:local-test-key}

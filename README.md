@@ -31,7 +31,7 @@ Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/uat/` แยก 
 ไม่ต้องตั้ง key อะไรเลย — backend ใช้โปรไฟล์ `local` ที่มี key ทดสอบให้ (ดู `backend/README.md`)
 ### บัญชีทดสอบ (รหัสผ่าน `Password@123` · ใช้ได้บนเครื่องและ uat · **ไม่มีใน prod**)
 
-หน้า Login แสดงบัญชีเหล่านี้ให้กดเลือกได้ (`VITE_SHOW_TEST_ACCOUNTS=true` ใน `.env.development` / `.env.uat`)
+หน้า Login แสดงบัญชี**ทั้งหมดที่มีใน DB** ให้กดเลือกได้ จัดกลุ่มตามสถานะใบหน้า / ความยินยอม (frontend `VITE_SHOW_TEST_ACCOUNTS=true` + backend `TEST_ACCOUNTS_ENABLED=true` · local และ uat เท่านั้น)
 
 - เจ้าหน้าที่: `admin@sit.kmutt.ac.th` (admin) · `supawadee.c@sit.kmutt.ac.th` (อาจารย์ INT102 / INT201 มีคาบกำลังเรียนในห้อง 4302) · `thanakorn.w@sit.kmutt.ac.th` (อาจารย์ INT101)
 - นักศึกษา — ครบทุกสถานะ:
@@ -97,6 +97,12 @@ Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/uat/` แยก 
 อาจารย์ที่ปรึกษา: อ.มนตรี สุภัททธรรม
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-24 — หน้า Login แสดงบัญชีทดสอบจาก DB แทนรายชื่อที่เขียนตายตัว
+- **ทำอะไร:** backend เพิ่ม `GET /api/test-accounts` (เปิดด้วย `TEST_ACCOUNTS_ENABLED`, local + uat เท่านั้น) · frontend โหลดรายชื่อนี้แล้วจัดกลุ่มตามสถานะใบหน้า / ความยินยอม · uat overlay เปิด flag
+- **ไฟล์ที่เกี่ยวข้อง:** `backend/src/main/java/com/faculty/attendance/auth/TestAccountsController.java`, `backend/src/main/java/com/faculty/attendance/auth/SecurityConfig.java`, `backend/src/main/resources/application*.yml`, `frontend/src/features/auth/*`, `devops/k8s/overlays/uat/kustomization.yaml`
+- **เหตุผล:** ผู้ใช้ขอให้เอารายชื่อ mock ออกจากหน้า Login และใช้ข้อมูลใน DB จริง
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** prod ไม่เปิด endpoint นี้ (404) และ frontend prod ไม่แสดงแผงนี้อยู่แล้ว
 
 ### 2026-11-24 — uat เปิดผ่าน HTTPS ของคณะที่ `https://bscit.sit.kmutt.ac.th/capstone26/cp26ms3/uat/`
 - **ทำอะไร:** แยก path ที่เบราว์เซอร์เห็น (`VITE_BASE`) กับ path ที่มาถึง VM (`APP_PATH`) ใน `frontend/.env.<mode>` · `frontend/Dockerfile` และ `devops/cd/deploy.sh` ใช้ `APP_PATH` · uat: เบราว์เซอร์ `/capstone26/cp26ms3/uat/`, VM `/uat/` (แทน `/capstone26/uat/` ที่ย้ายไปก่อนหน้า)

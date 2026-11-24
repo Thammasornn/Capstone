@@ -4,12 +4,13 @@
  * ต่างจาก Figma 2 จุดเพราะต้องตาม API: ช่องแรกเป็น "อีเมล" (ไม่ใช่ Student ID)
  * และใช้หน้าเดียวทุกบทบาท (POST /auth/login ตัวเดียว นำทางตาม user.role)
  */
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import BaseButton from '@/shared/components/BaseButton.vue'
 import { HOME_ROUTE_BY_ROLE } from '@/shared/constants/roles'
 import { useAuthStore } from '../store'
-import { TEST_ACCOUNTS } from '../test-accounts'
+import { getTestAccounts } from '../api'
+import { TEST_ACCOUNTS, groupTestAccounts } from '../test-accounts'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -22,6 +23,26 @@ const errorMessage = ref('')
 const sessionExpired = computed(() => route.query.reason === 'expired')
 /** บัญชีทดสอบ (test-accounts.js) — โหมด mock หรือ local / uat เท่านั้น · Production = null */
 const testAccounts = TEST_ACCOUNTS
+/** mock: รายชื่อคงที่ · db: โหลดจาก GET /test-accounts ตอนเปิดหน้า */
+const testGroups = ref(testAccounts?.mode === 'mock' ? testAccounts.groups : [])
+const testLoading = ref(false)
+const testError = ref('')
+
+onMounted(async () => {
+  if (testAccounts?.mode !== 'db') return
+  testLoading.value = true
+  try {
+    testGroups.value = groupTestAccounts(await getTestAccounts())
+    if (!testGroups.value.length) testError.value = 'ยังไม่มีบัญชีในฐานข้อมูล'
+  } catch (error) {
+    testError.value =
+      error?.kind === 'not_found'
+        ? 'backend ไม่ได้เปิดรายชื่อบัญชีทดสอบ (TEST_ACCOUNTS_ENABLED)'
+        : 'โหลดรายชื่อบัญชีจากฐานข้อมูลไม่ได้'
+  } finally {
+    testLoading.value = false
+  }
+})
 
 function useTestAccount(email) {
   form.email = email
@@ -127,12 +148,26 @@ async function onSubmit() {
       >
         <h2 id="test-accounts-title" class="text-xs font-semibold text-muted">
           บัญชีทดสอบ ({{
-            testAccounts.mode === 'mock' ? 'โหมด mock' : 'ข้อมูล mock · ไม่มีใน Production'
+            testAccounts.mode === 'mock' ? 'โหมด mock' : 'จากฐานข้อมูล · ไม่มีใน Production'
           }}
           · รหัสผ่าน {{ testAccounts.password }}) — กดเพื่อกรอกให้
         </h2>
-        <div v-for="group in testAccounts.groups" :key="group.title" class="mt-3">
-          <p class="text-[11px] font-semibold text-muted">{{ group.title }}</p>
+        <p v-if="testLoading" class="mt-3 text-xs text-muted">กำลังโหลดรายชื่อบัญชี…</p>
+        <p v-else-if="testError" role="status" class="mt-3 text-xs text-muted">{{ testError }}</p>
+        <details
+          v-for="group in testGroups"
+          :key="group.title"
+          class="group mt-3"
+          :open="group.open"
+        >
+          <summary
+            class="cursor-pointer list-none text-[11px] font-semibold text-muted [&::-webkit-details-marker]:hidden"
+          >
+            <span class="inline-block transition-transform group-open:rotate-90" aria-hidden="true"
+              >›</span
+            >
+            {{ group.title }} ({{ group.accounts.length }})
+          </summary>
           <ul class="mt-1.5 flex flex-wrap gap-2">
             <li v-for="account in group.accounts" :key="account.email">
               <button
@@ -146,7 +181,7 @@ async function onSubmit() {
               </button>
             </li>
           </ul>
-        </div>
+        </details>
       </section>
     </div>
   </main>

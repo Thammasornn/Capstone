@@ -24,6 +24,8 @@ configMapGenerator:
       - DB_URL=jdbc:postgresql://postgres:5432/bangmod_attendance
       - DB_USER=postgres
       - AI_SERVICE_URL=http://ai-service:8080
+      # หน้า Login แสดงบัญชีใน DB (GET /api/test-accounts ไม่ต้อง login) — uat เท่านั้น ห้ามใส่ใน prod
+      - TEST_ACCOUNTS_ENABLED=true
       # FE เรียกผ่าน NGINX (same origin) จึงไม่ต้องใช้ CORS · ใส่ไว้เผื่อเปิด FE จากโดเมนอื่น
       - CORS_ORIGINS=http://localhost:5173
       # B2: URL ที่เบราว์เซอร์เปิดภาพจาก MediaMTX (โดเมนของ VM · DNS ชี้ไป 10.4.56.69)

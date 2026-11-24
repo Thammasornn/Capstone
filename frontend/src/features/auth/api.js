@@ -51,3 +51,13 @@ export async function getMe() {
   const { data } = await http.get('/me')
   return data
 }
+
+/**
+ * GET /test-accounts — บัญชีใน DB ให้หน้า Login แสดง (local / uat เท่านั้น · backend ปิดไว้ = 404)
+ * ไม่แนบ token และไม่ logout อัตโนมัติ
+ * @returns {Promise<import('./test-accounts').DbAccount[]>}
+ */
+export async function getTestAccounts() {
+  const { data } = await http.get('/test-accounts', { skipAuth: true, skipAuthRedirect: true })
+  return data
+}

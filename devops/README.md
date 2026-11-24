@@ -205,6 +205,12 @@ curl -s localhost:18080/health && kill %1                       # {"status":"ok"
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-24 — uat เปิด `TEST_ACCOUNTS_ENABLED`
+- **ทำอะไร:** เพิ่ม `TEST_ACCOUNTS_ENABLED=true` ใน configMap ของ `k8s/overlays/uat` (prod ไม่ตั้ง = ปิด)
+- **ไฟล์ที่เกี่ยวข้อง:** `k8s/overlays/uat/kustomization.yaml`
+- **เหตุผล:** หน้า Login ของ uat โหลดบัญชีทดสอบจาก DB ผ่าน `GET /api/test-accounts`
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ห้ามใส่ใน overlay prod
+
 ### 2026-11-24 — uat เปิดที่ `https://bscit.sit.kmutt.ac.th/capstone26/cp26ms3/uat/`
 - **ทำอะไร:** Ingress ของ uat กลับเป็น `/uat` · `.env.uat` ตั้ง `VITE_BASE=/capstone26/cp26ms3/uat/` + `APP_PATH=/uat/` · เขียนหัวข้อ "forward จาก bscit" ใหม่ตามของจริง · อัปเดต URL ในเอกสารและกฎข้อ 15 ใน `CLAUDE.md`
 - **ไฟล์ที่เกี่ยวข้อง:** `k8s/overlays/uat/kustomization.yaml`, `k8s/base/ingress.yaml`, `README.md`, `../frontend/.env.uat`, `../CLAUDE.md`

@@ -45,6 +45,9 @@ app:
     expires-minutes: 480
   face:
     embedding-key: ${FACE_EMBEDDING_KEY:}   # บังคับตั้ง: base64 ของ 32 ไบต์ (openssl rand -base64 32) ใช้เข้ารหัส face_embeddings · โปรไฟล์ local มีค่าทดสอบให้
+  test-accounts:
+    # true = เปิด GET /api/test-accounts (ไม่ต้อง login) ให้หน้า Login แสดงบัญชีใน DB · local / uat เท่านั้น ห้ามเปิดใน prod
+    enabled: ${TEST_ACCOUNTS_ENABLED:false}
   cors:
     allowed-origins: ${CORS_ORIGINS:http://localhost:5173}   # คั่นด้วย , ได้หลายโดเมน
   internal:

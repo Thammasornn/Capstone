@@ -2,6 +2,7 @@ package com.faculty.attendance.auth;
 
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
 import jakarta.servlet.DispatcherType;
+import org.springframework.http.HttpMethod;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
@@ -42,6 +43,8 @@ public class SecurityConfig {
                     // SSE: dispatch รอบปิด stream ไม่มี token ซ้ำ (ตรวจไปแล้วตอนเปิด)
                     .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll()
                     .requestMatchers("/api/auth/login").permitAll()
+                    // หน้า Login (local / uat): มี endpoint เฉพาะเมื่อ app.test-accounts.enabled=true ไม่งั้น 404
+                    .requestMatchers(HttpMethod.GET, "/api/test-accounts").permitAll()
                     // AI Service -> backend: ตรวจ X-Internal-Key ใน InternalController แทน JWT
                     .requestMatchers("/api/internal/**").permitAll()
                     .anyRequest().authenticated())
