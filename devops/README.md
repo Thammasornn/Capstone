@@ -96,6 +96,7 @@ NGINX ของคณะที่ `bscit.sit.kmutt.ac.th` (เราแก้เ
 - เปิด `http://cp26ms3.sit.kmutt.ac.th/uat/` ตรง ๆ ใน browser หน้าจะขาว (assets อ้าง `/capstone26/cp26ms3/uat/...`) — API ยังเรียกตรงได้ (`/uat/api/...`) และ CD ใช้ตรวจผล
 - prod: ตอน deploy ครั้งแรก ตั้ง `VITE_BASE=/capstone26/cp26ms3/prod/`, `VITE_API_BASE_URL=/capstone26/cp26ms3/prod/api`, `APP_PATH=/prod/` ใน `.env.production`
 - ภาพสดจาก MediaMTX (`MEDIA_BASE_URL` = `http://...:8889`) จะถูกเบราว์เซอร์บล็อกบนหน้า HTTPS — ต้องขอคณะ forward path ของภาพด้วยเมื่อติดตั้ง MediaMTX
+- `CORS_ORIGINS` ของ overlay ต้องมี `https://bscit.sit.kmutt.ac.th` ไม่งั้น login / POST ทุกตัวผ่าน bscit ไม่ได้ (ดูตาราง "ปัญหาที่เจอตอน deploy")
 - อัปโหลดรูปใบหน้า (สูงสุด 25MB) และ SSE ผ่าน NGINX ของคณะ — ถ้าได้ 413 / SSE ขาด ต้องขอคณะปรับ `client_max_body_size` / `proxy_buffering off`
 
 ## ประวัติการ deploy
@@ -185,6 +186,7 @@ curl -s localhost:18080/health && kill %1                       # {"status":"ok"
 
 | อาการ | สาเหตุ | แก้ |
 |---|---|---|
+| เปิดผ่าน bscit หน้าเว็บขึ้นแต่ login ไม่ได้ (POST ได้ 403 / 400) · `curl` ไม่ใส่ `Origin` login ได้ | เบราว์เซอร์ส่ง `Origin: https://bscit.sit.kmutt.ac.th` แต่ backend เห็น request เป็น HTTP host ของ VM → Spring ตัดสินว่าข้ามโดเมนแล้วปฏิเสธ (GET หน้าเว็บไม่ส่ง `Origin` จึงไม่โดน) | ใส่ `https://bscit.sit.kmutt.ac.th` ใน `CORS_ORIGINS` ของ overlay · ตรวจ: `curl -H 'Origin: https://bscit.sit.kmutt.ac.th' .../api/me` ต้องได้ 401 ไม่ใช่ 403 |
 | `Unable to read /etc/rancher/k3s/k3s.yaml` / `permission denied` | ไฟล์ kubeconfig ของ K3s root อ่านได้คนเดียว | ทำ "เตรียม VM" ข้อ kubeconfig |
 | `permission denied ... /var/run/docker.sock` | user ไม่อยู่ใน group docker | `sudo usermod -aG docker $USER` แล้ว login ใหม่ หรือ `sudo ./devops/k8s/build-images.sh` |
 | pod ขึ้น `ErrImageNeverPull` (เดิม `ErrImagePull` / `pull access denied` จาก docker.io) | image ยังไม่ได้ import เข้า K3s (K3s ไม่ใช้ image ของ docker) | `sudo k3s ctr -n k8s.io images ls -q \| grep bangmod` ต้องเห็น 4 ตัว · ไม่ครบ → `IMPORT_ONLY=1 ./devops/k8s/build-images.sh` แล้ว `kubectl -n <ns> rollout restart deployment/backend deployment/frontend` |
@@ -204,6 +206,12 @@ curl -s localhost:18080/health && kill %1                       # {"status":"ok"
 - ไม่มี HTTPS ใน manifest ชุดนี้ (Traefik รับ HTTP) — กล้องในเบราว์เซอร์ (หน้าลงทะเบียนใบหน้า) ต้องใช้ HTTPS ยกเว้น localhost
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-24 — แก้ login ผ่าน bscit ไม่ได้ (CORS)
+- **ทำอะไร:** uat `CORS_ORIGINS` เพิ่ม `https://bscit.sit.kmutt.ac.th` · เพิ่มแถวในตาราง "ปัญหาที่เจอตอน deploy" และหมายเหตุในหัวข้อ "forward จาก bscit"
+- **ไฟล์ที่เกี่ยวข้อง:** `k8s/overlays/uat/kustomization.yaml`, `README.md`
+- **เหตุผล:** ผู้ใช้ login ที่ `https://bscit.sit.kmutt.ac.th/capstone26/cp26ms3/uat/login` ไม่ได้ — เบราว์เซอร์ส่ง `Origin` ของ bscit ตอน POST แต่ backend เห็น request เป็น HTTP host ของ VM จึงปฏิเสธเป็น CORS (ตรวจ: ใส่ `Origin` แล้ว `/api/me` ได้ 403, login ผ่าน bscit ได้ 400) · `curl` ที่ใช้ตรวจก่อนหน้านี้ไม่ส่ง `Origin` จึงไม่เห็นปัญหา
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** prod ต้องใส่ค่าเดียวกันตอนเปิดผ่าน bscit · `deploy.sh` ยังตรวจผลแบบไม่ส่ง `Origin`
 
 ### 2026-11-24 — uat เปิด `TEST_ACCOUNTS_ENABLED`
 - **ทำอะไร:** เพิ่ม `TEST_ACCOUNTS_ENABLED=true` ใน configMap ของ `k8s/overlays/uat` (prod ไม่ตั้ง = ปิด)

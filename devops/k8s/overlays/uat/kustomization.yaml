@@ -26,8 +26,9 @@ configMapGenerator:
       - AI_SERVICE_URL=http://ai-service:8080
       # หน้า Login แสดงบัญชีใน DB (GET /api/test-accounts ไม่ต้อง login) — uat เท่านั้น ห้ามใส่ใน prod
       - TEST_ACCOUNTS_ENABLED=true
-      # FE เรียกผ่าน NGINX (same origin) จึงไม่ต้องใช้ CORS · ใส่ไว้เผื่อเปิด FE จากโดเมนอื่น
-      - CORS_ORIGINS=http://localhost:5173
+      # เบราว์เซอร์เปิดผ่าน https://bscit.sit.kmutt.ac.th (bscit ส่งต่อมาเป็น HTTP host อื่น) → Spring มองว่าข้ามโดเมน
+      # ไม่ใส่ = POST ทุกตัว (login, อัปโหลดใบหน้า) ได้ 403 "Invalid CORS request" ทั้งที่หน้าเว็บโหลดได้
+      - CORS_ORIGINS=https://bscit.sit.kmutt.ac.th,http://localhost:5173
       # B2: URL ที่เบราว์เซอร์เปิดภาพจาก MediaMTX (โดเมนของ VM · DNS ชี้ไป 10.4.56.69)
       - MEDIA_BASE_URL=http://cp26ms3.sit.kmutt.ac.th:8889
 # ความลับ: copy secret.env.example → secret.env (ไม่ถูก commit) แล้วใส่ค่าจริง
