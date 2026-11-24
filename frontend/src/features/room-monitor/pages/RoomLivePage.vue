@@ -5,9 +5,12 @@
  *  - SSE (B3): camera → สถานะกล้อง · faces → จำนวนใบหน้า · check_in → อัปเดตรายชื่อทันที
  *  - SSE ยังไม่ต่อ / หลุด (เช่น proxy ข้างหน้า buffer) → โหลดรายชื่อใหม่ทุก 15 วินาทีแทน ข้อมูลยังเดิน
  *  - เช็คชื่อด้วยมือ (B8) ผ่าน ManualAttendanceDialog
+ *  - ไม่มีคาบ → "เริ่มคาบตอนนี้" (เลือกกลุ่มเรียน) · มีคาบ → "จบคาบ" (คนที่ยังไม่มีผล = ขาด)
  */
 import { computed, ref, watch } from 'vue'
+import BaseButton from '@/shared/components/BaseButton.vue'
 import BaseCard from '@/shared/components/BaseCard.vue'
+import BaseDialog from '@/shared/components/BaseDialog.vue'
 import EmptyState from '@/shared/components/EmptyState.vue'
 import ErrorState from '@/shared/components/ErrorState.vue'
 import LoadingSkeleton from '@/shared/components/LoadingSkeleton.vue'
@@ -17,13 +20,14 @@ import { usePolling } from '@/shared/composables/usePolling'
 import { useToast } from '@/shared/composables/useToast'
 import { formatTime } from '@/shared/utils/datetime'
 import ManualAttendanceDialog from '@/entities/attendance/components/ManualAttendanceDialog.vue'
-import { getLiveRoster, getRoom, getRooms } from '../api'
+import { endSessionNow, getLiveRoster, getRoom, getRooms } from '../api'
 import { useRoomEvents } from '../composables/useRoomEvents'
 import CameraStatusBadge from '../components/CameraStatusBadge.vue'
 import LiveCameraPlayer from '../components/LiveCameraPlayer.vue'
 import LiveStudentList from '../components/LiveStudentList.vue'
 import PresenceCounters from '../components/PresenceCounters.vue'
 import RoomSwitcher from '../components/RoomSwitcher.vue'
+import StartSessionDialog from '../components/StartSessionDialog.vue'
 
 const props = defineProps({ roomId: { type: String, required: true } })
 const ROSTER_FALLBACK_MS = 15_000
@@ -116,6 +120,35 @@ function onSaved(result) {
   toast.show('บันทึกการเช็คชื่อแล้ว', { tone: 'success' })
 }
 
+// ---------- เริ่ม / จบคาบ ----------
+const startOpen = ref(false)
+const endOpen = ref(false)
+const ending = ref(false)
+
+/** @param {import('../api').ClassSessionInfo} info */
+async function onStarted(info) {
+  toast.show(
+    `เริ่มคาบแล้ว · ตรงเวลาถึง ${formatTime(info.onTimeUntil)} · สายถึง ${formatTime(info.lateUntil)}`,
+    { tone: 'success' },
+  )
+  await loadRoom()
+}
+
+async function endSession() {
+  if (!session.value) return
+  ending.value = true
+  try {
+    await endSessionNow(session.value.sessionId)
+    endOpen.value = false
+    toast.show('จบคาบแล้ว · คนที่ยังไม่ได้เช็คชื่อถูกบันทึกว่าขาด', { tone: 'success' })
+    await loadRoom()
+  } catch (e) {
+    toast.show(e?.message ?? 'จบคาบไม่สำเร็จ', { tone: 'danger' })
+  } finally {
+    ending.value = false
+  }
+}
+
 const liveLabel = computed(
   () =>
     ({
@@ -149,7 +182,11 @@ const liveLabel = computed(
           </p>
           <p v-else class="mt-1 text-sm text-muted">ยังไม่มีคาบเรียนในห้องนี้ตอนนี้</p>
         </div>
-        <RoomSwitcher v-if="rooms.data.value" :rooms="rooms.data.value" :room-id="roomId" />
+        <div class="flex flex-wrap items-center gap-2">
+          <BaseButton v-if="session" variant="secondary" @click="endOpen = true">จบคาบ</BaseButton>
+          <BaseButton v-else @click="startOpen = true">เริ่มคาบตอนนี้</BaseButton>
+          <RoomSwitcher v-if="rooms.data.value" :rooms="rooms.data.value" :room-id="roomId" />
+        </div>
       </div>
 
       <div class="grid gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
@@ -180,10 +217,31 @@ const liveLabel = computed(
           <EmptyState
             v-else
             title="ไม่มีคาบเรียนตอนนี้"
-            description="รายชื่อจะแสดงเมื่อถึงเวลาเรียนของกลุ่มที่ใช้ห้องนี้"
+            description='รายชื่อจะแสดงเมื่อถึงเวลาเรียนของกลุ่มที่ใช้ห้องนี้ หรือกด "เริ่มคาบตอนนี้" เพื่อเปิดเช็คชื่อทันที'
           />
         </BaseCard>
       </div>
+
+      <StartSessionDialog
+        v-model:open="startOpen"
+        :room-id="roomId"
+        :room-code="room.data.value.roomCode"
+        @started="onStarted"
+      />
+      <BaseDialog
+        v-model:open="endOpen"
+        title="จบคาบตอนนี้?"
+        :description="
+          session
+            ? `${session.courseCode}-${session.sectionCode} · นักศึกษาที่ยังไม่ได้เช็คชื่อจะถูกบันทึกว่าขาด (แก้ทีหลังได้ด้วยการเช็คชื่อด้วยมือ)`
+            : ''
+        "
+      >
+        <template #actions>
+          <BaseButton variant="secondary" @click="endOpen = false">ยกเลิก</BaseButton>
+          <BaseButton variant="danger" :loading="ending" @click="endSession">จบคาบ</BaseButton>
+        </template>
+      </BaseDialog>
 
       <ManualAttendanceDialog
         v-if="session"

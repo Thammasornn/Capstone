@@ -45,7 +45,7 @@ public class CameraFeedRepository {
                 JOIN enrollments e ON e.student_id = fe.student_id AND e.section_id = ? AND e.status = 'active'
                 JOIN v_current_consent cc ON cc.student_id = fe.student_id AND cc.action = 'granted'
                 JOIN users u ON u.user_id = fe.student_id AND u.is_active
-                WHERE fe.model_name = 'sface'
+                WHERE lower(fe.model_name) = 'sface'      -- ลงทะเบียนจริงเก็บตามที่ AI Service ตอบ ("SFace")
                 ORDER BY fe.student_id, fe.created_at
                 """, (rs, i) -> new EmbeddingRow(rs.getObject("student_id", UUID.class), rs.getBytes("embedding")),
                 sectionId);

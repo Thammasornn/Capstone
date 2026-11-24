@@ -15,7 +15,7 @@ import org.springframework.stereotype.Repository;
 /**
  * ตาราง: rooms, cameras, class_sessions, sections, courses, enrollments, attendance_records, section_lecturers
  * คาบปัจจุบัน = คาบวันนี้ในห้องนี้ที่เวลาไทยตอนนี้อยู่ระหว่าง start_time–end_time และไม่ถูกยกเลิก
- * (ตรรกะเดียวกับ v_room_status แต่เทียบเวลาไทยตรงๆ ไม่ขึ้นกับ timezone ของ DB session)
+ * (ตรรกะเดียวกับ v_room_status แต่เทียบเวลาไทยตรงๆ ไม่ขึ้นกับ timezone ของ DB session · และไม่นับคาบที่ completed แล้ว = จบคาบจากหน้าเว็บมีผลทันที)
  */
 @Repository
 public class RoomRepository {
@@ -36,7 +36,7 @@ public class RoomRepository {
                 JOIN sections s  ON s.section_id = cs.section_id AND s.deleted_at IS NULL
                 JOIN courses  co ON co.course_id = s.course_id AND co.deleted_at IS NULL
                 WHERE cs.room_id = r.room_id
-                  AND cs.session_status <> 'cancelled'
+                  AND cs.session_status NOT IN ('cancelled', 'completed')   -- จบคาบจากหน้าเว็บแล้ว = ไม่ใช่คาบปัจจุบันทันที
                   AND cs.session_date = %1$s::date
                   AND %1$s::time BETWEEN cs.start_time AND cs.end_time
                 ORDER BY cs.start_time

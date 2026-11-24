@@ -1,4 +1,4 @@
-import { getJson } from '@/shared/api/http'
+import { getJson, http } from '@/shared/api/http'
 
 /**
  * Room Monitor (B1–B4) + รายชื่อ/สรุปของคาบที่กำลังเรียน (API 5.7–5.8)
@@ -58,4 +58,43 @@ export function getLiveSummary(sessionId) {
  */
 export function getLiveRoster(sessionId) {
   return getJson(`/class-sessions/${sessionId}/attendance`)
+}
+
+/**
+ * กลุ่มเรียนที่เริ่มคาบได้ (lecturer = ที่ตัวเองสอน · admin = ทุกกลุ่ม) — GET /courses
+ * (ฟีเจอร์ห้าม import course-management จึงประกาศซ้ำที่นี่)
+ * @returns {Promise<import('@/entities/course/api').Course[]>}
+ */
+export function getStartableCourses() {
+  return getJson('/courses')
+}
+
+/**
+ * @typedef {object} ClassSessionInfo  ผลของการเริ่ม / จบคาบ
+ * @property {string} sessionId
+ * @property {string} sectionId
+ * @property {string} roomId
+ * @property {string} sessionDate
+ * @property {string} startTime
+ * @property {string} endTime
+ * @property {string} onTimeUntil
+ * @property {string} lateUntil
+ * @property {string} checkInCloses
+ * @property {'in_progress'|'completed'} sessionStatus
+ */
+
+/**
+ * เริ่มคาบของกลุ่มเรียนนี้ในห้องนี้ "ตอนนี้" (เปิดเช็คชื่อทันที) — POST /rooms/{roomId}/sessions
+ * 409 = ห้องมีคาบอื่นทับ / กลุ่มเรียนมีคาบวันนี้แล้ว (message บอกเหตุผล)
+ * @returns {Promise<ClassSessionInfo>}
+ */
+export async function startSessionNow(roomId, sectionId) {
+  const { data } = await http.post(`/rooms/${roomId}/sessions`, { sectionId })
+  return data
+}
+
+/** จบคาบที่กำลังเรียน "ตอนนี้" (คนที่ยังไม่มีผล = ขาด) — POST /class-sessions/{sessionId}/end @returns {Promise<ClassSessionInfo>} */
+export async function endSessionNow(sessionId) {
+  const { data } = await http.post(`/class-sessions/${sessionId}/end`)
+  return data
 }

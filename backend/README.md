@@ -71,6 +71,8 @@ mvn spring-boot:run        # http://localhost:8081
 
 | เส้น | ใช้ทำอะไร |
 |---|---|
+| `POST /rooms/{roomId}/sessions` `{sectionId}` | เริ่มคาบของกลุ่มเรียนนี้ในห้องนี้ "ตอนนี้" (เปิดเช็คชื่อทันที · ความยาว / ช่วงตรงเวลา / สายตามกลุ่มเรียน) · admin / อาจารย์ที่สอน · 409 = ห้องมีคาบอื่นทับ / กลุ่มเรียนมีคาบวันนี้แล้ว · audit `session.start_now` + event `session` |
+| `POST /class-sessions/{sessionId}/end` | จบคาบที่กำลังเรียน "ตอนนี้" · ช่วงเช็คชื่อที่ยังเปิดถูกตัด → คนที่ยังไม่มีผล = absent (system) · audit `session.end_now` + event `session` |
 | `GET /internal/cameras` | กล้องที่เปิดใช้ `[{cameraCode, roomId, streamPath}]` · AI Service อ่านภาพจาก MediaMTX path = `streamPath` |
 | `GET /internal/rooms/{roomId}/gallery` | `{sessionId, cameraEnabled, students: [{studentId, embeddings: [base64]}]}` ของคาบที่อยู่ในห้องตอนนี้ (`check_in_opens`–`end_time`) · เฉพาะคนที่ลงทะเบียน + consent `granted` + บัญชีเปิด · embedding ยังเข้ารหัสอยู่ (AI Service ถอดเอง) · ไม่มีคาบ = `sessionId: null` |
 | `POST /internal/cameras/{cameraCode}/heartbeat` `{status}` | อัปเดต `cameras.status` + event `camera` |
@@ -85,6 +87,18 @@ mvn spring-boot:run        # http://localhost:8081
 > SSE และ event อยู่ในหน่วยความจำของ instance เดียว ถ้ารันหลาย replica ต้องเปลี่ยน `RoomEventHub` ไปใช้ pub/sub กลาง
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-25 — เริ่ม / จบคาบจากหน้าเว็บ
+- **ทำอะไร:** เพิ่ม `SessionControlController` / `Service` / `Repository`: `POST /api/rooms/{roomId}/sessions` เริ่มคาบตอนนี้ (สร้างคาบใหม่ หรือย้ายคาบวันนี้ที่ยังไม่ถึงเวลา / ถูกยกเลิกมาเริ่มตอนนี้ · 409 เมื่อกลุ่มเรียนมีคาบที่กำลังเรียน / จบแล้ววันนี้ หรือห้องมีคาบอื่นเวลาทับ · จบอย่างช้า 23:59) และ `POST /api/class-sessions/{sessionId}/end` จบคาบ (end_time = ตอนนี้ อย่างน้อย 1 นาทีหลังเริ่ม · ตัดช่วงเช็คชื่อ · INSERT absent ทันที) · สิทธิ์ `requireSectionStaff` · audit + SSE `session` · คาบปัจจุบันของห้อง (`RoomRepository`) และคาบที่กล้องใช้ (`sessionInRoomAt`) ไม่นับคาบ `completed` แล้ว (จบคาบมีผลทันที)
+- **ไฟล์ที่เกี่ยวข้อง:** `src/main/java/com/faculty/attendance/attendance/SessionControl*.java`, `attendance/AttendanceRepository.java`, `room/RoomRepository.java`
+- **เหตุผล:** ผู้ใช้ต้องการเริ่มคาบจากหน้าเว็บ ไม่ใช่รัน `03_demo_live_session.sql` เองใน command line
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ทดสอบกับ backend จริง + Postgres ชั่วคราว: นักศึกษา 403, ไม่ส่ง sectionId 400, อาจารย์เริ่ม 201 (คาบ 3 ชม. ตรงเวลา 15 นาที สาย 30 นาที), เริ่มซ้ำ 409, ห้องแสดงคาบ + gallery เห็นคาบ, จบ 200, จบซ้ำ 409, เริ่มหลังจบในวันเดียวกัน 409, audit 2 แถว · 1 กลุ่มเรียนมีได้ 1 คาบต่อวัน (unique ใน DB) — เริ่มใหม่วันเดียวกันหลังจบไม่ได้
+
+### 2026-11-25 — แก้ gallery ไม่ส่งใบหน้าที่ลงทะเบียนจริง
+- **ทำอะไร:** `CameraFeedRepository.embeddingsForSection` เทียบ `lower(model_name) = 'sface'` แทน `model_name = 'sface'`
+- **ไฟล์ที่เกี่ยวข้อง:** `src/main/java/com/faculty/attendance/internal/CameraFeedRepository.java`
+- **เหตุผล:** ทดสอบบน uat: 66130500041 ลงทะเบียนใบหน้าแล้ว (`face_registered = t`) แต่ ai-service ได้ gallery 0 คน — การลงทะเบียนเก็บ `model_name` ตามที่ AI Service ตอบ (`"SFace"`) ส่วน mock / ทดสอบเดิมใช้ `'sface'` ตัวเล็ก จึงไม่เห็นปัญหา
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ทดสอบด้วย SQL เดียวกันกับแถว `SFace`: แบบเดิมได้ 0 แบบใหม่ได้ 1 · ไม่ต้องแก้ข้อมูลใน DB
 
 ### 2026-11-25 — `/api/internal` สำหรับตัวอ่านกล้องของ AI Service
 - **ทำอะไร:** เพิ่ม `GET /api/internal/cameras` (กล้องที่เปิดใช้ในห้องที่เปิดใช้) และ `GET /api/internal/rooms/{roomId}/gallery` (embedding ของนักศึกษาในคาบที่อยู่ในห้องตอนนี้ ใช้ `sessionInRoomAt` และเงื่อนไขเดียวกับ `recordSighting`: enrollment active + consent ล่าสุด granted + `users.is_active`) · คาบปิดเช็คชื่อด้วยกล้อง → `cameraEnabled: false` และ `students` ว่าง · ตรวจ `X-Internal-Key` เหมือนเส้นอื่น

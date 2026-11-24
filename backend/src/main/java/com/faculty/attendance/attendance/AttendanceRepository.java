@@ -58,7 +58,7 @@ public class AttendanceRepository {
                 FROM class_sessions cs
                 JOIN sections s ON s.section_id = cs.section_id AND s.deleted_at IS NULL
                 JOIN courses c ON c.course_id = s.course_id AND c.deleted_at IS NULL
-                WHERE cs.room_id = ? AND cs.session_status <> 'cancelled'
+                WHERE cs.room_id = ? AND cs.session_status NOT IN ('cancelled', 'completed')
                   AND cs.session_date = ?::date
                   AND ?::time BETWEEN cs.check_in_opens AND cs.end_time
                 ORDER BY cs.check_in_opens
