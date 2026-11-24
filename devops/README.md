@@ -241,7 +241,7 @@ kubectl -n media logs deploy/mediamtx | grep -iE 'room-|error'   # ต้อง�
 kubectl -n uat exec deploy/ai-service -- python -c "import urllib.request as u;print(u.urlopen('http://localhost:8080/cameras/status').read().decode())"
 kubectl -n uat logs deploy/ai-service | grep -E 'camera|gallery'
 ```
-- ลองเช็คชื่อด้วยกล้อง Pi บน uat: (1) ใส่ path ของห้องที่มีคาบใน `mediamtx.yml` ให้ดึงจาก Pi (เช่น `room-4302` ใช้ source เดียวกับ `room-4303`) (2) สร้างคาบตอนนี้: `03_demo_live_session.sql` (ห้อง 4302 · uat เท่านั้น) (3) ลงทะเบียนใบหน้าจริงด้วยบัญชีนักศึกษาที่อยู่ใน INT201-001 (เช่น 66130500013) (4) ยืนหน้ากล้อง → หน้าห้อง 4302 ขึ้นเช็คชื่อ
+- ลองเช็คชื่อด้วยกล้อง Pi บน uat (ข้อมูล mock ชุดเล็ก: INT201-001 เรียนห้อง 4303): (1) `mediamtx.yml` มี `room-4303` ดึงจาก Pi (2) สร้างคาบตอนนี้: `03_demo_live_session.sql` (ห้อง 4303 · uat เท่านั้น · คำสั่งใน `backend/db/README.md`) (3) ลงทะเบียนใบหน้าจริงด้วย 66130500013 / 36 / 41 (4) ยืนหน้ากล้อง → หน้าห้อง 4303 ขึ้นเช็คชื่อ
 - embedding ใน `02_seed_mock.sql` เป็นไบต์สุ่ม → ถอดไม่ได้ (log WARN) จับคู่ได้เฉพาะคนที่ลงทะเบียนจริง
 
 **ยังไม่ได้ทำ:** ภาพ (UDP 8189) ไปถึงเฉพาะเครื่องในคณะ / VPN (คนนอกคณะต้องใช้ HLS fallback)
@@ -272,6 +272,11 @@ kubectl -n uat logs deploy/ai-service | grep -E 'camera|gallery'
 - HTTPS ตรงที่ VM (`https://cp26ms3.sit.kmutt.ac.th/capstone26/cp26ms3/<ns>/` · ใบจาก SITCertAuthCA) เตรียมไว้แล้วแต่ยังไม่เปิด — ขั้นตอนอยู่ในคอมเมนต์ของ `k8s/base/ingress.yaml` · ใช้ได้เฉพาะในคณะ / VPN และเครื่องที่ไม่ได้ติดตั้ง SITCertAuthCA จะขึ้นเตือน
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-25 — ขั้นตอนทดสอบกล้อง Pi ตามข้อมูล mock ชุดใหม่
+- **ทำอะไร:** แก้ขั้นตอน "ลองเช็คชื่อด้วยกล้อง Pi บน uat" ให้ใช้ห้อง 4303 ตรง ๆ (ไม่ต้องเพิ่ม `room-4302` ใน MediaMTX แล้ว)
+- **ไฟล์ที่เกี่ยวข้อง:** `README.md`
+- **เหตุผล:** `02_seed_mock.sql` ชุดใหม่ย้าย INT201-001 ไปห้อง 4303 (ดู `backend/db/README.md`)
 
 ### 2026-11-25 — แถวแก้ปัญหา: SSE ค้างที่ bscit
 - **ทำอะไร:** เพิ่มแถวในตาราง "ปัญหาที่เจอตอน deploy" (อาการ / สาเหตุ / วิธีแก้ ของหน้าห้องค้าง "กำลังเชื่อมต่อ")
