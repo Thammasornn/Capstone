@@ -1,0 +1,5 @@
+# ทดสอบ (ไม่ต้องมีโมเดล): pip install -r requirements-dev.txt && python -m pytest tests
+numpy
+cryptography
+opencv-python-headless
+pytest

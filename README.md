@@ -98,6 +98,12 @@ Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/uat/` แยก 
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-25 — เช็คชื่อด้วยกล้องจริง (ai-service อ่าน RTSP จาก MediaMTX)
+- **ทำอะไร:** backend เพิ่ม `GET /api/internal/cameras` และ `/rooms/{roomId}/gallery` · ai-service เพิ่มตัวอ่านกล้อง (`camera_worker.py`, `gallery.py`, `vision.py`) ส่ง heartbeat / จำนวนใบหน้า / ผลจับคู่ไป backend · K3s เปิด `CAMERA_WORKER=true` และส่ง `FACE_EMBEDDING_KEY` ให้ ai-service
+- **ไฟล์ที่เกี่ยวข้อง:** `backend/src/main/java/com/faculty/attendance/internal/*`, `ai-service/*`, `devops/k8s/base/ai-service.yaml`
+- **เหตุผล:** ภาพกล้อง Pi มาถึงระบบแล้ว ต้องใช้เช็คชื่อและสถานะกล้องจริง
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ทดสอบครบสายในเครื่องด้วยโมเดลปลอม (ได้เช็คชื่อ on_time จริงใน DB) · ยังต้องทดสอบโมเดลจริง + RTSP จริงบน uat
+
 ### 2026-11-24 — ภาพสดผ่าน HTTPS (WHEP ผ่าน NGINX ของ frontend)
 - **ทำอะไร:** `frontend/nginx.conf` ส่ง `<base>media/*` ไป MediaMTX · overlay uat / prod ตั้ง `MEDIA_BASE_URL=<VITE_BASE>media`
 - **ไฟล์ที่เกี่ยวข้อง:** `frontend/nginx.conf`, `frontend/Dockerfile`, `devops/k8s/overlays/*/kustomization.yaml`, `devops/k8s/mediamtx/*`

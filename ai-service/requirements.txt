@@ -4,3 +4,5 @@ python-multipart
 ultralytics
 opencv-python-headless
 numpy
+# ถอดรหัส face embedding (AES-GCM) ที่ backend เข้ารหัสไว้ — ตัวอ่านกล้อง
+cryptography
