@@ -23,7 +23,12 @@ FROM nginx:1.27-alpine
 # Spring Boot ที่ NGINX ส่ง <base>api/* ไปหา · เปลี่ยนได้ตอนรัน (K3s: env ของ Deployment)
 #   docker run -e BACKEND_URL=http://10.0.0.5:8081 ...
 ENV BACKEND_URL=http://backend:8081
-# nginx image แทนค่า ${BACKEND_URL} ใน template ตอน start (ตัวแปรของ nginx เช่น $host ไม่ถูกแตะ)
+# MediaMTX ที่ NGINX ส่ง <base>media/* ไปหา (ภาพสด WHEP) · ต้องเป็นชื่อเต็ม (resolver ของ nginx ไม่ใช้ search domain)
+ENV MEDIAMTX_URL=http://mediamtx.media.svc.cluster.local:8889
+# ให้ entrypoint ของ nginx image อ่าน nameserver จาก /etc/resolv.conf เป็น ${NGINX_LOCAL_RESOLVERS}
+ENV NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1
+# nginx image แทนค่า ${BACKEND_URL} / ${MEDIAMTX_URL} / ${NGINX_LOCAL_RESOLVERS} ใน template ตอน start
+# (แทนเฉพาะชื่อที่มี env อยู่จริง — ตัวแปรของ nginx เช่น $host, $mediamtx, $1 ไม่ถูกแตะ)
 COPY --from=build /app/nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 80

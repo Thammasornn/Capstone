@@ -76,6 +76,12 @@ docker run -p 8080:80 -e BACKEND_URL=http://10.0.0.5:8081 bangmod-frontend:prod 
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-24 — NGINX ส่ง `<base>media/*` ไป MediaMTX (ภาพสด WHEP)
+- **ทำอะไร:** `nginx.conf` เพิ่ม `location ${APP_BASE}media/` → `${MEDIAMTX_URL}` (ตัด prefix ด้วย rewrite) ใช้ `resolver ${NGINX_LOCAL_RESOLVERS}` + ตัวแปร ให้หาชื่อ service ตอนมี request · `Dockerfile` เพิ่ม `ENV MEDIAMTX_URL=http://mediamtx.media.svc.cluster.local:8889` และ `NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1` (entrypoint ของ nginx image อ่าน nameserver จาก `/etc/resolv.conf`)
+- **ไฟล์ที่เกี่ยวข้อง:** `nginx.conf`, `Dockerfile`
+- **เหตุผล:** หน้าเว็บเปิดผ่าน HTTPS ของ bscit แต่ WHEP อยู่ที่ `http://cp26ms3…:8889` → เบราว์เซอร์บล็อก (mixed content) ภาพสดขึ้น "เชื่อมต่อเซิร์ฟเวอร์ภาพ (MediaMTX) ไม่ได้" · backend ตั้ง `MEDIA_BASE_URL=<VITE_BASE>media` แล้ว (overlay) → เรียกใน origin เดียวกับหน้าเว็บ · ไม่ resolve ตอน start = ไม่มี MediaMTX ก็ไม่ทำให้ frontend ล่ม
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ตรวจด้วย nginx ในเครื่อง (render template แบบเดียวกับ Dockerfile + envsubst): `nginx -t` ผ่าน · ส่งต่อไป MediaMTX จริงบน VM ได้ (`GET /uat/media/room-4301/` 200, WHEP `OPTIONS` 204, `POST` ได้คำตอบของ MediaMTX) · ชื่อที่ resolve ไม่ได้ → 502 และ nginx ยัง start ได้ · `/uat/api/internal/x` ยัง 404 · ยังไม่ได้ build image จริง (เครื่องที่แก้ไม่มี docker) — `15-local-resolvers.envsh` มีใน nginx image ตั้งแต่ 2023 · ตัวภาพ (UDP 8189) ยังวิ่งตรงไป VM
+
 ### 2026-11-24 — ปุ่มบัญชีทดสอบในหน้า Login ใช้ข้อมูลจาก DB
 - **ทำอะไร:** โหมด Backend จริง (local / uat) โหลดรายชื่อจาก `GET /test-accounts` ตอนเปิดหน้า แล้ว `groupTestAccounts()` จัดกลุ่ม: เจ้าหน้าที่ (admin + อาจารย์ พร้อมวิชาที่สอน) แล้วนักศึกษาตามสถานะ (ยังไม่ลงทะเบียนใบหน้า → ยินยอมแล้วแต่ยังไม่มีใบหน้า → ต้องยินยอมใหม่ → ถอนความยินยอม → ลงทะเบียนแล้ว → บัญชีถูกปิด) · กลุ่มเกิน 8 บัญชีพับไว้ (`<details>`) · โหลดไม่ได้แสดงข้อความแทน · ลบรายชื่อที่เขียนตายตัว (โหมด MSW ยังใช้รายชื่อ mock เดิม)
 - **ไฟล์ที่เกี่ยวข้อง:** `src/features/auth/test-accounts.js`, `src/features/auth/api.js`, `src/features/auth/pages/LoginPage.vue`, `tests/unit/test-accounts.test.js`

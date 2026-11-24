@@ -27,7 +27,8 @@ rtspTransports: [tcp]
 rtspEncryption: "no"
 rtspAddress: :8554
 
-# WHEP (เบราว์เซอร์) · hostPort 8889 (HTTP) + 8189/udp (ภาพ) บน VM → MEDIA_BASE_URL=http://cp26ms3.sit.kmutt.ac.th:8889
+# WHEP (เบราว์เซอร์) · เบราว์เซอร์ POST ที่ <VITE_BASE>media/<path>/whep → NGINX ของ frontend → Service mediamtx:8889
+#   ตัวภาพ (WebRTC) วิ่งตรงมาที่ hostPort 8189/udp ของ VM · hostPort 8889 ไว้ตรวจจากนอก cluster
 webrtc: true
 webrtcAddress: :8889
 webrtcLocalUDPAddress: :8189

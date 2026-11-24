@@ -98,7 +98,7 @@ NGINX ของคณะที่ `bscit.sit.kmutt.ac.th` (เราแก้เ
 - `frontend/.env.<mode>`: `VITE_BASE` = path ที่เบราว์เซอร์เห็น, `APP_PATH` = path ที่มาถึง VM (ไม่ใส่ = เท่ากับ `VITE_BASE`) · `APP_PATH` ต้องตรงกับ path ของ Ingress ใน `k8s/overlays/<env>` (`deploy.sh` หยุดก่อน apply ถ้าไม่ตรง)
 - เปิด `http://cp26ms3.sit.kmutt.ac.th/uat/` ตรง ๆ ใน browser หน้าจะขาว (assets อ้าง `/capstone26/cp26ms3/uat/...`) — API ยังเรียกตรงได้ (`/uat/api/...`) และ CD ใช้ตรวจผล
 - prod: ตอน deploy ครั้งแรก ตั้ง `VITE_BASE=/capstone26/cp26ms3/prod/`, `VITE_API_BASE_URL=/capstone26/cp26ms3/prod/api`, `APP_PATH=/prod/` ใน `.env.production`
-- ภาพสดจาก MediaMTX (`MEDIA_BASE_URL` = `http://...:8889`) จะถูกเบราว์เซอร์บล็อกบนหน้า HTTPS — ต้องขอคณะ forward path ของภาพด้วยเมื่อติดตั้ง MediaMTX
+- ภาพสด: `MEDIA_BASE_URL` = `<VITE_BASE>media` (ไม่ใส่โดเมน) → WHEP วิ่งผ่าน bscit → NGINX ของ frontend → MediaMTX จึงไม่โดนบล็อกเป็น mixed content · ตัวภาพ (UDP 8189) ยังวิ่งตรงไป IP ของ VM = ดูได้เฉพาะในคณะ / VPN
 - `CORS_ORIGINS` ของ overlay ต้องมี `https://bscit.sit.kmutt.ac.th` ไม่งั้น login / POST ทุกตัวผ่าน bscit ไม่ได้ (ดูตาราง "ปัญหาที่เจอตอน deploy")
 - อัปโหลดรูปใบหน้า (สูงสุด 25MB) และ SSE ผ่าน NGINX ของคณะ — ถ้าได้ 413 / SSE ขาด ต้องขอคณะปรับ `client_max_body_size` / `proxy_buffering off`
 
@@ -189,14 +189,15 @@ curl -s localhost:18080/health && kill %1                       # {"status":"ok"
 ## MediaMTX + RTSPS ผ่าน Tailscale (กล้องอยู่คนละ network)
 
 ```
-กล้อง (RTSPS :322) ──Tailscale──▶ VM: tailscale0 ──▶ pod mediamtx (namespace media) ──┬─ WHEP :8889 + UDP :8189 (hostPort) ──▶ เบราว์เซอร์
+กล้อง (RTSPS :322) ──Tailscale──▶ VM: tailscale0 ──▶ pod mediamtx (namespace media) ──┬─ WHEP: เบราว์เซอร์ → <VITE_BASE>media/ → NGINX ของ frontend → :8889 · ภาพ: UDP :8189 (hostPort) ──▶ เบราว์เซอร์
    (หรือ subnet router ฝั่งกล้อง)                                                        └─ RTSP :8554 (ใน cluster) ──▶ ai-service
 ```
 
 - MediaMTX **ดึง** ภาพจากกล้องเองด้วย `rtsps://` (กล้องต้องรองรับ RTSPS) · ตรวจใบรับรองกล้องด้วย `sourceFingerprint` (กล้องส่วนใหญ่ใช้ใบที่ออกเอง)
 - Tailscale ติดตั้งบน VM (host) · pod ส่งออกทาง route ของ host ไม่ต้องมี Tailscale ใน pod และไม่ต้องเก็บ auth key ใน K3s
 - MediaMTX ตัวเดียวใช้ทั้ง uat และ prod (hostPort ซ้ำกันบน node เดียวไม่ได้ · กล้องไม่ต้องถูกดึง 2 รอบ) · ai-service อ่านที่ `rtsp://mediamtx.media.svc.cluster.local:8554/<stream_path>`
-- ชื่อ path ใน `mediamtx.yml` = `cameras.stream_path` ใน DB (เช่น `room-4301`) · backend สร้าง URL WHEP = `MEDIA_BASE_URL/<stream_path>/whep`
+- ชื่อ path ใน `mediamtx.yml` = `cameras.stream_path` ใน DB (เช่น `room-4301`) · backend สร้าง URL WHEP = `MEDIA_BASE_URL/<stream_path>/whep` · `MEDIA_BASE_URL` = `<VITE_BASE>media` (uat `/capstone26/cp26ms3/uat/media`, prod `/prod/media`) → `frontend/nginx.conf` ส่ง `<APP_PATH>media/*` ไป `MEDIAMTX_URL` (ค่าเริ่มต้น `http://mediamtx.media.svc.cluster.local:8889`)
+- ห้องที่ไม่มี path ใน `mediamtx.yml` → MediaMTX ตอบ 500 · มี path แต่ยังต่อกล้องไม่ได้ → 404 `no stream is available` · ไม่มี namespace `media` → NGINX ตอบ 502 (หน้าเว็บอื่นใช้ได้ปกติ)
 
 **1. Tailscale บน VM (ใช้ sudo — ผู้ใช้รันเอง)**
 ```bash
@@ -228,7 +229,7 @@ kubectl -n media logs deploy/mediamtx | grep -iE 'room-|error'   # ต้อง�
 - `mediamtx.yml` มีรหัสกล้อง: อยู่บน VM เท่านั้น ห้าม commit · สำรองไว้นอก VM เหมือน `secret.env`
 - อาการ: pod `CrashLoopBackOff` + log `json: cannot unmarshal number into Go value of type string` = ค่าใน `mediamtx.yml` เป็นตัวเลขล้วน (เช่น fingerprint) → ใส่ `"..."` · `tls: failed to verify certificate` = `sourceFingerprint` ผิด / กล้องเปลี่ยนใบ · `i/o timeout` = route ของ Tailscale / ACL / subnet ซ้อน · WHEP ได้ 201 แต่จอดำ = UDP 8189 ถูกบล็อก หรือ `webrtcAdditionalHosts` ไม่ใช่ IP ของ VM
 
-**ยังไม่ได้ทำ:** ดูภาพผ่าน bscit (HTTPS) — WHEP ที่ `http://...:8889` ถูกเบราว์เซอร์บล็อกเป็น mixed content ต้องส่งผ่าน NGINX ของ frontend (`/<ns>/media/`) ก่อน · ภาพ (UDP 8189) ไปถึงเฉพาะเครื่องในคณะ / VPN · ai-service ยังไม่ได้อ่าน RTSP
+**ยังไม่ได้ทำ:** ภาพ (UDP 8189) ไปถึงเฉพาะเครื่องในคณะ / VPN (คนนอกคณะต้องใช้ HLS fallback) · ai-service ยังไม่ได้อ่าน RTSP
 
 ## ปัญหาที่เจอตอน deploy และวิธีแก้
 
@@ -250,11 +251,17 @@ kubectl -n media logs deploy/mediamtx | grep -iE 'room-|error'   # ต้อง�
 - **prod ไม่มีข้อมูลเริ่มต้น** (ไม่มี seed) ต้องเพิ่มเองก่อนใช้: บัญชี admin (`users`), ภาคเรียน (`semesters`), ข้อความยินยอม (`consent_versions` ที่ `is_current = true`) · admin คนแรก: `k8s/sql/prod-first-admin.sql` · prod ไม่มีบัญชีทดสอบ — ผู้ใช้พิมพ์อีเมล / รหัสผ่านเอง ห้ามใช้ `Password@123`
 - `FACE_EMBEDDING_KEY` ห้ามเปลี่ยนหลังมีข้อมูลใบหน้า (ถอดรหัส embedding เดิมไม่ได้) · **สำรอง `secret.env` ของแต่ละ namespace ไว้นอก VM** (เช่น password manager ของทีม) ห้ามใส่ใน git หรือ README
 - backend ต้องมี replica เดียว (SSE อยู่ในหน่วยความจำ) · Deployment ตั้ง `strategy: Recreate` ไว้แล้ว
-- MediaMTX อยู่ใน `k8s/mediamtx/` แยกจาก overlays (namespace `media` · apply เอง ไม่อยู่ใน CD) · ภาพสด (B2) ใช้ `MEDIA_BASE_URL` ชี้ไปที่ hostPort 8889 ของ VM
+- MediaMTX อยู่ใน `k8s/mediamtx/` แยกจาก overlays (namespace `media` · apply เอง ไม่อยู่ใน CD) · ภาพสด (B2) ใช้ `MEDIA_BASE_URL` = `<VITE_BASE>media` ผ่าน NGINX ของ frontend (hostPort 8889 ไว้ตรวจจากนอก cluster)
 - HTTPS ที่ผู้ใช้เห็นมาจาก bscit (ใบ GlobalSign ของคณะ) · Traefik บน VM รับ HTTP จาก bscit — กล้องในเบราว์เซอร์ (หน้าลงทะเบียนใบหน้า) ต้องใช้ HTTPS ยกเว้น localhost
 - HTTPS ตรงที่ VM (`https://cp26ms3.sit.kmutt.ac.th/capstone26/cp26ms3/<ns>/` · ใบจาก SITCertAuthCA) เตรียมไว้แล้วแต่ยังไม่เปิด — ขั้นตอนอยู่ในคอมเมนต์ของ `k8s/base/ingress.yaml` · ใช้ได้เฉพาะในคณะ / VPN และเครื่องที่ไม่ได้ติดตั้ง SITCertAuthCA จะขึ้นเตือน
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-24 — ภาพสด (WHEP) ผ่าน NGINX ของ frontend แทน `http://…:8889`
+- **ทำอะไร:** overlay uat / prod เปลี่ยน `MEDIA_BASE_URL` เป็น `/capstone26/cp26ms3/uat/media` และ `/prod/media` (ไม่ใส่โดเมน) · คอมเมนต์ใน `k8s/mediamtx/` ว่า hostPort 8889 ไว้ตรวจจากนอก cluster · หัวข้อ MediaMTX / forward จาก bscit / ข้อควรรู้ อัปเดตตาม (คู่กับ `frontend/nginx.conf`)
+- **ไฟล์ที่เกี่ยวข้อง:** `k8s/overlays/uat/kustomization.yaml`, `k8s/overlays/prod/kustomization.yaml`, `k8s/mediamtx/mediamtx.yaml`, `k8s/mediamtx/mediamtx.yml.example`, `README.md`
+- **เหตุผล:** ผู้ใช้เปิดหน้าห้อง 4303 ผ่าน bscit แล้วขึ้น "เชื่อมต่อเซิร์ฟเวอร์ภาพ (MediaMTX) ไม่ได้" — หน้า HTTPS เรียก WHEP ที่ `http://cp26ms3…:8889` ไม่ได้ (mixed content) · นอกจากนี้ `room-4303` ยังไม่มีใน `mediamtx.yml` (ตอบ 500) และยังไม่มีกล้องจริง (ป้าย "กล้องออนไลน์" มาจากข้อมูล mock)
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** prod มีผลเมื่อผู้ใช้รัน `deploy.sh prod` · ถ้าย้าย prod ไป bscit ต้องเปลี่ยนเป็น `/capstone26/cp26ms3/prod/media` พร้อม `VITE_BASE` · ยังต้องเพิ่ม path ของแต่ละห้องใน `mediamtx.yml` และต่อกล้องจริง
 
 ### 2026-11-24 — แก้ MediaMTX ไม่ขึ้นเพราะ fingerprint ตัวอย่างเป็นตัวเลข + apply ครั้งแรก
 - **ทำอะไร:** `mediamtx.yml.example` ใส่ `"..."` ให้ `source` / `sourceFingerprint` และเตือนในคอมเมนต์ · เพิ่มอาการนี้ในหัวข้อ "MediaMTX + RTSPS ผ่าน Tailscale"
