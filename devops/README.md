@@ -96,12 +96,14 @@ NGINX ของคณะที่ `bscit.sit.kmutt.ac.th` (เราแก้เ
 - เปิด `http://cp26ms3.sit.kmutt.ac.th/uat/` ตรง ๆ ใน browser หน้าจะขาว (assets อ้าง `/capstone26/cp26ms3/uat/...`) — API ยังเรียกตรงได้ (`/uat/api/...`) และ CD ใช้ตรวจผล
 - prod: ตอน deploy ครั้งแรก ตั้ง `VITE_BASE=/capstone26/cp26ms3/prod/`, `VITE_API_BASE_URL=/capstone26/cp26ms3/prod/api`, `APP_PATH=/prod/` ใน `.env.production`
 - ภาพสดจาก MediaMTX (`MEDIA_BASE_URL` = `http://...:8889`) จะถูกเบราว์เซอร์บล็อกบนหน้า HTTPS — ต้องขอคณะ forward path ของภาพด้วยเมื่อติดตั้ง MediaMTX
+- `CORS_ORIGINS` ของ overlay ต้องมี `https://bscit.sit.kmutt.ac.th` ไม่งั้น login / POST ทุกตัวผ่าน bscit ไม่ได้ (ดูตาราง "ปัญหาที่เจอตอน deploy")
 - อัปโหลดรูปใบหน้า (สูงสุด 25MB) และ SSE ผ่าน NGINX ของคณะ — ถ้าได้ 413 / SSE ขาด ต้องขอคณะปรับ `client_max_body_size` / `proxy_buffering off`
 
 ## ประวัติการ deploy
 
 | วันที่ | namespace | commit | ผล | หมายเหตุ |
 |---|---|---|---|---|
+| 2026-11-24 | uat | `66c6337` (Dev · CD) | ✅ ตรวจผ่าน bscit (HTTPS) ด้วย header `Origin` แบบเบราว์เซอร์: หน้าเว็บ 200, login admin / อาจารย์ / ทีม 200, `/api/me` 401, `/api/internal` 404, Origin อื่น 403 · หน้า Login แสดง 52 บัญชีจาก DB · `isSecureContext` = true (กล้องสดใช้ได้) | เปิดที่ `https://bscit.sit.kmutt.ac.th/capstone26/cp26ms3/uat/` (bscit ตัด prefix → VM `/uat/`, `VITE_BASE` + `APP_PATH`) · deploy ต่อเนื่อง 6 commit (`483fc7d` → `66c6337`) ผ่าน CD ทุกรอบ · login ผ่าน bscit ใช้ไม่ได้จนแก้ `CORS_ORIGINS` (`66c6337`) · ยังไม่ได้ทดสอบอัปโหลดรูปใบหน้า / SSE ผ่าน bscit |
 | 2026-11-23 | uat | `c14d9e9` (Dev · CD) | ✅ ตรวจจากภายนอก: หน้าเว็บตัวใหม่, login ทุกบัญชีทดสอบตามที่ควร, `/api/me` 401, `/api/internal` 404 | ติดตั้ง CD ครั้งแรก · reseed 02 + 03 (users 52 · สำรองที่ `~/backups/uat-before-reseed-2026-11-23-1743.dump`) · deploy `a9c53be` รอบแรกตรวจไม่ผ่าน → rollback ทำ backend ล่มประมาณ 14 นาที → แก้ `deploy.sh` (`c14d9e9`) · โมเดล AI ติดตั้งแล้ว ai-service Running |
 | 2026-11-22 | uat | `d0d3dd8` (main) | ✅ ผู้ใช้ทดสอบผ่าน browser แล้ว | ข้อมูล mock (`--seed`) · ยังไม่มีโมเดล AI (ai-service ไม่ขึ้น), MediaMTX และ HTTPS · ใช้โดเมนตั้งแต่ `32ce386` |
 
@@ -185,6 +187,7 @@ curl -s localhost:18080/health && kill %1                       # {"status":"ok"
 
 | อาการ | สาเหตุ | แก้ |
 |---|---|---|
+| เปิดผ่าน bscit หน้าเว็บขึ้นแต่ login ไม่ได้ (POST ได้ 403 / 400) · `curl` ไม่ใส่ `Origin` login ได้ | เบราว์เซอร์ส่ง `Origin: https://bscit.sit.kmutt.ac.th` แต่ backend เห็น request เป็น HTTP host ของ VM → Spring ตัดสินว่าข้ามโดเมนแล้วปฏิเสธ (GET หน้าเว็บไม่ส่ง `Origin` จึงไม่โดน) | ใส่ `https://bscit.sit.kmutt.ac.th` ใน `CORS_ORIGINS` ของ overlay · ตรวจ: `curl -H 'Origin: https://bscit.sit.kmutt.ac.th' .../api/me` ต้องได้ 401 ไม่ใช่ 403 |
 | `Unable to read /etc/rancher/k3s/k3s.yaml` / `permission denied` | ไฟล์ kubeconfig ของ K3s root อ่านได้คนเดียว | ทำ "เตรียม VM" ข้อ kubeconfig |
 | `permission denied ... /var/run/docker.sock` | user ไม่อยู่ใน group docker | `sudo usermod -aG docker $USER` แล้ว login ใหม่ หรือ `sudo ./devops/k8s/build-images.sh` |
 | pod ขึ้น `ErrImageNeverPull` (เดิม `ErrImagePull` / `pull access denied` จาก docker.io) | image ยังไม่ได้ import เข้า K3s (K3s ไม่ใช้ image ของ docker) | `sudo k3s ctr -n k8s.io images ls -q \| grep bangmod` ต้องเห็น 4 ตัว · ไม่ครบ → `IMPORT_ONLY=1 ./devops/k8s/build-images.sh` แล้ว `kubectl -n <ns> rollout restart deployment/backend deployment/frontend` |
@@ -204,6 +207,18 @@ curl -s localhost:18080/health && kill %1                       # {"status":"ok"
 - ไม่มี HTTPS ใน manifest ชุดนี้ (Traefik รับ HTTP) — กล้องในเบราว์เซอร์ (หน้าลงทะเบียนใบหน้า) ต้องใช้ HTTPS ยกเว้น localhost
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-24 — บันทึกประวัติ deploy uat ผ่าน bscit (`66c6337`)
+- **ทำอะไร:** เพิ่มแถว 2026-11-24 ในตาราง "ประวัติการ deploy"
+- **ไฟล์ที่เกี่ยวข้อง:** `README.md`
+- **เหตุผล:** ผู้ใช้สั่งให้บันทึกหลังแก้ login ผ่าน bscit ได้ (กฎ CLAUDE.md ข้อ 21)
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ยังไม่ได้ทดสอบอัปโหลดรูปใบหน้าและ SSE ผ่าน bscit · `backend/db/README.md` ยังอ้างรายชื่อบัญชีใน `test-accounts.js` (แก้พร้อม commit ที่เปลี่ยน DB ครั้งถัดไป)
+
+### 2026-11-24 — แก้ login ผ่าน bscit ไม่ได้ (CORS)
+- **ทำอะไร:** uat `CORS_ORIGINS` เพิ่ม `https://bscit.sit.kmutt.ac.th` · เพิ่มแถวในตาราง "ปัญหาที่เจอตอน deploy" และหมายเหตุในหัวข้อ "forward จาก bscit"
+- **ไฟล์ที่เกี่ยวข้อง:** `k8s/overlays/uat/kustomization.yaml`, `README.md`
+- **เหตุผล:** ผู้ใช้ login ที่ `https://bscit.sit.kmutt.ac.th/capstone26/cp26ms3/uat/login` ไม่ได้ — เบราว์เซอร์ส่ง `Origin` ของ bscit ตอน POST แต่ backend เห็น request เป็น HTTP host ของ VM จึงปฏิเสธเป็น CORS (ตรวจ: ใส่ `Origin` แล้ว `/api/me` ได้ 403, login ผ่าน bscit ได้ 400) · `curl` ที่ใช้ตรวจก่อนหน้านี้ไม่ส่ง `Origin` จึงไม่เห็นปัญหา
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** prod ต้องใส่ค่าเดียวกันตอนเปิดผ่าน bscit · `deploy.sh` ยังตรวจผลแบบไม่ส่ง `Origin`
 
 ### 2026-11-24 — uat เปิด `TEST_ACCOUNTS_ENABLED`
 - **ทำอะไร:** เพิ่ม `TEST_ACCOUNTS_ENABLED=true` ใน configMap ของ `k8s/overlays/uat` (prod ไม่ตั้ง = ปิด)
