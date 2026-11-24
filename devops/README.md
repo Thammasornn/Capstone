@@ -103,6 +103,7 @@ NGINX ของคณะที่ `bscit.sit.kmutt.ac.th` (เราแก้เ
 
 | วันที่ | namespace | commit | ผล | หมายเหตุ |
 |---|---|---|---|---|
+| 2026-11-24 | uat | `66c6337` (Dev · CD) | ✅ ตรวจผ่าน bscit (HTTPS) ด้วย header `Origin` แบบเบราว์เซอร์: หน้าเว็บ 200, login admin / อาจารย์ / ทีม 200, `/api/me` 401, `/api/internal` 404, Origin อื่น 403 · หน้า Login แสดง 52 บัญชีจาก DB · `isSecureContext` = true (กล้องสดใช้ได้) | เปิดที่ `https://bscit.sit.kmutt.ac.th/capstone26/cp26ms3/uat/` (bscit ตัด prefix → VM `/uat/`, `VITE_BASE` + `APP_PATH`) · deploy ต่อเนื่อง 6 commit (`483fc7d` → `66c6337`) ผ่าน CD ทุกรอบ · login ผ่าน bscit ใช้ไม่ได้จนแก้ `CORS_ORIGINS` (`66c6337`) · ยังไม่ได้ทดสอบอัปโหลดรูปใบหน้า / SSE ผ่าน bscit |
 | 2026-11-23 | uat | `c14d9e9` (Dev · CD) | ✅ ตรวจจากภายนอก: หน้าเว็บตัวใหม่, login ทุกบัญชีทดสอบตามที่ควร, `/api/me` 401, `/api/internal` 404 | ติดตั้ง CD ครั้งแรก · reseed 02 + 03 (users 52 · สำรองที่ `~/backups/uat-before-reseed-2026-11-23-1743.dump`) · deploy `a9c53be` รอบแรกตรวจไม่ผ่าน → rollback ทำ backend ล่มประมาณ 14 นาที → แก้ `deploy.sh` (`c14d9e9`) · โมเดล AI ติดตั้งแล้ว ai-service Running |
 | 2026-11-22 | uat | `d0d3dd8` (main) | ✅ ผู้ใช้ทดสอบผ่าน browser แล้ว | ข้อมูล mock (`--seed`) · ยังไม่มีโมเดล AI (ai-service ไม่ขึ้น), MediaMTX และ HTTPS · ใช้โดเมนตั้งแต่ `32ce386` |
 
@@ -206,6 +207,12 @@ curl -s localhost:18080/health && kill %1                       # {"status":"ok"
 - ไม่มี HTTPS ใน manifest ชุดนี้ (Traefik รับ HTTP) — กล้องในเบราว์เซอร์ (หน้าลงทะเบียนใบหน้า) ต้องใช้ HTTPS ยกเว้น localhost
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-24 — บันทึกประวัติ deploy uat ผ่าน bscit (`66c6337`)
+- **ทำอะไร:** เพิ่มแถว 2026-11-24 ในตาราง "ประวัติการ deploy"
+- **ไฟล์ที่เกี่ยวข้อง:** `README.md`
+- **เหตุผล:** ผู้ใช้สั่งให้บันทึกหลังแก้ login ผ่าน bscit ได้ (กฎ CLAUDE.md ข้อ 21)
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ยังไม่ได้ทดสอบอัปโหลดรูปใบหน้าและ SSE ผ่าน bscit · `backend/db/README.md` ยังอ้างรายชื่อบัญชีใน `test-accounts.js` (แก้พร้อม commit ที่เปลี่ยน DB ครั้งถัดไป)
 
 ### 2026-11-24 — แก้ login ผ่าน bscit ไม่ได้ (CORS)
 - **ทำอะไร:** uat `CORS_ORIGINS` เพิ่ม `https://bscit.sit.kmutt.ac.th` · เพิ่มแถวในตาราง "ปัญหาที่เจอตอน deploy" และหมายเหตุในหัวข้อ "forward จาก bscit"
