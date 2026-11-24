@@ -24,6 +24,7 @@ FE เรียก API แบบ relative (`/prod/api`) แล้ว NGINX ใ�
 | `k8s/overlays/*/secret.env.example` | แบบไฟล์ความลับ → copy เป็น `secret.env` (อยู่ใน `.gitignore`) |
 | `k8s/build-images.sh` | build image ทั้ง 4 ตัวแล้ว import เข้า K3s (ไม่ต้องมี registry) |
 | `k8s/init-db.sh` | ใส่ schema ครั้งแรก (`uat --seed` = + ข้อมูล mock) |
+| `k8s/mediamtx/` | MediaMTX (namespace `media`, ใช้ร่วม uat + prod) ดึงภาพกล้องผ่าน RTSPS ทาง Tailscale · apply เอง ไม่อยู่ใน CD · `mediamtx.yml.example` → `mediamtx.yml` (อยู่ใน `.gitignore`) |
 | `k8s/sql/uat-reset-passwords.sql` | uat: ตั้งรหัสผ่านทุกบัญชีเป็น `Password@123` (ค่าที่หน้า Login ของ uat กรอกให้) · ไม่มีข้อมูล mock = หยุด |
 | `k8s/sql/prod-first-admin.sql` | prod: สร้าง admin คนแรก รหัสผ่านพิมพ์ตอนรัน (ไม่อยู่ใน git / history) · คำสั่งอยู่หัวไฟล์ |
 | `cd/deploy.sh` | **CD**: build → push เข้า registry ในเครื่อง → apply → ตรวจผล → rollback ถ้าพัง |
@@ -185,6 +186,50 @@ curl -s localhost:18080/health && kill %1                       # {"status":"ok"
 
 > โมเดลชุดนี้ใช้กับ **การลงทะเบียนใบหน้า** (`POST /embedding`) · ตัวจับคู่ใบหน้าจากกล้องแบบ realtime (อ่าน RTSP → จับคู่ → ส่ง `/api/internal/.../sightings`) และ MediaMTX ยังไม่ได้ทำ
 
+## MediaMTX + RTSPS ผ่าน Tailscale (กล้องอยู่คนละ network)
+
+```
+กล้อง (RTSPS :322) ──Tailscale──▶ VM: tailscale0 ──▶ pod mediamtx (namespace media) ──┬─ WHEP :8889 + UDP :8189 (hostPort) ──▶ เบราว์เซอร์
+   (หรือ subnet router ฝั่งกล้อง)                                                        └─ RTSP :8554 (ใน cluster) ──▶ ai-service
+```
+
+- MediaMTX **ดึง** ภาพจากกล้องเองด้วย `rtsps://` (กล้องต้องรองรับ RTSPS) · ตรวจใบรับรองกล้องด้วย `sourceFingerprint` (กล้องส่วนใหญ่ใช้ใบที่ออกเอง)
+- Tailscale ติดตั้งบน VM (host) · pod ส่งออกทาง route ของ host ไม่ต้องมี Tailscale ใน pod และไม่ต้องเก็บ auth key ใน K3s
+- MediaMTX ตัวเดียวใช้ทั้ง uat และ prod (hostPort ซ้ำกันบน node เดียวไม่ได้ · กล้องไม่ต้องถูกดึง 2 รอบ) · ai-service อ่านที่ `rtsp://mediamtx.media.svc.cluster.local:8554/<stream_path>`
+- ชื่อ path ใน `mediamtx.yml` = `cameras.stream_path` ใน DB (เช่น `room-4301`) · backend สร้าง URL WHEP = `MEDIA_BASE_URL/<stream_path>/whep`
+
+**1. Tailscale บน VM (ใช้ sudo — ผู้ใช้รันเอง)**
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up --accept-routes        # --accept-routes: รับ subnet ของกล้องที่ subnet router ฝั่งกล้องประกาศ
+tailscale ip -4                          # IP 100.x ของ VM
+```
+- กล้องลง Tailscale เองไม่ได้ (ส่วนใหญ่) → ใช้เครื่องหนึ่งใน network ของกล้องเป็น subnet router: `sudo tailscale up --advertise-routes=<subnet กล้อง เช่น 192.168.10.0/24>` แล้วกด approve route ใน admin console ของ Tailscale
+- subnet ของกล้อง **ห้ามซ้อน** กับ `10.42.0.0/16` (pod), `10.43.0.0/16` (service) ของ K3s และ network ของคณะ (`10.4.x.x`)
+- ACL ของ Tailscale ต้องให้ VM ต่อไป IP กล้อง port RTSPS ได้
+
+**2. ตรวจว่า VM ต่อกล้องได้ + หา fingerprint**
+```bash
+nc -vz <IP กล้อง> 322                     # port RTSPS ของกล้อง (ดูคู่มือ · มาตรฐาน 322)
+openssl s_client -connect <IP กล้อง>:322 </dev/null 2>/dev/null | openssl x509 -noout -fingerprint -sha256 | cut -d= -f2 | tr -d ':'
+kubectl run nettest --rm -it --restart=Never --image=busybox:1.36 -- nc -vz -w 5 <IP กล้อง> 322   # จาก pod (ต้องผ่านเหมือนบน host)
+```
+
+**3. config + apply (ไม่ต้อง sudo)**
+```bash
+cp devops/k8s/mediamtx/mediamtx.yml.example devops/k8s/mediamtx/mediamtx.yml && chmod 600 devops/k8s/mediamtx/mediamtx.yml
+# แก้ paths: 1 กล้อง = 1 path (source = rtsps://user:pass@IP:port/path, sourceFingerprint = ค่าจากข้อ 2)
+kubectl apply -k devops/k8s/mediamtx
+kubectl -n media get pods
+kubectl -n media logs deploy/mediamtx | grep -iE 'room-|error'   # ต้องเห็น "[path room-4301] [RTSP source] ready"
+```
+- เปิด firewall ของ VM: `8889/tcp` และ `8189/udp` (ใช้ sudo — ผู้ใช้ทำเอง)
+- แก้กล้อง / config: แก้ `mediamtx.yml` แล้ว `kubectl apply -k devops/k8s/mediamtx` อีกครั้ง (ชื่อ Secret เปลี่ยน → pod restart เอง)
+- `mediamtx.yml` มีรหัสกล้อง: อยู่บน VM เท่านั้น ห้าม commit · สำรองไว้นอก VM เหมือน `secret.env`
+- อาการ: `tls: failed to verify certificate` = `sourceFingerprint` ผิด / กล้องเปลี่ยนใบ · `i/o timeout` = route ของ Tailscale / ACL / subnet ซ้อน · WHEP ได้ 201 แต่จอดำ = UDP 8189 ถูกบล็อก หรือ `webrtcAdditionalHosts` ไม่ใช่ IP ของ VM
+
+**ยังไม่ได้ทำ:** ดูภาพผ่าน bscit (HTTPS) — WHEP ที่ `http://...:8889` ถูกเบราว์เซอร์บล็อกเป็น mixed content ต้องส่งผ่าน NGINX ของ frontend (`/<ns>/media/`) ก่อน · ภาพ (UDP 8189) ไปถึงเฉพาะเครื่องในคณะ / VPN · ai-service ยังไม่ได้อ่าน RTSP
+
 ## ปัญหาที่เจอตอน deploy และวิธีแก้
 
 | อาการ | สาเหตุ | แก้ |
@@ -205,11 +250,17 @@ curl -s localhost:18080/health && kill %1                       # {"status":"ok"
 - **prod ไม่มีข้อมูลเริ่มต้น** (ไม่มี seed) ต้องเพิ่มเองก่อนใช้: บัญชี admin (`users`), ภาคเรียน (`semesters`), ข้อความยินยอม (`consent_versions` ที่ `is_current = true`) · admin คนแรก: `k8s/sql/prod-first-admin.sql` · prod ไม่มีบัญชีทดสอบ — ผู้ใช้พิมพ์อีเมล / รหัสผ่านเอง ห้ามใช้ `Password@123`
 - `FACE_EMBEDDING_KEY` ห้ามเปลี่ยนหลังมีข้อมูลใบหน้า (ถอดรหัส embedding เดิมไม่ได้) · **สำรอง `secret.env` ของแต่ละ namespace ไว้นอก VM** (เช่น password manager ของทีม) ห้ามใส่ใน git หรือ README
 - backend ต้องมี replica เดียว (SSE อยู่ในหน่วยความจำ) · Deployment ตั้ง `strategy: Recreate` ไว้แล้ว
-- ไม่มี MediaMTX ใน manifest ชุดนี้ · ภาพสด (B2) ใช้ `MEDIA_BASE_URL` ชี้ไป MediaMTX ที่ติดตั้งแยก
+- MediaMTX อยู่ใน `k8s/mediamtx/` แยกจาก overlays (namespace `media` · apply เอง ไม่อยู่ใน CD) · ภาพสด (B2) ใช้ `MEDIA_BASE_URL` ชี้ไปที่ hostPort 8889 ของ VM
 - HTTPS ที่ผู้ใช้เห็นมาจาก bscit (ใบ GlobalSign ของคณะ) · Traefik บน VM รับ HTTP จาก bscit — กล้องในเบราว์เซอร์ (หน้าลงทะเบียนใบหน้า) ต้องใช้ HTTPS ยกเว้น localhost
 - HTTPS ตรงที่ VM (`https://cp26ms3.sit.kmutt.ac.th/capstone26/cp26ms3/<ns>/` · ใบจาก SITCertAuthCA) เตรียมไว้แล้วแต่ยังไม่เปิด — ขั้นตอนอยู่ในคอมเมนต์ของ `k8s/base/ingress.yaml` · ใช้ได้เฉพาะในคณะ / VPN และเครื่องที่ไม่ได้ติดตั้ง SITCertAuthCA จะขึ้นเตือน
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-24 — MediaMTX + ดึงภาพกล้องผ่าน RTSPS ทาง Tailscale
+- **ทำอะไร:** เพิ่ม `k8s/mediamtx/` (namespace `media`): Deployment `bluenviron/mediamtx:1.21.4` (hostPort 8889 WHEP + 8189/udp, `Recreate`), Service (RTSP 8554 ใน cluster), config จาก Secret ที่สร้างจาก `mediamtx.yml` (ไม่อยู่ใน git) · `mediamtx.yml.example`: ดึงกล้องด้วย `rtsps://` + `sourceFingerprint`, `rtspTransport: tcp`, ไม่มีใคร publish ได้, ปิด RTMP / HLS / SRT / MoQ / API, `webrtcAdditionalHosts: [10.4.56.69]` · เพิ่มหัวข้อ "MediaMTX + RTSPS ผ่าน Tailscale" (ติดตั้ง Tailscale บน host, subnet router, ตรวจ fingerprint, apply, อาการเสีย)
+- **ไฟล์ที่เกี่ยวข้อง:** `k8s/mediamtx/kustomization.yaml`, `k8s/mediamtx/namespace.yaml`, `k8s/mediamtx/mediamtx.yaml`, `k8s/mediamtx/mediamtx.yml.example`, `../.gitignore`, `README.md`
+- **เหตุผล:** กล้องอยู่คนละ network กับ VM → เชื่อมด้วย Tailscale และให้ MediaMTX ดึงภาพแบบเข้ารหัส (RTSPS) · ผู้ใช้เลือก: MediaMTX ดึงจากกล้อง, Tailscale บน host, กล้องรองรับ RTSPS · ตัวเดียวใช้ร่วม uat / prod เพราะ hostPort ซ้ำบน node เดียวไม่ได้
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ตรวจ key ทุกตัวใน `mediamtx.yml.example` กับ `mediamtx.yml` ของ tag v1.21.4 แล้ว (ไม่มี key ที่ไม่รู้จัก) · parse manifest ด้วย PyYAML · **ยังไม่ได้ apply บน VM / ยังไม่ได้ต่อกล้องจริง** (เครื่องที่แก้ไม่มี kubectl) · ยังไม่ได้ทำ WHEP ผ่าน NGINX ของ frontend (ดูผ่าน bscit จะโดน mixed content) และ ai-service ยังไม่อ่าน RTSP · ผู้ใช้ต้องติดตั้ง Tailscale และเปิด firewall 8889/tcp, 8189/udp เอง (sudo)
 
 ### 2026-11-24 — รหัสผ่านบัญชีทดสอบ uat และ admin คนแรกของ prod
 - **ทำอะไร:** เพิ่ม `k8s/sql/uat-reset-passwords.sql` (ตั้งรหัสผ่านทุกบัญชีใน uat เป็น `Password@123` เฉพาะบัญชีที่ยังไม่ใช่ · แสดงรายชื่อที่เปลี่ยน · รันซ้ำได้ · ไม่มีข้อมูล mock = หยุด) และ `k8s/sql/prod-first-admin.sql` (สร้าง admin คนแรก · รหัสผ่านพิมพ์ตอนรันแล้วส่งทาง stdin · หยุดเมื่อมี admin แล้ว / อีเมลซ้ำ / รหัสสั้นกว่า 12 ตัว / ใช้ `Password@123`) · เพิ่มในตาราง "ไฟล์" และ "ข้อควรรู้"

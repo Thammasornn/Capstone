@@ -1,0 +1,67 @@
+# MediaMTX v1.21.4 (namespace media · ใช้ร่วมกันทั้ง uat และ prod)
+#   ดึงภาพจากกล้องที่อยู่คนละ network ผ่าน RTSPS ทาง Tailscale → ให้เบราว์เซอร์ดูผ่าน WHEP และ ai-service อ่านผ่าน RTSP ใน cluster
+#
+# ใช้: cp mediamtx.yml.example mediamtx.yml (อยู่ใน .gitignore เพราะมีรหัสกล้อง) → แก้ paths: ด้านล่าง → chmod 600 mediamtx.yml
+#      kubectl apply -k devops/k8s/mediamtx · ขั้นตอนเต็ม: devops/README.md หัวข้อ "MediaMTX + RTSPS ผ่าน Tailscale"
+# key ทั้งหมดตรวจกับ mediamtx.yml ของ v1.21.4 แล้ว · key ที่ไม่ได้เขียน = ค่าเริ่มต้น · เปลี่ยนเวอร์ชันใน mediamtx.yaml ให้ตรวจ key อีกครั้ง
+
+logLevel: info
+logDestinations: [stdout]
+
+# ---- สิทธิ์ ----
+# ภาพมาจากการดึงกล้องเท่านั้น → ไม่มีใคร publish ได้ · อ่านภาพได้ทุก path (WHEP จากเบราว์เซอร์ยังไม่มี token ใน R1)
+authMethod: internal
+authInternalUsers:
+  - user: any
+    pass:
+    ips: []
+    permissions:
+      - action: read
+        path:
+
+# ---- ฝั่ง server ที่เปิดให้คนอื่นต่อเข้ามา ----
+# RTSP ใช้ภายใน cluster เท่านั้น (Service ClusterIP · ไม่มี hostPort):
+#   ai-service อ่านที่ rtsp://mediamtx.media.svc.cluster.local:8554/<cameras.stream_path>
+rtsp: true
+rtspTransports: [tcp]
+rtspEncryption: "no"
+rtspAddress: :8554
+
+# WHEP (เบราว์เซอร์) · hostPort 8889 (HTTP) + 8189/udp (ภาพ) บน VM → MEDIA_BASE_URL=http://cp26ms3.sit.kmutt.ac.th:8889
+webrtc: true
+webrtcAddress: :8889
+webrtcLocalUDPAddress: :8189
+# ใน pod เห็นแต่ IP ของ pod (10.42.x) ที่เบราว์เซอร์ต่อไม่ถึง → บอก IP ของ VM แทน (ไม่ตั้ง = WHEP ได้ 201 แต่จอดำ)
+webrtcIPsFromInterfaces: false
+webrtcAdditionalHosts: [10.4.56.69]
+
+# ไม่ใช้ → ปิดไว้ ไม่เปิด port เพิ่ม
+rtmp: false
+hls: false
+srt: false
+moq: false
+api: false
+metrics: false
+playback: false
+
+# ---- ฝั่งดึงภาพจากกล้อง (ใช้กับทุก path) ----
+pathDefaults:
+  # RTSPS ผ่าน Tailscale: ส่งภาพใน TCP connection เดียวกับ TLS (ไม่ใช้ UDP ซึ่งผ่าน NAT / Tailscale ได้ไม่แน่นอน)
+  rtspTransport: tcp
+  # ai-service อ่านภาพตลอดเวลา → ดึงค้างไว้ · ตั้ง true = ดึงเฉพาะตอนมีคนดู (ประหยัด bandwidth ของ Tailscale แต่เปิดภาพช้าลง ~2 วินาที)
+  sourceOnDemand: false
+
+# ---- กล้อง: 1 path ต่อ 1 กล้อง · ชื่อ path = cameras.stream_path ใน DB (เช่น room-4301) ----
+# source:            rtsps://<user>:<pass>@<IP กล้องที่ Tailscale ส่งถึง>:<port RTSPS>/<path ของกล้อง>
+#                    port / path ดูจากคู่มือกล้อง (RTSPS มาตรฐาน = 322 แต่บางยี่ห้อใช้ port อื่น) · user / pass มี @ : / ให้ใช้ %40 %3A %2F
+#                    ใช้ IP (100.x ของ Tailscale หรือ IP ใน subnet ที่ subnet router ประกาศ) — ชื่อ MagicDNS อาจ resolve ใน pod ไม่ได้
+# sourceFingerprint: SHA-256 ของใบรับรองกล้อง (กล้องส่วนใหญ่ใช้ใบที่ออกเอง → ไม่ใส่ = ต่อไม่ได้เพราะตรวจใบไม่ผ่าน) · หาค่าบน VM:
+#   openssl s_client -connect <IP กล้อง>:<port> </dev/null 2>/dev/null | openssl x509 -noout -fingerprint -sha256 | cut -d= -f2 | tr -d ':'
+#   กล้องเปลี่ยนใบ (reset / อัปเดต firmware) → ค่านี้เปลี่ยน → ต้องแก้ใหม่ ไม่งั้นต่อไม่ได้
+paths:
+  room-4301:
+    source: rtsps://USER:PASSWORD@100.64.0.11:322/stream1
+    sourceFingerprint: 0000000000000000000000000000000000000000000000000000000000000000
+  # room-4302:
+  #   source: rtsps://USER:PASSWORD@192.168.10.12:322/stream1
+  #   sourceFingerprint: ...

@@ -29,3 +29,6 @@ devops/k8s/overlays/*/secret.env
 
 # CD: kustomization ที่ deploy.sh สร้างตอน deploy
 devops/k8s/.generated/
+
+# MediaMTX: config ที่มีรหัสกล้อง (แบบไฟล์: mediamtx.yml.example)
+devops/k8s/mediamtx/mediamtx.yml

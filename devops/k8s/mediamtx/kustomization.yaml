@@ -1,0 +1,17 @@
+# MediaMTX (namespace media) · ไม่อยู่ใน CD (deploy.sh ทำแค่ overlays/uat, prod) → apply เองเมื่อแก้กล้อง / config:
+#   cp devops/k8s/mediamtx/mediamtx.yml.example devops/k8s/mediamtx/mediamtx.yml   # ครั้งแรก · แก้ paths: แล้ว chmod 600
+#   kubectl apply -k devops/k8s/mediamtx
+# แก้ mediamtx.yml แล้ว apply ใหม่ → ชื่อ Secret เปลี่ยน (hash) → pod restart เองด้วย config ใหม่
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: media
+resources:
+  - namespace.yaml
+  - mediamtx.yaml
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: bangmod-attendance
+secretGenerator:
+  - name: mediamtx-config
+    files:
+      - mediamtx.yml          # มีรหัสกล้อง · อยู่ใน .gitignore · แบบไฟล์: mediamtx.yml.example

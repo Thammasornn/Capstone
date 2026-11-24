@@ -98,6 +98,12 @@ Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/uat/` แยก 
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-24 — MediaMTX + RTSPS ผ่าน Tailscale
+- **ทำอะไร:** เพิ่ม MediaMTX ใน `devops/k8s/mediamtx/` (namespace `media` ใช้ร่วม uat / prod) ดึงภาพกล้องที่อยู่คนละ network ด้วย `rtsps://` ผ่าน Tailscale บน VM · `.gitignore` เพิ่ม `devops/k8s/mediamtx/mediamtx.yml` (มีรหัสกล้อง)
+- **ไฟล์ที่เกี่ยวข้อง:** `devops/k8s/mediamtx/*`, `.gitignore`, `devops/README.md`
+- **เหตุผล:** เชื่อมกล้องจาก network อื่นแบบเข้ารหัส
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ยังไม่ได้ apply บน VM · ขั้นตอนอยู่ใน `devops/README.md` หัวข้อ "MediaMTX + RTSPS ผ่าน Tailscale"
+
 ### 2026-11-24 — หน้า Login แสดงบัญชีทดสอบจาก DB แทนรายชื่อที่เขียนตายตัว
 - **ทำอะไร:** backend เพิ่ม `GET /api/test-accounts` (เปิดด้วย `TEST_ACCOUNTS_ENABLED`, local + uat เท่านั้น) · frontend โหลดรายชื่อนี้แล้วจัดกลุ่มตามสถานะใบหน้า / ความยินยอม · uat overlay เปิด flag
 - **ไฟล์ที่เกี่ยวข้อง:** `backend/src/main/java/com/faculty/attendance/auth/TestAccountsController.java`, `backend/src/main/java/com/faculty/attendance/auth/SecurityConfig.java`, `backend/src/main/resources/application*.yml`, `frontend/src/features/auth/*`, `devops/k8s/overlays/uat/kustomization.yaml`

@@ -1,0 +1,69 @@
+# MediaMTX ตัวเดียวใช้ร่วมกันทั้ง uat และ prod (กล้องชุดเดียว · hostPort ซ้ำกัน 2 namespace บน node เดียวไม่ได้)
+# config + รหัสกล้องอยู่ใน Secret mediamtx-config (สร้างจาก mediamtx.yml ที่ไม่อยู่ใน git — ดู kustomization.yaml)
+# ภาพจากกล้องวิ่งออกทาง Tailscale ที่ติดตั้งบน VM (pod → host → tailscale0) · ไม่มี Tailscale ใน pod
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mediamtx
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate          # hostPort: pod เก่าต้องหยุดก่อน pod ใหม่จึงจะจอง port ได้
+  selector:
+    matchLabels:
+      app: mediamtx
+  template:
+    metadata:
+      labels:
+        app: mediamtx
+    spec:
+      containers:
+        - name: mediamtx
+          image: bluenviron/mediamtx:1.21.4   # เปลี่ยนเวอร์ชัน = ตรวจ key ใน mediamtx.yml.example กับ mediamtx.yml ของเวอร์ชันนั้น
+          args: ["/etc/mediamtx/mediamtx.yml"]
+          ports:
+            - name: rtsp
+              containerPort: 8554          # ใน cluster เท่านั้น (ai-service)
+            - name: whep
+              containerPort: 8889
+              hostPort: 8889               # เบราว์เซอร์: MEDIA_BASE_URL=http://cp26ms3.sit.kmutt.ac.th:8889
+            - name: webrtc-udp
+              containerPort: 8189
+              hostPort: 8189               # ภาพ WebRTC (UDP) ต้องเปิด firewall ของ VM ด้วย
+              protocol: UDP
+          volumeMounts:
+            - name: config
+              mountPath: /etc/mediamtx
+              readOnly: true
+          readinessProbe:
+            tcpSocket:
+              port: rtsp
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              memory: 512Mi
+      volumes:
+        - name: config
+          secret:
+            secretName: mediamtx-config
+            items:
+              - key: mediamtx.yml
+                path: mediamtx.yml
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mediamtx
+spec:
+  selector:
+    app: mediamtx
+  ports:
+    - name: rtsp
+      port: 8554
+      targetPort: rtsp
+    - name: whep
+      port: 8889
+      targetPort: whep
