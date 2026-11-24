@@ -8,7 +8,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
-COPY main.py ./
+COPY *.py ./
 RUN useradd --system --uid 10001 app
 USER 10001
 EXPOSE 8080

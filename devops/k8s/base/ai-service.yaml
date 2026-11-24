@@ -35,6 +35,19 @@ spec:
               value: /models/face_recognition_sface_2021dec.onnx
             - name: INTERNAL_API_KEY
               valueFrom: { secretKeyRef: { name: app-secret, key: INTERNAL_API_KEY } }
+            # ---- ตัวอ่านกล้อง (camera_worker.py): MediaMTX → จับคู่ใบหน้า → backend /api/internal/** ----
+            - name: CAMERA_WORKER
+              value: "true"
+            # ถอดรหัส embedding ที่ backend ส่งมา (ค่าเดียวกับ backend · ห้ามเปลี่ยนหลังมีข้อมูลใบหน้า)
+            - name: FACE_EMBEDDING_KEY
+              valueFrom: { secretKeyRef: { name: app-secret, key: FACE_EMBEDDING_KEY } }
+            - name: BACKEND_URL
+              value: http://backend:8081
+            # MediaMTX ตัวเดียวใช้ร่วม uat / prod (devops/k8s/mediamtx) · path = cameras.stream_path
+            - name: MEDIAMTX_RTSP_URL
+              value: rtsp://mediamtx.media.svc.cluster.local:8554
+            - name: OPENCV_FFMPEG_CAPTURE_OPTIONS
+              value: rtsp_transport;tcp
           ports:
             - containerPort: 8080
           readinessProbe:

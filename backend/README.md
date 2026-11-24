@@ -71,6 +71,8 @@ mvn spring-boot:run        # http://localhost:8081
 
 | เส้น | ใช้ทำอะไร |
 |---|---|
+| `GET /internal/cameras` | กล้องที่เปิดใช้ `[{cameraCode, roomId, streamPath}]` · AI Service อ่านภาพจาก MediaMTX path = `streamPath` |
+| `GET /internal/rooms/{roomId}/gallery` | `{sessionId, cameraEnabled, students: [{studentId, embeddings: [base64]}]}` ของคาบที่อยู่ในห้องตอนนี้ (`check_in_opens`–`end_time`) · เฉพาะคนที่ลงทะเบียน + consent `granted` + บัญชีเปิด · embedding ยังเข้ารหัสอยู่ (AI Service ถอดเอง) · ไม่มีคาบ = `sessionId: null` |
 | `POST /internal/cameras/{cameraCode}/heartbeat` `{status}` | อัปเดต `cameras.status` + event `camera` |
 | `POST /internal/rooms/{roomId}/faces` `{detected, at?}` | event `faces` (R1 ไม่เก็บลง DB) |
 | `POST /internal/rooms/{roomId}/sightings` `{studentId, matchScore, seenAt?}` | เช็คชื่อตามกติกากล้อง → `checked_in` / `seen` / `ignored` + event `check_in` |
@@ -83,6 +85,12 @@ mvn spring-boot:run        # http://localhost:8081
 > SSE และ event อยู่ในหน่วยความจำของ instance เดียว ถ้ารันหลาย replica ต้องเปลี่ยน `RoomEventHub` ไปใช้ pub/sub กลาง
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-25 — `/api/internal` สำหรับตัวอ่านกล้องของ AI Service
+- **ทำอะไร:** เพิ่ม `GET /api/internal/cameras` (กล้องที่เปิดใช้ในห้องที่เปิดใช้) และ `GET /api/internal/rooms/{roomId}/gallery` (embedding ของนักศึกษาในคาบที่อยู่ในห้องตอนนี้ ใช้ `sessionInRoomAt` และเงื่อนไขเดียวกับ `recordSighting`: enrollment active + consent ล่าสุด granted + `users.is_active`) · คาบปิดเช็คชื่อด้วยกล้อง → `cameraEnabled: false` และ `students` ว่าง · ตรวจ `X-Internal-Key` เหมือนเส้นอื่น
+- **ไฟล์ที่เกี่ยวข้อง:** `src/main/java/com/faculty/attendance/internal/InternalController.java`, `internal/CameraFeedRepository.java`
+- **เหตุผล:** ให้ AI Service อ่านภาพกล้องจาก MediaMTX แล้วเช็คชื่อได้จริง (เดิมมีแค่เส้นรับผล heartbeat / faces / sightings แต่ไม่มีทางรู้ว่าต้องอ่านกล้องไหน และต้องจับคู่กับใคร)
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** embedding ส่งออกแบบเข้ารหัส (ตาม `EmbeddingCipher`: AI Service ถอดด้วย `FACE_EMBEDDING_KEY`) · ตรวจกับ Postgres ชั่วคราว + `02_seed_mock.sql` + `03_demo_live_session.sql`: cameras 5 ตัว, gallery ห้อง 4302 = 9 คน 29 ชุด, ห้อง 4303 (ไม่มีคาบ) = ว่าง, ไม่มี key 401, ห้องไม่มี 404 · ตรวจว่า Python ถอดรหัส embedding ที่ `EmbeddingCipher` (Java จริง) เข้ารหัสได้ และ AAD คนละคน = ถอดไม่ได้
 
 ### 2026-11-24 — `GET /api/test-accounts` ให้หน้า Login แสดงบัญชีจาก DB
 - **ทำอะไร:** เพิ่ม `TestAccountsController` คืนรายชื่อ users ทั้งหมด (อีเมล ชื่อ role is_active รหัสนักศึกษา มีใบหน้าหรือไม่ ความยินยอมล่าสุด ต้องยินยอมใหม่ จำนวนวิชาเทอมนี้ / วิชาที่สอน) · ไม่มีรหัสผ่าน / hash / embedding · มี bean เฉพาะเมื่อ `app.test-accounts.enabled=true` (`TEST_ACCOUNTS_ENABLED`, ค่าเริ่มต้น `false` = 404, โปรไฟล์ `local` = `true`) · `SecurityConfig` ให้ GET path นี้ไม่ต้องมี token · เปิดอยู่จะมี WARN ใน log

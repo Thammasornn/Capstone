@@ -197,7 +197,7 @@ curl -s localhost:18080/health && kill %1                       # {"status":"ok"
 - Tailscale ติดตั้งบน VM (host) · pod ส่งออกทาง route ของ host ไม่ต้องมี Tailscale ใน pod และไม่ต้องเก็บ auth key ใน K3s
 - MediaMTX ตัวเดียวใช้ทั้ง uat และ prod (hostPort ซ้ำกันบน node เดียวไม่ได้ · กล้องไม่ต้องถูกดึง 2 รอบ) · ai-service อ่านที่ `rtsp://mediamtx.media.svc.cluster.local:8554/<stream_path>`
 - ชื่อ path ใน `mediamtx.yml` = `cameras.stream_path` ใน DB (เช่น `room-4301`) · backend สร้าง URL WHEP = `MEDIA_BASE_URL/<stream_path>/whep` · `MEDIA_BASE_URL` = `<VITE_BASE>media` (uat `/capstone26/cp26ms3/uat/media`, prod `/prod/media`) → `frontend/nginx.conf` ส่ง `<APP_PATH>media/*` ไป `MEDIAMTX_URL` (ค่าเริ่มต้น `http://mediamtx.media.svc.cluster.local:8889`)
-- ห้องที่ไม่มี path ใน `mediamtx.yml` → MediaMTX ตอบ 500 · มี path แต่ยังต่อกล้องไม่ได้ → 404 `no stream is available` · ไม่มี namespace `media` → NGINX ตอบ 502 (หน้าเว็บอื่นใช้ได้ปกติ)
+- WHEP (`POST …/whep`) ห้องที่ไม่มี path ใน `mediamtx.yml` → 400 `path '…' is not configured` · มี path แต่ยังต่อกล้องไม่ได้ → 404 `no stream is available` (ตรวจผ่าน bscit 2026-11-24) · ไม่มี namespace `media` → NGINX ตอบ 502 (หน้าเว็บอื่นใช้ได้ปกติ)
 
 **1. Tailscale บน VM (ใช้ sudo — ผู้ใช้รันเอง)**
 ```bash
@@ -227,9 +227,24 @@ kubectl -n media logs deploy/mediamtx | grep -iE 'room-|error'   # ต้อง�
 - เปิด firewall ของ VM: `8889/tcp` และ `8189/udp` (ใช้ sudo — ผู้ใช้ทำเอง)
 - แก้กล้อง / config: แก้ `mediamtx.yml` แล้ว `kubectl apply -k devops/k8s/mediamtx` อีกครั้ง (ชื่อ Secret เปลี่ยน → pod restart เอง)
 - `mediamtx.yml` มีรหัสกล้อง: อยู่บน VM เท่านั้น ห้าม commit · สำรองไว้นอก VM เหมือน `secret.env`
+- อาการ: pod `CrashLoopBackOff` + log `credential contains unsupported characters` = `pass` ใน `authInternalUsers` มีอักขระที่ MediaMTX ไม่รับ → ใช้ `openssl rand -hex 12` (ตัวอักษร + ตัวเลขล้วน)
 - อาการ: pod `CrashLoopBackOff` + log `json: cannot unmarshal number into Go value of type string` = ค่าใน `mediamtx.yml` เป็นตัวเลขล้วน (เช่น fingerprint) → ใส่ `"..."` · `tls: failed to verify certificate` = `sourceFingerprint` ผิด / กล้องเปลี่ยนใบ · `i/o timeout` = route ของ Tailscale / ACL / subnet ซ้อน · WHEP ได้ 201 แต่จอดำ = UDP 8189 ถูกบล็อก หรือ `webrtcAdditionalHosts` ไม่ใช่ IP ของ VM
 
-**ยังไม่ได้ทำ:** ภาพ (UDP 8189) ไปถึงเฉพาะเครื่องในคณะ / VPN (คนนอกคณะต้องใช้ HLS fallback) · ai-service ยังไม่ได้อ่าน RTSP
+**กล้อง Raspberry Pi (ทดสอบ · ห้อง 4303 · 2026-11-25)** — Pi ลง Tailscale เอง (ไม่ต้องมี subnet router) แล้วรัน MediaMTX ของตัวเองอ่านกล้อง (`source: rpiCamera`) และเปิด RTSPS ให้ VM ดึง
+- Pi: Raspberry Pi OS 32-bit (`armv7l`) → `mediamtx_v1.21.4_linux_armv7.tar.gz` · กล้อง `ov5647` (Camera Module v1) · 1280x720 15 fps, hardware H264
+- Pi `~/mediamtx/mediamtx.yml`: `rtspEncryption: "optional"` + `rtspServerKey/Cert` (ใบที่ออกเอง `openssl req -x509 …`) · user `vm` (รหัส `openssl rand -hex 12`) อ่านได้เฉพาะ path `cam` · ดูใน LAN: `http://<IP ของ Pi>:8889/cam`
+- VM `mediamtx.yml`: `room-4303: source: "rtsps://vm:<รหัส>@<IP Tailscale ของ Pi>:8322/cam"` + `sourceFingerprint` = fingerprint ของ `server.crt` บน Pi
+- รหัสใน `authInternalUsers` ใช้ได้แค่ตัวอักษร / ตัวเลข / สัญลักษณ์บางตัว (`openssl rand -hex` ปลอดภัย) · ไฟล์สำรอง `mediamtx.yml.*` มีรหัส — อยู่ใน `.gitignore` แต่ควรลบหลังใช้
+
+**ตัวอ่านกล้องของ ai-service** (`CAMERA_WORKER=true` ใน `k8s/base/ai-service.yaml`): อ่าน `rtsp://mediamtx.media.svc.cluster.local:8554/<stream_path>` ของทุกกล้องใน DB → เช็คชื่อผ่าน `/api/internal/**` + heartbeat (ป้าย "กล้องออนไลน์" เป็นสถานะจริงแล้ว: กล้องที่ไม่มี path ใน MediaMTX = `no_signal`) · ต้องมี `FACE_EMBEDDING_KEY` ใน `secret.env` (ค่าเดียวกับ backend) · ดูสถานะ:
+```bash
+kubectl -n uat exec deploy/ai-service -- python -c "import urllib.request as u;print(u.urlopen('http://localhost:8080/cameras/status').read().decode())"
+kubectl -n uat logs deploy/ai-service | grep -E 'camera|gallery'
+```
+- ลองเช็คชื่อด้วยกล้อง Pi บน uat: (1) ใส่ path ของห้องที่มีคาบใน `mediamtx.yml` ให้ดึงจาก Pi (เช่น `room-4302` ใช้ source เดียวกับ `room-4303`) (2) สร้างคาบตอนนี้: `03_demo_live_session.sql` (ห้อง 4302 · uat เท่านั้น) (3) ลงทะเบียนใบหน้าจริงด้วยบัญชีนักศึกษาที่อยู่ใน INT201-001 (เช่น 66130500013) (4) ยืนหน้ากล้อง → หน้าห้อง 4302 ขึ้นเช็คชื่อ
+- embedding ใน `02_seed_mock.sql` เป็นไบต์สุ่ม → ถอดไม่ได้ (log WARN) จับคู่ได้เฉพาะคนที่ลงทะเบียนจริง
+
+**ยังไม่ได้ทำ:** ภาพ (UDP 8189) ไปถึงเฉพาะเครื่องในคณะ / VPN (คนนอกคณะต้องใช้ HLS fallback)
 
 ## ปัญหาที่เจอตอน deploy และวิธีแก้
 
@@ -257,10 +272,24 @@ kubectl -n media logs deploy/mediamtx | grep -iE 'room-|error'   # ต้อง�
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-25 — ai-service อ่านกล้องจาก MediaMTX (manifest)
+- **ทำอะไร:** `k8s/base/ai-service.yaml` เพิ่ม env `CAMERA_WORKER=true`, `FACE_EMBEDDING_KEY` (จาก `app-secret`), `BACKEND_URL`, `MEDIAMTX_RTSP_URL`, `OPENCV_FFMPEG_CAPTURE_OPTIONS=rtsp_transport;tcp` · หัวข้อ MediaMTX เพิ่มวิธีดูสถานะตัวอ่านกล้อง และขั้นตอนลองเช็คชื่อด้วยกล้อง Pi บน uat
+- **ไฟล์ที่เกี่ยวข้อง:** `k8s/base/ai-service.yaml`, `README.md`
+- **เหตุผล:** เปิดตัวอ่านกล้องของ ai-service (ดู `ai-service/README.md`)
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** push ขึ้น Dev → CD build ai-service / backend ใหม่ · uat มีกล้อง mock 5 ตัว → ตัวอ่านจะพยายามเปิด 5 path (ไม่มีใน MediaMTX = `no_signal` และลองใหม่ทุก ≤ 30 วินาที) · prod ไม่มีกล้องใน DB = ตัวอ่านว่าง · ai-service ใช้ CPU เพิ่มตอนมีคาบ (YOLO 1 เฟรม/วินาที/กล้อง)
+
+### 2026-11-25 — ภาพสดจากกล้อง Raspberry Pi ผ่าน RTSPS + Tailscale ใช้ได้ (ห้อง 4303)
+- **ทำอะไร:** บันทึกวิธีตั้งกล้อง Pi (MediaMTX บน Pi `rpiCamera` + RTSPS → VM ดึงผ่าน Tailscale) ในหัวข้อ MediaMTX · `.gitignore` ครอบ `mediamtx.yml*` (ไฟล์สำรอง `.bak` / `.broken` มีรหัส) ยกเว้น `.example` · ตารางแก้ปัญหาเพิ่มอาการ `credential contains unsupported characters`
+- **ไฟล์ที่เกี่ยวข้อง:** `README.md`, `../.gitignore`
+- **เหตุผล:** ทดสอบต่อกล้องจริงจาก network อื่นครั้งแรก · ระหว่างทาง pod `CrashLoopBackOff` 2 รอบ (รหัส webcam มีอักขระที่ MediaMTX ไม่รับ, ไฟล์ `.bak` มี config ที่พังอยู่แล้ว) → สร้าง `mediamtx.yml` ใหม่จาก `.example`
+- **ผลที่ตรวจ:** Pi `stream is available and online, 1 track (H264)` · VM `room-4303` มี stream (WHEP ด้วย SDP ปลอมได้ 400 `failed to unmarshal SDP` แทน 404) · WHEP จริงจากเบราว์เซอร์ผ่าน bscit (Mac ในเครือข่ายคณะ): 201, ICE `connected` ใน 131 ms ผ่าน `10.4.56.69:8189/udp`, รับภาพ 1280x720 ถอดรหัสได้ 166 เฟรมใน ~8 วินาที
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** MediaMTX บน Pi ยังรันด้วยมือ (ตั้ง systemd ให้เปิดเองตอนบูต) · ภาพดูได้เฉพาะในคณะ / VPN · ห้องอื่นยังไม่มีกล้อง · ป้าย "กล้องออนไลน์" ยังมาจากข้อมูล mock (ai-service ยังไม่ส่ง heartbeat)
+
 ### 2026-11-24 — ภาพสด (WHEP) ผ่าน NGINX ของ frontend แทน `http://…:8889`
 - **ทำอะไร:** overlay uat / prod เปลี่ยน `MEDIA_BASE_URL` เป็น `/capstone26/cp26ms3/uat/media` และ `/prod/media` (ไม่ใส่โดเมน) · คอมเมนต์ใน `k8s/mediamtx/` ว่า hostPort 8889 ไว้ตรวจจากนอก cluster · หัวข้อ MediaMTX / forward จาก bscit / ข้อควรรู้ อัปเดตตาม (คู่กับ `frontend/nginx.conf`)
 - **ไฟล์ที่เกี่ยวข้อง:** `k8s/overlays/uat/kustomization.yaml`, `k8s/overlays/prod/kustomization.yaml`, `k8s/mediamtx/mediamtx.yaml`, `k8s/mediamtx/mediamtx.yml.example`, `README.md`
 - **เหตุผล:** ผู้ใช้เปิดหน้าห้อง 4303 ผ่าน bscit แล้วขึ้น "เชื่อมต่อเซิร์ฟเวอร์ภาพ (MediaMTX) ไม่ได้" — หน้า HTTPS เรียก WHEP ที่ `http://cp26ms3…:8889` ไม่ได้ (mixed content) · นอกจากนี้ `room-4303` ยังไม่มีใน `mediamtx.yml` (ตอบ 500) และยังไม่มีกล้องจริง (ป้าย "กล้องออนไลน์" มาจากข้อมูล mock)
+- **ผลบน uat (`dbdb3e5`):** POST WHEP จริงจากเบราว์เซอร์ผ่าน bscit ถึง MediaMTX แล้ว — `room-4303` 400 `path 'room-4303' is not configured`, `room-4301` 404 `no stream is available` (ไม่ใช่ mixed content แล้ว)
 - **หมายเหตุ / สิ่งที่ต้องทำต่อ:** prod มีผลเมื่อผู้ใช้รัน `deploy.sh prod` · ถ้าย้าย prod ไป bscit ต้องเปลี่ยนเป็น `/capstone26/cp26ms3/prod/media` พร้อม `VITE_BASE` · ยังต้องเพิ่ม path ของแต่ละห้องใน `mediamtx.yml` และต่อกล้องจริง
 
 ### 2026-11-24 — แก้ MediaMTX ไม่ขึ้นเพราะ fingerprint ตัวอย่างเป็นตัวเลข + apply ครั้งแรก
