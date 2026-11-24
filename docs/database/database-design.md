@@ -258,7 +258,7 @@ Attendance Rules ของ R2 ไม่ต้องมีตารางให�
 | ลงทะเบียน / จัดการใบหน้า | 5.10, face/status, B7 | consent_records, face_embeddings, data_deletion_jobs |
 | หน้าแรก / วิชาของฉัน / ประวัติ | `GET /courses`, attendance ของนักศึกษา | enrollments, sections, courses, class_sessions, attendance_records |
 | Room Selection | B1 | `v_room_status` |
-| Room Live | B2–B4, 5.7–5.8 | cameras, class_sessions, attendance_records (จำนวนใบหน้าในเฟรมมาทาง SSE) |
+| Room Live | B2–B4, 5.7–5.8, เริ่ม / จบคาบ (`POST /rooms/{roomId}/sessions`, `POST /class-sessions/{id}/end`) | cameras, class_sessions, attendance_records, audit_logs (จำนวนใบหน้าในเฟรมมาทาง SSE · จบคาบ = absent `system` ให้คนที่ยังไม่มีผล) |
 | Manage / Edit Course | B5, B6 | courses, sections, section_class_days, section_lecturers |
 | Registration Status | 5.6 `faceRegistered=false` | enrollments + `v_face_registration` |
 | Analytics / At-Risk | 5.4–5.6 | sections, class_sessions, enrollments, attendance_records, `v_face_registration` (backend คำนวณเองใน `DashboardRepository` นับคาบที่เริ่มแล้ว · `v_student_section_attendance` ยังนับเฉพาะ `completed` และยังไม่ได้ใช้) |

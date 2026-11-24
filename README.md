@@ -6,10 +6,10 @@
 
 | โฟลเดอร์ | เนื้อหา | สถานะ |
 |---|---|---|
-| [`frontend/`](frontend/) | Vue 3 + Vite (JavaScript) · Tailwind v4 · Pinia · MSW | Release 1 scaffold |
+| [`frontend/`](frontend/) | Vue 3 + Vite (JavaScript) · Tailwind v4 · Pinia · MSW | R1 ทุกหน้าเรียก API จริง (รวมเริ่ม / จบคาบจากหน้าห้อง) |
 | [`backend/`](backend/) | Spring Boot REST + SSE · PostgreSQL — [`backend/db/`](backend/db/) schema + mock data R1 พร้อมใช้ | API R1 (5.1–5.11, B1–B8) |
-| [`ai-service/`](ai-service/) | Python · OpenCV → YOLOv8 → OpenCV SFace | รอย้ายโค้ดเข้ามา |
-| [`devops/`](devops/) | K3s manifests (namespace `prod` / `uat`), Ingress, MediaMTX | manifests prod / uat (ยังไม่มี MediaMTX) |
+| [`ai-service/`](ai-service/) | Python (FastAPI) · YOLOv8 face-pose → OpenCV SFace | ลงทะเบียนใบหน้า + ตัวอ่านกล้อง realtime (MediaMTX → จับคู่ → เช็คชื่อ) |
+| [`devops/`](devops/) | K3s manifests (namespace `prod` / `uat`), Ingress, MediaMTX | manifests prod / uat · MediaMTX (namespace `media`) · CD: push `Dev` → uat |
 | [`docs/`](docs/) | เอกสารประกอบ — [`docs/database/`](docs/database/) แบบฐานข้อมูล + ER Diagram | — |
 
 ```
@@ -35,7 +35,7 @@ Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/uat/` แยก 
 
 - เจ้าหน้าที่: `admin@sit.kmutt.ac.th` (admin) · `supawadee.c@sit.kmutt.ac.th` (อ.ดร.สุภาวดี · สอน INT201-001)
 - นักศึกษา: สมาชิกทีม `66130500013`, `66130500036`, `66130500041` (`@st.sit.kmutt.ac.th`) · ลงทะเบียน INT201-001 · **ยังไม่ยินยอม / ไม่มีใบหน้า** → ลงทะเบียนใบหน้าด้วยหน้าตัวเองก่อนทดสอบกล้อง
-- INT201-001 เรียน**ห้อง 4303 (ห้องที่มีกล้อง)** ทุกวันอังคาร 13:00–16:00 · 4 คาบที่ผ่านมามีผลเช็คชื่อให้ dashboard · อยากได้คาบ "ตอนนี้" ไว้ทดสอบกล้อง: รัน `backend/db/03_demo_live_session.sql` (`./dev.sh db` รันให้แล้ว)
+- INT201-001 เรียน**ห้อง 4303 (ห้องที่มีกล้อง)** ทุกวันอังคาร 13:00–16:00 · 4 คาบที่ผ่านมามีผลเช็คชื่อให้ dashboard · อยากได้คาบ "ตอนนี้" ไว้ทดสอบกล้อง: login อาจารย์ / admin → หน้าห้อง 4303 → ปุ่ม **"เริ่มคาบตอนนี้"** (จบด้วยปุ่ม "จบคาบ") · หรือรัน `backend/db/03_demo_live_session.sql` (`./dev.sh db` รันให้แล้ว)
 - รายละเอียดข้อมูล: `backend/db/README.md`
 
 
@@ -56,11 +56,12 @@ Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/uat/` แยก 
 | 2 | `./dev.sh db` | schema + ข้อมูล mock ถูกต้อง (`backend/db/test/assertions.sql`) — **ล้างข้อมูลกลับเป็นชุดเดิม** | PostgreSQL |
 | 3 | `./dev.sh` (terminal 1) แล้ว `./dev.sh smoke` (terminal 2) | ยิง API จริง 15 ข้อ: login, สิทธิ์ (401 / 403), Dashboard, Room (B1–B4) รวม SSE, `/api/internal` · อ่านอย่างเดียว ไม่แก้ข้อมูล | PostgreSQL + backend |
 | 4 | เปิด `http://localhost:5173` | ลองใช้ผ่านหน้าเว็บด้วยบัญชีทดสอบด้านบน | PostgreSQL + backend + frontend |
+| 5 | `cd ai-service && .venv/bin/python -m pytest tests` (ติดตั้งครั้งแรกดู `ai-service/README.md`) | ai-service: ถอดรหัส embedding, จับคู่, ตัวอ่านกล้อง (ใช้โมเดลปลอม) | Python 3.12 · ไม่ต้องมีโมเดล |
 
-- ทุกข้อจบด้วย `✓ ผ่านทั้งหมด` ถ้าไม่ผ่านจะแสดงรายละเอียดและ exit code ≠ 0 (ใช้ใน script / CI ได้)
+- ข้อ 1–3 จบด้วย `✓ ผ่านทั้งหมด` ถ้าไม่ผ่านจะแสดงรายละเอียดและ exit code ≠ 0 (ใช้ใน script / CI ได้)
 - backend ยังไม่มี unit test ของตัวเอง — ข้อ 1 ตรวจแค่ว่า compile ได้ ข้อ 3 ตรวจการทำงานจริง
 - ทดสอบที่แก้ข้อมูล (B5 สร้าง/แก้/ลบรายวิชา, B6 สวิตช์กล้อง, B7 ถอนความยินยอม, B8 เช็คชื่อด้วยมือ, กล้องส่งผลเข้า `/api/internal/rooms/{roomId}/sightings`) ทำด้วยมือตามตัวอย่าง request ใน `backend/README.md` แล้ว `./dev.sh db` เพื่อล้างกลับ
-- บน GitHub: workflow `database` (เมื่อแก้ `backend/db/**`) และ `frontend` (เมื่อแก้ `frontend/**`) รันให้อัตโนมัติทุก PR
+- บน GitHub: workflow `database` (เมื่อแก้ `backend/db/**`) และ `frontend` (เมื่อแก้ `frontend/**`) รันให้อัตโนมัติทุก PR · ai-service ยังไม่มี workflow และ `./dev.sh test` ยังไม่รัน pytest (ต้องรันข้อ 5 เอง)
 
 ### สร้างฐานข้อมูลด้วย DBeaver แทน `./dev.sh db`
 
@@ -84,7 +85,13 @@ Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/uat/` แยก 
 
 ## บันทึกการทำงาน (Changelog)
 
-### 2026-11-25 — เริ่ม / จบคาบจากหน้าห้อง + แก้กล้องไม่เห็นใบหน้าที่ลงทะเบียน
+### 2026-11-25 — ปรับ README ทุกส่วนให้ตรงกับโค้ดปัจจุบัน
+- **ทำอะไร:** ตารางโครงสร้าง repo อัปเดตสถานะ frontend / ai-service / devops · บัญชีทดสอบบอกวิธีเริ่มคาบจากหน้าห้อง · วิธีรัน test เพิ่ม pytest ของ ai-service (ข้อ 5) · รวมหัวข้อ changelog 2026-11-25 ที่ซ้ำกัน · backend ย้ายเส้นเริ่ม / จบคาบไปตาราง API หลัก (ใช้ JWT ไม่ใช่ `X-Internal-Key`) · frontend / database-design เพิ่มเส้นเริ่ม / จบคาบในตารางหน้าจอ · devops แก้ `MEDIA_BASE_URL`, แผนภาพ, ข้อความที่บอกว่ายังไม่มีตัวจับคู่ realtime / กล้องใช้ไม่ได้บน HTTP
+- **ไฟล์ที่เกี่ยวข้อง:** `README.md`, `backend/README.md`, `frontend/README.md`, `frontend/tests/e2e/README.md`, `devops/README.md`, `docs/README.md`, `docs/database/database-design.md`
+- **เหตุผล:** README หลายส่วนล้าสมัยหรือขัดกันเอง (เช่น ai-service "รอย้ายโค้ดเข้ามา" ทั้งที่มีโค้ดแล้ว)
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** devops / frontend แก้ "ไม่ต้องตั้ง CORS" เป็นคำอธิบาย `CORS_ORIGINS` (ไม่มี preflight แต่ backend ตรวจ `Origin` → เปิดผ่าน bscit ต้องใส่โดเมน bscit · prod ยังไม่ได้ตั้ง) · แก้เฉพาะเอกสาร ไม่แตะโค้ด
+
+### 2026-11-25 — เริ่ม / จบคาบจากหน้าห้อง
 - **ทำอะไร:** หน้าห้องมีปุ่ม "เริ่มคาบตอนนี้" (เลือกกลุ่มเรียน) และ "จบคาบ" · backend เพิ่ม `POST /api/rooms/{roomId}/sessions` และ `POST /api/class-sessions/{id}/end` · ไม่ต้องรัน `03_demo_live_session.sql` เองแล้ว
 - **ไฟล์ที่เกี่ยวข้อง:** `backend/src/main/java/com/faculty/attendance/attendance/SessionControl*.java`, `backend/.../room/RoomRepository.java`, `backend/.../attendance/AttendanceRepository.java`, `frontend/src/features/room-monitor/**`
 - **เหตุผล:** ผู้ใช้ต้องการเริ่มคาบจากหน้าเว็บ

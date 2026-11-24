@@ -7,13 +7,23 @@ Deploy บน Faculty VM ด้วย **K3s** · 2 namespace: `prod` → `http:/
 ```
 Browser ──▶ Traefik (Ingress K3s) ──/prod/*──▶ frontend (NGINX)
                                                  ├─ /prod/api/*  ──▶ backend:8081 /api/*  ──▶ postgres:5432
+                                                 ├─ /prod/media/* ──▶ MediaMTX (WHEP ภาพสด)
                                                  └─ อื่น ๆ        ──▶ ไฟล์ Vue
+Pi Camera ──RTSPS (Tailscale)──▶ MediaMTX (namespace media) ──RTSP──▶ ai-service (ตัวอ่านกล้อง)
 AI Service ──/api/internal/** (X-Internal-Key)──▶ backend   (ภายใน cluster เท่านั้น)
 backend ──DELETE /students/{id}/embeddings──▶ ai-service:8080
 ```
 
-FE เรียก API แบบ relative (`/prod/api`) แล้ว NGINX ใน pod frontend ส่งต่อไป backend จึงไม่ต้องตั้ง CORS
-และเครื่อง local ใช้แบบเดียวกันผ่าน Vite proxy (ดู `frontend/README.md`)
+FE เรียก API แบบ relative (`/prod/api`) แล้ว NGINX ใน pod frontend ส่งต่อไป backend จึงไม่ต้องใช้ CORS preflight (เครื่อง local ใช้แบบเดียวกันผ่าน Vite proxy · ดู `frontend/README.md`)
+แต่ backend ยังตรวจ header `Origin` — ถ้าเบราว์เซอร์เปิดจากโดเมนอื่นที่ไม่ใช่ host ที่ backend เห็น (เช่น bscit) ต้องใส่โดเมนนั้นใน `CORS_ORIGINS` ของ overlay ไม่งั้น login / POST ได้ 403 "Invalid CORS request"
+
+| เปิดจาก | `CORS_ORIGINS` |
+|---|---|
+| `http://cp26ms3.sit.kmutt.ac.th/<ns>/` ตรงที่ VM · `curl` ที่ไม่ส่ง `Origin` | ไม่ต้องตั้ง |
+| bscit (`https://bscit.sit.kmutt.ac.th/capstone26/cp26ms3/<ns>/`) | `https://bscit.sit.kmutt.ac.th` · uat ตั้งแล้ว · **prod ยังเป็น `http://localhost:5173` ต้องเพิ่มเมื่อเปิด prod ผ่าน bscit** |
+| HTTPS ตรงที่ VM (ถ้าเปิดใช้) | เพิ่ม `https://cp26ms3.sit.kmutt.ac.th` |
+
+ตรวจ: `curl -H 'Origin: https://bscit.sit.kmutt.ac.th' http://cp26ms3.sit.kmutt.ac.th/uat/api/me` ต้องได้ 401 (ได้ 403 = `CORS_ORIGINS` ยังไม่ถูก)
 
 ## ไฟล์
 
@@ -137,7 +147,7 @@ sudo mkdir -p /opt/bangmod/models && sudo chown $USER /opt/bangmod/models && ./d
 
 # 2) ความลับ (แยกค่าระหว่าง prod กับ uat)
 cp devops/k8s/overlays/uat/secret.env.example devops/k8s/overlays/uat/secret.env
-#    แก้ค่าใน secret.env (MEDIA_BASE_URL ตั้งเป็น http://cp26ms3.sit.kmutt.ac.th:8889 ใน overlays แล้ว ไม่ต้องแก้)
+#    แก้ค่าใน secret.env (MEDIA_BASE_URL ตั้งเป็น <VITE_BASE>media ใน overlays แล้ว เช่น /capstone26/cp26ms3/uat/media — ไม่ต้องแก้)
 
 # 3) apply + ใส่ schema
 kubectl apply -k devops/k8s/overlays/uat
@@ -180,11 +190,11 @@ kubectl -n uat port-forward deployment/ai-service 18080:8080 &  # แล้ว:
 curl -s localhost:18080/health && kill %1                       # {"status":"ok"}
 ```
 
-ทดสอบจากหน้าเว็บ: login `69130500011@st.sit.kmutt.ac.th` (ยังไม่เคยลงทะเบียน) → ลงทะเบียนใบหน้า → **"เลือกรูปจากเครื่อง"** 3 รูป (ปุ่มเปิดกล้องใช้ไม่ได้บน HTTP) → ต้องได้ "ลงทะเบียนใบหน้าสำเร็จ" · รูปไม่ผ่าน (เบลอ / ใบหน้าเล็ก / หลายคน) จะได้ข้อความบอกเหตุผล
+ทดสอบจากหน้าเว็บ: เปิด uat ผ่าน bscit (HTTPS) → login สมาชิกทีม เช่น `66130500013@st.sit.kmutt.ac.th` (ยังไม่เคยลงทะเบียน) → ลงทะเบียนใบหน้า → **"เปิดกล้อง"** หรือ "เลือกรูปจากเครื่อง" 3 รูป (ปุ่มเปิดกล้องใช้ได้เฉพาะ HTTPS / localhost — เปิดตรงที่ VM แบบ HTTP ต้องเลือกรูปจากเครื่อง) → ต้องได้ "ลงทะเบียนใบหน้าสำเร็จ" · รูปไม่ผ่าน (เบลอ / ใบหน้าเล็ก / หลายคน) จะได้ข้อความบอกเหตุผล
 
 **ถ้าดาวน์โหลดจาก Google Drive ไม่ได้** (โควตาเต็ม / ถูกบล็อก): เปิดลิงก์ yolov8n ใน [README ของ derronqi](https://github.com/derronqi/yolov8-face) ด้วย browser → ดาวน์โหลด → `scp` ไฟล์ขึ้น VM เป็น `/opt/bangmod/models/yolov8n-face-pose.pt` → ตรวจ `sha256sum /opt/bangmod/models/yolov8n-face-pose.pt` ให้ตรงกับใน `models/fetch-models.sh` แล้วทำข้อ 3
 
-> โมเดลชุดนี้ใช้กับ **การลงทะเบียนใบหน้า** (`POST /embedding`) · ตัวจับคู่ใบหน้าจากกล้องแบบ realtime (อ่าน RTSP → จับคู่ → ส่ง `/api/internal/.../sightings`) และ MediaMTX ยังไม่ได้ทำ
+> โมเดลชุดเดียวกันใช้ทั้ง **การลงทะเบียนใบหน้า** (`POST /embedding`) และ **ตัวอ่านกล้อง realtime** (`CAMERA_WORKER=true`: อ่าน RTSP จาก MediaMTX → จับคู่ → ส่ง `/api/internal/rooms/{roomId}/sightings`) · รายละเอียดใน `ai-service/README.md` หัวข้อ "ตัวอ่านกล้อง"
 
 ## MediaMTX + RTSPS ผ่าน Tailscale (กล้องอยู่คนละ network)
 
@@ -272,6 +282,12 @@ kubectl -n uat logs deploy/ai-service | grep -E 'camera|gallery'
 - HTTPS ตรงที่ VM (`https://cp26ms3.sit.kmutt.ac.th/capstone26/cp26ms3/<ns>/` · ใบจาก SITCertAuthCA) เตรียมไว้แล้วแต่ยังไม่เปิด — ขั้นตอนอยู่ในคอมเมนต์ของ `k8s/base/ingress.yaml` · ใช้ได้เฉพาะในคณะ / VPN และเครื่องที่ไม่ได้ติดตั้ง SITCertAuthCA จะขึ้นเตือน
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-25 — ปรับ README ให้ตรงกับโค้ดปัจจุบัน
+- **ทำอะไร:** แผนภาพเพิ่ม `<base>media/*` → MediaMTX และ Pi → MediaMTX → ai-service · Deploy ครั้งแรกข้อ 2: `MEDIA_BASE_URL` เป็น `<VITE_BASE>media` (ไม่ใช่ `:8889`) · ทดสอบลงทะเบียนใบหน้าใช้บัญชีทีม + เปิดผ่าน bscit (HTTPS) ปุ่มเปิดกล้องใช้ได้ · หมายเหตุโมเดล: ตัวอ่านกล้อง realtime ทำแล้ว
+- **ไฟล์ที่เกี่ยวข้อง:** `README.md`
+- **เหตุผล:** ข้อความเดิมล้าสมัย (บัญชี `69130500011` ไม่มีใน seed ชุดใหม่ · ai-service จับคู่ realtime แล้ว)
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** หัวเอกสารแก้ "ไม่ต้องตั้ง CORS" เป็นคำอธิบาย `CORS_ORIGINS` (ไม่มี preflight แต่ backend ตรวจ `Origin` → เปิดผ่าน bscit ต้องใส่โดเมน bscit) + ตารางว่าเปิดจากไหนต้องตั้งอะไร + คำสั่งตรวจ (ยืนยันจากโค้ดโดย DevOps) · คอมเมนต์ใน `k8s/overlays/prod/kustomization.yaml` DevOps แก้แยก
 
 ### 2026-11-25 — ขั้นตอนทดสอบกล้อง: เริ่มคาบจากหน้าเว็บ
 - **ทำอะไร:** ขั้นตอน "ลองเช็คชื่อด้วยกล้อง Pi บน uat" ใช้ปุ่ม "เริ่มคาบตอนนี้" ในหน้าห้องแทนการรัน SQL

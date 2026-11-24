@@ -66,13 +66,13 @@ mvn spring-boot:run        # http://localhost:8081
 | `PATCH /sections/{id}/camera-attendance` | B6 | admin, อาจารย์ผู้สอน |
 | `GET /rooms/options`, `GET /lecturers` | ตัวเลือกฟอร์มรายวิชา | admin, lecturer |
 | `PUT /class-sessions/{sessionId}/attendance/{studentId}` (`status`, `reason` บังคับ, `checkInTime`) | B8 | admin, อาจารย์ผู้สอน |
+| `POST /rooms/{roomId}/sessions` `{sectionId}` — เริ่มคาบของกลุ่มเรียนนี้ในห้องนี้ "ตอนนี้" (เปิดเช็คชื่อทันที · ความยาว / ช่วงตรงเวลา / สายตามกลุ่มเรียน · 409 = ห้องมีคาบอื่นเวลาทับ / กลุ่มเรียนมีคาบที่กำลังเรียนหรือจบแล้ววันนี้ · audit `session.start_now` + event `session`) | ปุ่มเริ่มคาบ (Room Live) | admin, อาจารย์ผู้สอน |
+| `POST /class-sessions/{sessionId}/end` — จบคาบที่กำลังเรียน "ตอนนี้" (ช่วงเช็คชื่อที่ยังเปิดถูกตัด → คนที่ยังไม่มีผล = absent `system` · audit `session.end_now` + event `session`) | ปุ่มจบคาบ (Room Live) | admin, อาจารย์ผู้สอน |
 
 ### AI Service → backend (`X-Internal-Key`, ไม่เปิดออกนอก cluster)
 
 | เส้น | ใช้ทำอะไร |
 |---|---|
-| `POST /rooms/{roomId}/sessions` `{sectionId}` | เริ่มคาบของกลุ่มเรียนนี้ในห้องนี้ "ตอนนี้" (เปิดเช็คชื่อทันที · ความยาว / ช่วงตรงเวลา / สายตามกลุ่มเรียน) · admin / อาจารย์ที่สอน · 409 = ห้องมีคาบอื่นทับ / กลุ่มเรียนมีคาบวันนี้แล้ว · audit `session.start_now` + event `session` |
-| `POST /class-sessions/{sessionId}/end` | จบคาบที่กำลังเรียน "ตอนนี้" · ช่วงเช็คชื่อที่ยังเปิดถูกตัด → คนที่ยังไม่มีผล = absent (system) · audit `session.end_now` + event `session` |
 | `GET /internal/cameras` | กล้องที่เปิดใช้ `[{cameraCode, roomId, streamPath}]` · AI Service อ่านภาพจาก MediaMTX path = `streamPath` |
 | `GET /internal/rooms/{roomId}/gallery` | `{sessionId, cameraEnabled, students: [{studentId, embeddings: [base64]}]}` ของคาบที่อยู่ในห้องตอนนี้ (`check_in_opens`–`end_time`) · เฉพาะคนที่ลงทะเบียน + consent `granted` + บัญชีเปิด · embedding ยังเข้ารหัสอยู่ (AI Service ถอดเอง) · ไม่มีคาบ = `sessionId: null` |
 | `POST /internal/cameras/{cameraCode}/heartbeat` `{status}` | อัปเดต `cameras.status` + event `camera` |
@@ -87,6 +87,11 @@ mvn spring-boot:run        # http://localhost:8081
 > SSE และ event อยู่ในหน่วยความจำของ instance เดียว ถ้ารันหลาย replica ต้องเปลี่ยน `RoomEventHub` ไปใช้ pub/sub กลาง
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-25 — ปรับ README ให้ตรงกับโค้ดปัจจุบัน
+- **ทำอะไร:** ย้าย `POST /rooms/{roomId}/sessions` และ `POST /class-sessions/{sessionId}/end` จากตาราง "AI Service → backend (`X-Internal-Key`)" ไปตาราง API หลัก (ผู้ใช้เรียกด้วย JWT · ตรวจสิทธิ์ `requireSectionStaff`)
+- **ไฟล์ที่เกี่ยวข้อง:** `README.md`
+- **เหตุผล:** เดิมอยู่ผิดตาราง ทำให้เข้าใจว่าต้องใช้ `X-Internal-Key`
 
 ### 2026-11-25 — เริ่ม / จบคาบจากหน้าเว็บ
 - **ทำอะไร:** เพิ่ม `SessionControlController` / `Service` / `Repository`: `POST /api/rooms/{roomId}/sessions` เริ่มคาบตอนนี้ (สร้างคาบใหม่ หรือย้ายคาบวันนี้ที่ยังไม่ถึงเวลา / ถูกยกเลิกมาเริ่มตอนนี้ · 409 เมื่อกลุ่มเรียนมีคาบที่กำลังเรียน / จบแล้ววันนี้ หรือห้องมีคาบอื่นเวลาทับ · จบอย่างช้า 23:59) และ `POST /api/class-sessions/{sessionId}/end` จบคาบ (end_time = ตอนนี้ อย่างน้อย 1 นาทีหลังเริ่ม · ตัดช่วงเช็คชื่อ · INSERT absent ทันที) · สิทธิ์ `requireSectionStaff` · audit + SSE `session` · คาบปัจจุบันของห้อง (`RoomRepository`) และคาบที่กล้องใช้ (`sessionInRoomAt`) ไม่นับคาบ `completed` แล้ว (จบคาบมีผลทันที)
