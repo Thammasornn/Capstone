@@ -250,6 +250,7 @@ kubectl -n uat logs deploy/ai-service | grep -E 'camera|gallery'
 
 | อาการ | สาเหตุ | แก้ |
 |---|---|---|
+| หน้าห้องผ่าน bscit ค้าง "กำลังเชื่อมต่อ" · รายชื่อ / เช็คชื่อไม่อัปเดตเอง | NGINX ของ bscit กัก SSE ไว้จน stream จบ (ตั้งค่าเริ่มต้น: HTTP/1.0 ไป upstream / gzip) | `frontend/nginx.conf` ส่ง `X-Accel-Buffering: no` ในส่วน SSE (แก้แล้ว 2026-11-25) · หน้าห้อง poll รายชื่อทุก 15 วินาทีเมื่อ SSE ไม่ต่อ |
 | เปิดผ่าน bscit หน้าเว็บขึ้นแต่ login ไม่ได้ (POST ได้ 403 / 400) · `curl` ไม่ใส่ `Origin` login ได้ | เบราว์เซอร์ส่ง `Origin: https://bscit.sit.kmutt.ac.th` แต่ backend เห็น request เป็น HTTP host ของ VM → Spring ตัดสินว่าข้ามโดเมนแล้วปฏิเสธ (GET หน้าเว็บไม่ส่ง `Origin` จึงไม่โดน) | ใส่ `https://bscit.sit.kmutt.ac.th` ใน `CORS_ORIGINS` ของ overlay · ตรวจ: `curl -H 'Origin: https://bscit.sit.kmutt.ac.th' .../api/me` ต้องได้ 401 ไม่ใช่ 403 |
 | `Unable to read /etc/rancher/k3s/k3s.yaml` / `permission denied` | ไฟล์ kubeconfig ของ K3s root อ่านได้คนเดียว | ทำ "เตรียม VM" ข้อ kubeconfig |
 | `permission denied ... /var/run/docker.sock` | user ไม่อยู่ใน group docker | `sudo usermod -aG docker $USER` แล้ว login ใหม่ หรือ `sudo ./devops/k8s/build-images.sh` |
@@ -271,6 +272,11 @@ kubectl -n uat logs deploy/ai-service | grep -E 'camera|gallery'
 - HTTPS ตรงที่ VM (`https://cp26ms3.sit.kmutt.ac.th/capstone26/cp26ms3/<ns>/` · ใบจาก SITCertAuthCA) เตรียมไว้แล้วแต่ยังไม่เปิด — ขั้นตอนอยู่ในคอมเมนต์ของ `k8s/base/ingress.yaml` · ใช้ได้เฉพาะในคณะ / VPN และเครื่องที่ไม่ได้ติดตั้ง SITCertAuthCA จะขึ้นเตือน
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-25 — แถวแก้ปัญหา: SSE ค้างที่ bscit
+- **ทำอะไร:** เพิ่มแถวในตาราง "ปัญหาที่เจอตอน deploy" (อาการ / สาเหตุ / วิธีแก้ ของหน้าห้องค้าง "กำลังเชื่อมต่อ")
+- **ไฟล์ที่เกี่ยวข้อง:** `README.md`
+- **เหตุผล:** คู่กับการแก้ใน `frontend/nginx.conf` (ดู `frontend/README.md`)
 
 ### 2026-11-25 — ai-service อ่านกล้องจาก MediaMTX (manifest)
 - **ทำอะไร:** `k8s/base/ai-service.yaml` เพิ่ม env `CAMERA_WORKER=true`, `FACE_EMBEDDING_KEY` (จาก `app-secret`), `BACKEND_URL`, `MEDIAMTX_RTSP_URL`, `OPENCV_FFMPEG_CAPTURE_OPTIONS=rtsp_transport;tcp` · หัวข้อ MediaMTX เพิ่มวิธีดูสถานะตัวอ่านกล้อง และขั้นตอนลองเช็คชื่อด้วยกล้อง Pi บน uat
