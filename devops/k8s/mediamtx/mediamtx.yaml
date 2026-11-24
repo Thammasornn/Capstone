@@ -37,7 +37,7 @@ spec:
               readOnly: true
           readinessProbe:
             tcpSocket:
-              port: rtsp
+              port: whep     # ไม่ใช้ port rtsp: MediaMTX จะ log "[RTSP] conn opened / closed: EOF" ทุก 10 วินาที
             periodSeconds: 10
           resources:
             requests:

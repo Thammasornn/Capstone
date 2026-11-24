@@ -226,7 +226,7 @@ kubectl -n media logs deploy/mediamtx | grep -iE 'room-|error'   # ต้อง�
 - เปิด firewall ของ VM: `8889/tcp` และ `8189/udp` (ใช้ sudo — ผู้ใช้ทำเอง)
 - แก้กล้อง / config: แก้ `mediamtx.yml` แล้ว `kubectl apply -k devops/k8s/mediamtx` อีกครั้ง (ชื่อ Secret เปลี่ยน → pod restart เอง)
 - `mediamtx.yml` มีรหัสกล้อง: อยู่บน VM เท่านั้น ห้าม commit · สำรองไว้นอก VM เหมือน `secret.env`
-- อาการ: `tls: failed to verify certificate` = `sourceFingerprint` ผิด / กล้องเปลี่ยนใบ · `i/o timeout` = route ของ Tailscale / ACL / subnet ซ้อน · WHEP ได้ 201 แต่จอดำ = UDP 8189 ถูกบล็อก หรือ `webrtcAdditionalHosts` ไม่ใช่ IP ของ VM
+- อาการ: pod `CrashLoopBackOff` + log `json: cannot unmarshal number into Go value of type string` = ค่าใน `mediamtx.yml` เป็นตัวเลขล้วน (เช่น fingerprint) → ใส่ `"..."` · `tls: failed to verify certificate` = `sourceFingerprint` ผิด / กล้องเปลี่ยนใบ · `i/o timeout` = route ของ Tailscale / ACL / subnet ซ้อน · WHEP ได้ 201 แต่จอดำ = UDP 8189 ถูกบล็อก หรือ `webrtcAdditionalHosts` ไม่ใช่ IP ของ VM
 
 **ยังไม่ได้ทำ:** ดูภาพผ่าน bscit (HTTPS) — WHEP ที่ `http://...:8889` ถูกเบราว์เซอร์บล็อกเป็น mixed content ต้องส่งผ่าน NGINX ของ frontend (`/<ns>/media/`) ก่อน · ภาพ (UDP 8189) ไปถึงเฉพาะเครื่องในคณะ / VPN · ai-service ยังไม่ได้อ่าน RTSP
 
@@ -255,6 +255,13 @@ kubectl -n media logs deploy/mediamtx | grep -iE 'room-|error'   # ต้อง�
 - HTTPS ตรงที่ VM (`https://cp26ms3.sit.kmutt.ac.th/capstone26/cp26ms3/<ns>/` · ใบจาก SITCertAuthCA) เตรียมไว้แล้วแต่ยังไม่เปิด — ขั้นตอนอยู่ในคอมเมนต์ของ `k8s/base/ingress.yaml` · ใช้ได้เฉพาะในคณะ / VPN และเครื่องที่ไม่ได้ติดตั้ง SITCertAuthCA จะขึ้นเตือน
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-24 — แก้ MediaMTX ไม่ขึ้นเพราะ fingerprint ตัวอย่างเป็นตัวเลข + apply ครั้งแรก
+- **ทำอะไร:** `mediamtx.yml.example` ใส่ `"..."` ให้ `source` / `sourceFingerprint` และเตือนในคอมเมนต์ · เพิ่มอาการนี้ในหัวข้อ "MediaMTX + RTSPS ผ่าน Tailscale"
+- **ไฟล์ที่เกี่ยวข้อง:** `k8s/mediamtx/mediamtx.yml.example`, `k8s/mediamtx/mediamtx.yaml`, `README.md`
+- **เหตุผล:** apply บน VM ครั้งแรก pod เป็น `CrashLoopBackOff` log `json: cannot unmarshal number into Go value of type string` — fingerprint ตัวอย่าง `0000…` เป็นตัวเลขล้วน YAML จึงอ่านเป็น number (ตรวจด้วย PyYAML: ได้ `0`)
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** `mediamtx.yml` บน VM ต้องแก้เอง (ไม่อยู่ใน git) แล้ว apply ใหม่ · หลังแก้: pod `Running 1/1`, log `MediaMTX v1.21.4`, listener `:8554` / `:8889` / `:8189 (UDP/ICE)` · จากนอก VM `:8889/room-4301/` ได้ 200, WHEP `OPTIONS` 204 (firewall TCP 8889 เปิดแล้ว · UDP 8189 ยังไม่ได้ตรวจ) · กล้องยังเป็นค่าตัวอย่าง → `i/o timeout` ตามคาด
+- **เพิ่มเติม:** readinessProbe ย้ายจาก port rtsp ไป whep — เดิม probe ทำให้ log `[RTSP] conn ... closed: EOF` ทุก 10 วินาที (`mediamtx.yaml`)
 
 ### 2026-11-24 — MediaMTX + ดึงภาพกล้องผ่าน RTSPS ทาง Tailscale
 - **ทำอะไร:** เพิ่ม `k8s/mediamtx/` (namespace `media`): Deployment `bluenviron/mediamtx:1.21.4` (hostPort 8889 WHEP + 8189/udp, `Recreate`), Service (RTSP 8554 ใน cluster), config จาก Secret ที่สร้างจาก `mediamtx.yml` (ไม่อยู่ใน git) · `mediamtx.yml.example`: ดึงกล้องด้วย `rtsps://` + `sourceFingerprint`, `rtspTransport: tcp`, ไม่มีใคร publish ได้, ปิด RTMP / HLS / SRT / MoQ / API, `webrtcAdditionalHosts: [10.4.56.69]` · เพิ่มหัวข้อ "MediaMTX + RTSPS ผ่าน Tailscale" (ติดตั้ง Tailscale บน host, subnet router, ตรวจ fingerprint, apply, อาการเสีย)
