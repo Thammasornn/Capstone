@@ -76,6 +76,12 @@ docker run -p 8080:80 -e BACKEND_URL=http://10.0.0.5:8081 bangmod-frontend:prod 
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-25 — ปุ่มเริ่มคาบ / จบคาบในหน้าห้อง
+- **ทำอะไร:** `RoomLivePage.vue` ไม่มีคาบ → ปุ่ม "เริ่มคาบตอนนี้" เปิด `StartSessionDialog.vue` (เลือกกลุ่มเรียนจาก `GET /courses` กลุ่มที่เรียนห้องนี้ขึ้นก่อน → `POST /rooms/{roomId}/sessions` → toast เวลาตรงเวลา / สาย) · มีคาบ → ปุ่ม "จบคาบ" + กล่องยืนยัน (`POST /class-sessions/{id}/end`) · `room-monitor/api.js` เพิ่ม `getStartableCourses`, `startSessionNow`, `endSessionNow`
+- **ไฟล์ที่เกี่ยวข้อง:** `src/features/room-monitor/pages/RoomLivePage.vue`, `src/features/room-monitor/components/StartSessionDialog.vue`, `src/features/room-monitor/api.js`
+- **เหตุผล:** เริ่มคาบเพื่อทดสอบกล้องจากหน้าเว็บแทนการรัน SQL เอง
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ทดสอบใน browser (dev server + backend จริง + Postgres ชั่วคราว) ด้วยบัญชีอาจารย์: เริ่มคาบ → หัวข้อแสดงวิชา / เวลา, รายชื่อ 3 คน, ปุ่มเปลี่ยนเป็น "จบคาบ" · จบคาบ → กลับเป็น "ยังไม่มีคาบ" ทันที · ไม่มี MSW mock (หน้าห้องต้องใช้ backend จริงอยู่แล้ว)
+
 ### 2026-11-25 — หน้าห้องอัปเดตข้อมูลจริงเมื่อเปิดผ่าน bscit (SSE)
 - **ทำอะไร:** `nginx.conf` ส่วน SSE (`<base>api/rooms/{id}/events`) เพิ่ม `add_header X-Accel-Buffering no always` · `RoomLivePage.vue` เมื่อ SSE ยังไม่ `open` (เชื่อมต่อไม่ได้ / หลุด) โหลดรายชื่อใหม่ทุก 15 วินาที (`loadRoster({ silent: true })` ไม่แสดง toast)
 - **ไฟล์ที่เกี่ยวข้อง:** `nginx.conf`, `src/features/room-monitor/pages/RoomLivePage.vue`

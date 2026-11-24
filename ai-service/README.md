@@ -56,6 +56,11 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-25 — `/cameras/status` ล้าง error หลังเปิดภาพได้
+- **ทำอะไร:** `CameraWorker` ตั้ง `last_error = None` เมื่อเปิด RTSP สำเร็จ · test reconnect ไม่พึ่งจังหวะเวลา + เพิ่ม test ว่า error ถูกล้างเมื่อเปิดภาพได้ (pytest 11 ข้อผ่าน)
+- **ไฟล์ที่เกี่ยวข้อง:** `camera_worker.py`, `tests/test_camera_worker.py`
+- **เหตุผล:** บน uat สถานะเป็น `live` แต่ `lastError` ยังค้างข้อความ "เปิด … ไม่ได้" จากตอน MediaMTX ยังไม่มีภาพ ทำให้อ่านสถานะผิด
+
 ### 2026-11-25 — ตัวอ่านกล้อง realtime (MediaMTX → จับคู่ใบหน้า → เช็คชื่อ)
 - **ทำอะไร:** แยกโมเดลไป `vision.py` (มี lock ใช้ร่วมกับ `/embedding`) · `gallery.py` ถอดรหัส embedding จาก backend (AES-256-GCM รูปแบบเดียวกับ `EmbeddingCipher.java`, AAD = student_id) + `best_matches` (cosine สูงสุดของแต่ละคน, threshold + margin) · `camera_worker.py`: `Supervisor` โหลดรายชื่อกล้อง / gallery จาก backend, ส่ง heartbeat; `CameraWorker` 1 thread ต่อกล้อง อ่าน RTSP (TCP, timeout 5 วินาที, ต่อใหม่เอง) ตรวจเฉพาะตอนมีคาบ ส่ง faces / sightings · `main.py` เปิดตัวอ่านตอน start เมื่อ `CAMERA_WORKER=true`, เพิ่ม `GET /cameras/status`, `DELETE /students/{id}/embeddings` ลบจากทุกห้อง · `requirements.txt` เพิ่ม `cryptography` · `Dockerfile` copy ทุก `*.py` · เพิ่ม `tests/` + `requirements-dev.txt`
 - **ไฟล์ที่เกี่ยวข้อง:** `main.py`, `vision.py`, `gallery.py`, `camera_worker.py`, `tests/test_camera_worker.py`, `requirements.txt`, `requirements-dev.txt`, `Dockerfile`

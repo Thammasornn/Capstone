@@ -275,4 +275,28 @@ def test_worker_thread_reads_frames_and_reconnects():
     w.stop()
     w.join(timeout=5)
     assert opened[:2] == ["rtsp://mtx:8554/room-1"] * 2      # ภาพหลุด (grab ได้ False) → เปิดใหม่
-    assert w.last_frame_at is not None and w.last_error == "ภาพหลุด จะเปิดใหม่"
+    assert w.last_frame_at is not None
+
+
+class SlowCapture(FakeCapture):
+    def grab(self):
+        import time
+        time.sleep(0.01)
+        return True
+
+
+def test_error_clears_once_stream_opens():
+    import time
+    c = Config(frame_interval=0, rtsp_base="rtsp://mtx:8554")
+    w = CameraWorker({"cameraCode": "CAM-1", "roomId": ROOM, "streamPath": "room-1"}, c, FakeBackend(),
+                     GalleryStore(load_key(KEY)), FakeVision([]), open_capture=lambda url: SlowCapture(frames=0))
+    w.last_error = "เปิด rtsp://mtx:8554/room-1 ไม่ได้"     # จากรอบก่อนที่ MediaMTX ยังไม่มีภาพ
+    w.start()
+    deadline = time.time() + 5
+    while w.last_frame_at is None and time.time() < deadline:
+        time.sleep(0.02)
+    try:
+        assert w.last_frame_at is not None and w.last_error is None
+    finally:
+        w.stop()
+        w.join(timeout=5)

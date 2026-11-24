@@ -127,6 +127,7 @@ class CameraWorker(threading.Thread):
                 backoff = min(backoff * 2, 30.0)
                 continue
             log.info("%s: เปิดภาพ %s แล้ว", self.code, self.url)
+            self.last_error = None                 # ไม่ให้ /cameras/status ค้าง error ตอนเปิดไม่ได้รอบก่อน
             backoff = 2.0
             try:
                 self._read(cap)

@@ -84,6 +84,16 @@ Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/uat/` แยก 
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-25 — เริ่ม / จบคาบจากหน้าห้อง + แก้กล้องไม่เห็นใบหน้าที่ลงทะเบียน
+- **ทำอะไร:** หน้าห้องมีปุ่ม "เริ่มคาบตอนนี้" (เลือกกลุ่มเรียน) และ "จบคาบ" · backend เพิ่ม `POST /api/rooms/{roomId}/sessions` และ `POST /api/class-sessions/{id}/end` · ไม่ต้องรัน `03_demo_live_session.sql` เองแล้ว
+- **ไฟล์ที่เกี่ยวข้อง:** `backend/src/main/java/com/faculty/attendance/attendance/SessionControl*.java`, `backend/.../room/RoomRepository.java`, `backend/.../attendance/AttendanceRepository.java`, `frontend/src/features/room-monitor/**`
+- **เหตุผล:** ผู้ใช้ต้องการเริ่มคาบจากหน้าเว็บ
+
+### 2026-11-25 — แก้กล้องไม่เห็นใบหน้าที่ลงทะเบียนจริง
+- **ทำอะไร:** backend gallery เทียบ `model_name` แบบไม่สนตัวพิมพ์ · ai-service ล้าง `lastError` หลังเปิดภาพได้
+- **ไฟล์ที่เกี่ยวข้อง:** `backend/src/main/java/com/faculty/attendance/internal/CameraFeedRepository.java`, `ai-service/camera_worker.py`, `ai-service/tests/test_camera_worker.py`
+- **เหตุผล:** ทดสอบบน uat: ลงทะเบียนใบหน้าแล้วแต่ gallery 0 คน (เก็บ `"SFace"` แต่ค้นหา `'sface'`) กล้องจึงไม่เคยเช็คชื่อ
+
 ### 2026-11-25 — ข้อมูล mock ชุดเล็กสำหรับทดสอบจริง
 - **ทำอะไร:** `backend/db/02_seed_mock.sql` เหลือ admin 1 · อาจารย์ 1 · ทีม 3 คน · INT201-001 ห้อง 4303 (ห้องกล้อง) · 4 คาบที่ผ่านมามีผลเช็คชื่อ (วันที่คำนวณจากวันที่รัน) · `03_demo_live_session.sql` สร้างคาบ "ตอนนี้" ในห้อง 4303 โดยยังไม่มีใครเช็คชื่อ · `dev.sh smoke` login นักศึกษาด้วย 66130500013 · หัวข้อ "บัญชีทดสอบ" ด้านบนอัปเดตตาม
 - **ไฟล์ที่เกี่ยวข้อง:** `backend/db/02_seed_mock.sql`, `backend/db/03_demo_live_session.sql`, `backend/db/test/assertions.sql`, `backend/db/README.md`, `dev.sh`, `README.md`, `devops/README.md`
