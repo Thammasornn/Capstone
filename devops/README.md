@@ -24,6 +24,8 @@ FE เรียก API แบบ relative (`/prod/api`) แล้ว NGINX ใ�
 | `k8s/overlays/*/secret.env.example` | แบบไฟล์ความลับ → copy เป็น `secret.env` (อยู่ใน `.gitignore`) |
 | `k8s/build-images.sh` | build image ทั้ง 4 ตัวแล้ว import เข้า K3s (ไม่ต้องมี registry) |
 | `k8s/init-db.sh` | ใส่ schema ครั้งแรก (`uat --seed` = + ข้อมูล mock) |
+| `k8s/sql/uat-reset-passwords.sql` | uat: ตั้งรหัสผ่านทุกบัญชีเป็น `Password@123` (ค่าที่หน้า Login ของ uat กรอกให้) · ไม่มีข้อมูล mock = หยุด |
+| `k8s/sql/prod-first-admin.sql` | prod: สร้าง admin คนแรก รหัสผ่านพิมพ์ตอนรัน (ไม่อยู่ใน git / history) · คำสั่งอยู่หัวไฟล์ |
 | `cd/deploy.sh` | **CD**: build → push เข้า registry ในเครื่อง → apply → ตรวจผล → rollback ถ้าพัง |
 | `cd/setup.sh` | ติดตั้ง CD บน VM ครั้งแรก (registry, clone แยก, cron) |
 | `cd/registries.yaml` | ให้ K3s ดึง image จาก `localhost:5000` (copy ไป `/etc/rancher/k3s/` ด้วย sudo) |
@@ -200,7 +202,7 @@ curl -s localhost:18080/health && kill %1                       # {"status":"ok"
 
 ## ข้อควรรู้
 
-- **prod ไม่มีข้อมูลเริ่มต้น** (ไม่มี seed) ต้องเพิ่มเองก่อนใช้: บัญชี admin (`users`), ภาคเรียน (`semesters`), ข้อความยินยอม (`consent_versions` ที่ `is_current = true`)
+- **prod ไม่มีข้อมูลเริ่มต้น** (ไม่มี seed) ต้องเพิ่มเองก่อนใช้: บัญชี admin (`users`), ภาคเรียน (`semesters`), ข้อความยินยอม (`consent_versions` ที่ `is_current = true`) · admin คนแรก: `k8s/sql/prod-first-admin.sql` · prod ไม่มีบัญชีทดสอบ — ผู้ใช้พิมพ์อีเมล / รหัสผ่านเอง ห้ามใช้ `Password@123`
 - `FACE_EMBEDDING_KEY` ห้ามเปลี่ยนหลังมีข้อมูลใบหน้า (ถอดรหัส embedding เดิมไม่ได้) · **สำรอง `secret.env` ของแต่ละ namespace ไว้นอก VM** (เช่น password manager ของทีม) ห้ามใส่ใน git หรือ README
 - backend ต้องมี replica เดียว (SSE อยู่ในหน่วยความจำ) · Deployment ตั้ง `strategy: Recreate` ไว้แล้ว
 - ไม่มี MediaMTX ใน manifest ชุดนี้ · ภาพสด (B2) ใช้ `MEDIA_BASE_URL` ชี้ไป MediaMTX ที่ติดตั้งแยก
@@ -208,6 +210,12 @@ curl -s localhost:18080/health && kill %1                       # {"status":"ok"
 - HTTPS ตรงที่ VM (`https://cp26ms3.sit.kmutt.ac.th/capstone26/cp26ms3/<ns>/` · ใบจาก SITCertAuthCA) เตรียมไว้แล้วแต่ยังไม่เปิด — ขั้นตอนอยู่ในคอมเมนต์ของ `k8s/base/ingress.yaml` · ใช้ได้เฉพาะในคณะ / VPN และเครื่องที่ไม่ได้ติดตั้ง SITCertAuthCA จะขึ้นเตือน
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-24 — รหัสผ่านบัญชีทดสอบ uat และ admin คนแรกของ prod
+- **ทำอะไร:** เพิ่ม `k8s/sql/uat-reset-passwords.sql` (ตั้งรหัสผ่านทุกบัญชีใน uat เป็น `Password@123` เฉพาะบัญชีที่ยังไม่ใช่ · แสดงรายชื่อที่เปลี่ยน · รันซ้ำได้ · ไม่มีข้อมูล mock = หยุด) และ `k8s/sql/prod-first-admin.sql` (สร้าง admin คนแรก · รหัสผ่านพิมพ์ตอนรันแล้วส่งทาง stdin · หยุดเมื่อมี admin แล้ว / อีเมลซ้ำ / รหัสสั้นกว่า 12 ตัว / ใช้ `Password@123`) · เพิ่มในตาราง "ไฟล์" และ "ข้อควรรู้"
+- **ไฟล์ที่เกี่ยวข้อง:** `k8s/sql/uat-reset-passwords.sql`, `k8s/sql/prod-first-admin.sql`, `README.md`
+- **เหตุผล:** ผู้ใช้ต้องการให้ทุกบัญชีใน uat ใช้ `Password@123` (รวมบัญชีที่เพิ่ม / แก้รหัสเองหลัง seed) ส่วน prod ให้ผู้ใช้ตั้งรหัสและพิมพ์ login เอง (CLAUDE.md ข้อ 17) · ไม่วางใน `backend/db/` เพราะ CD จะหยุด (ข้อ 25)
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ทดสอบกับ Postgres ชั่วคราวในเครื่อง (schema + `02_seed_mock.sql`): uat เปลี่ยน 2/52 บัญชีที่ทำให้ผิดไว้ → 52/52 ใช้ `Password@123`, รันซ้ำเปลี่ยน 0, DB ที่ไม่มี mock หยุด · prod: ทดสอบ wrapper ใน header ทุกกรณี (รหัสไม่ตรง, มี `'`, สั้น, `Password@123`, สำเร็จพร้อมอักขระพิเศษ, มี admin แล้ว) · **ยังไม่ได้รันบน VM** — ผู้ใช้ต้องรันเอง (แก้ข้อมูลใน DB) · prod ยังต้องมี `semesters` / `consent_versions`
 
 ### 2026-11-24 — เตรียม HTTPS ตรงที่ VM (ทางที่ 2) ใน `ingress.yaml` (ยังไม่เปิดใช้)
 - **ทำอะไร:** เพิ่มคู่มือขั้น 0–6 และ manifest ที่คอมเมนต์ไว้ใน `k8s/base/ingress.yaml`: Ingress `web-https` (websecure, host `cp26ms3.sit.kmutt.ac.th`, TLS Secret `web-tls`) + Middleware `strip-bscit-prefix` ตัด `/capstone26/cp26ms3` ให้เหลือ `/uat/` เหมือนที่ bscit ส่งมา · คู่มือครอบคลุมตรวจใบ / key, สร้าง Secret (sudo), patch ของ overlay uat, `CORS_ORIGINS`, คำสั่งตรวจผล · แก้ "ข้อควรรู้" เรื่อง HTTPS ให้ตรงกับปัจจุบัน
