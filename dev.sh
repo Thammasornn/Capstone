@@ -216,7 +216,7 @@ cmd_smoke() {
 
   local admin lect stu
   admin="$(login admin@sit.kmutt.ac.th)"; lect="$(login supawadee.c@sit.kmutt.ac.th)"
-  stu="$(login 69130500001@st.sit.kmutt.ac.th)"
+  stu="$(login 66130500013@st.sit.kmutt.ac.th)"
   echo "Auth (5.1–5.2)"
   expect "login admin / lecturer / student" "$([ -n "$admin" ] && [ -n "$lect" ] && [ -n "$stu" ] && echo ok)" "ok"
   [ -n "$admin" ] || die "login ไม่ได้ — รัน ./dev.sh db เพื่อใส่ข้อมูล mock ก่อน"
