@@ -204,9 +204,16 @@ curl -s localhost:18080/health && kill %1                       # {"status":"ok"
 - `FACE_EMBEDDING_KEY` ห้ามเปลี่ยนหลังมีข้อมูลใบหน้า (ถอดรหัส embedding เดิมไม่ได้) · **สำรอง `secret.env` ของแต่ละ namespace ไว้นอก VM** (เช่น password manager ของทีม) ห้ามใส่ใน git หรือ README
 - backend ต้องมี replica เดียว (SSE อยู่ในหน่วยความจำ) · Deployment ตั้ง `strategy: Recreate` ไว้แล้ว
 - ไม่มี MediaMTX ใน manifest ชุดนี้ · ภาพสด (B2) ใช้ `MEDIA_BASE_URL` ชี้ไป MediaMTX ที่ติดตั้งแยก
-- ไม่มี HTTPS ใน manifest ชุดนี้ (Traefik รับ HTTP) — กล้องในเบราว์เซอร์ (หน้าลงทะเบียนใบหน้า) ต้องใช้ HTTPS ยกเว้น localhost
+- HTTPS ที่ผู้ใช้เห็นมาจาก bscit (ใบ GlobalSign ของคณะ) · Traefik บน VM รับ HTTP จาก bscit — กล้องในเบราว์เซอร์ (หน้าลงทะเบียนใบหน้า) ต้องใช้ HTTPS ยกเว้น localhost
+- HTTPS ตรงที่ VM (`https://cp26ms3.sit.kmutt.ac.th/capstone26/cp26ms3/<ns>/` · ใบจาก SITCertAuthCA) เตรียมไว้แล้วแต่ยังไม่เปิด — ขั้นตอนอยู่ในคอมเมนต์ของ `k8s/base/ingress.yaml` · ใช้ได้เฉพาะในคณะ / VPN และเครื่องที่ไม่ได้ติดตั้ง SITCertAuthCA จะขึ้นเตือน
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-24 — เตรียม HTTPS ตรงที่ VM (ทางที่ 2) ใน `ingress.yaml` (ยังไม่เปิดใช้)
+- **ทำอะไร:** เพิ่มคู่มือขั้น 0–6 และ manifest ที่คอมเมนต์ไว้ใน `k8s/base/ingress.yaml`: Ingress `web-https` (websecure, host `cp26ms3.sit.kmutt.ac.th`, TLS Secret `web-tls`) + Middleware `strip-bscit-prefix` ตัด `/capstone26/cp26ms3` ให้เหลือ `/uat/` เหมือนที่ bscit ส่งมา · คู่มือครอบคลุมตรวจใบ / key, สร้าง Secret (sudo), patch ของ overlay uat, `CORS_ORIGINS`, คำสั่งตรวจผล · แก้ "ข้อควรรู้" เรื่อง HTTPS ให้ตรงกับปัจจุบัน
+- **ไฟล์ที่เกี่ยวข้อง:** `k8s/base/ingress.yaml`, `README.md`
+- **เหตุผล:** ผู้ใช้มีใบรับรองของ `cp26ms3.sit.kmutt.ac.th` (ออกโดย SITCertAuthCA) และอยากเปิดได้ทั้งผ่าน bscit และ HTTPS ตรงที่ VM ด้วย build เดียว — ใช้ path ในเบราว์เซอร์เดียวกับ bscit จึงไม่ต้องแก้ `VITE_BASE` / `APP_PATH` · Ingress `web` เดิมไม่แตะ (ใส่ host / redirect แล้ว bscit จะเข้าไม่ได้)
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ส่วน manifest ที่ทำงานจริงไม่เปลี่ยน (ตรวจด้วย PyYAML เทียบกับ HEAD และจำลองการเปิดกรอบ A/B + patch ของ uat) · ยังไม่ได้รัน `kubectl kustomize` (เครื่องที่แก้ไม่มี kubectl) · SITCertAuthCA ไม่ใช่ CA สาธารณะ — ไม่อยู่ใน root ของ macOS · ยังไม่ได้ทำ redirect HTTP→HTTPS ของทาง 2 และ MediaMTX
 
 ### 2026-11-24 — บันทึกประวัติ deploy uat ผ่าน bscit (`66c6337`)
 - **ทำอะไร:** เพิ่มแถว 2026-11-24 ในตาราง "ประวัติการ deploy"
