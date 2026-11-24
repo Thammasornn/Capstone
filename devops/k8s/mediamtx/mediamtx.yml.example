@@ -58,10 +58,12 @@ pathDefaults:
 # sourceFingerprint: SHA-256 ของใบรับรองกล้อง (กล้องส่วนใหญ่ใช้ใบที่ออกเอง → ไม่ใส่ = ต่อไม่ได้เพราะตรวจใบไม่ผ่าน) · หาค่าบน VM:
 #   openssl s_client -connect <IP กล้อง>:<port> </dev/null 2>/dev/null | openssl x509 -noout -fingerprint -sha256 | cut -d= -f2 | tr -d ':'
 #   กล้องเปลี่ยนใบ (reset / อัปเดต firmware) → ค่านี้เปลี่ยน → ต้องแก้ใหม่ ไม่งั้นต่อไม่ได้
+#   ⚠️ ใส่ใน "..." เสมอ (ทั้ง source และ sourceFingerprint) — ค่าที่เป็นตัวเลขล้วนจะกลายเป็น number
+#      แล้ว MediaMTX ไม่ขึ้น: "json: cannot unmarshal number into Go value of type string"
 paths:
   room-4301:
-    source: rtsps://USER:PASSWORD@100.64.0.11:322/stream1
-    sourceFingerprint: 0000000000000000000000000000000000000000000000000000000000000000
+    source: "rtsps://USER:PASSWORD@100.64.0.11:322/stream1"
+    sourceFingerprint: "0000000000000000000000000000000000000000000000000000000000000000"
   # room-4302:
-  #   source: rtsps://USER:PASSWORD@192.168.10.12:322/stream1
-  #   sourceFingerprint: ...
+  #   source: "rtsps://USER:PASSWORD@192.168.10.12:322/stream1"
+  #   sourceFingerprint: "..."
