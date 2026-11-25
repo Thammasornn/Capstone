@@ -85,6 +85,12 @@ Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/uat/` แยก 
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-25 — frontend: นำเข้าผลเช็คชื่อจากไฟล์ (C3)
+- **ทำอะไร:** ปุ่ม "นำเข้าผลเช็คชื่อ" ในหน้าห้องและรายงานคาบ → wizard 4 ขั้น (เลือกแบบ template / ไฟล์อื่น → เลือกคอลัมน์เอง ไม่เดาให้ → ดูผลก่อน `dryRun` พร้อมตาราง error รายแถว / ขัดแย้ง / จับคู่ไม่ได้ → ยืนยัน) · ประวัติการนำเข้า + รายละเอียดรายแถวในรายงานคาบ · ที่มา "นำเข้า (Teams)" ฯลฯ ในรายชื่อ
+- **ไฟล์ที่เกี่ยวข้อง:** `frontend/src/entities/attendance/**`, `frontend/src/features/session-report/**`, `frontend/src/features/room-monitor/**`, `frontend/src/shared/api/*`, `frontend/src/shared/components/{BaseDialog,BaseSelect}.vue`, `frontend/README.md`
+- **เหตุผล:** ใช้ API นำเข้าผลเช็คชื่อของ backend (C2)
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** รายละเอียดและผลทดสอบใน `frontend/README.md`
+
 ### 2026-11-25 — backend: API นำเข้าผลเช็คชื่อจากไฟล์ (C2)
 - **ทำอะไร:** ดาวน์โหลด template, ตรวจหัวตาราง (`inspect`), นำเข้าแบบ `template` / `mapped` (Teams / Zoom / Google Form / ใบเซ็นชื่อ) พร้อมดูผลก่อนบันทึก (`dryRun`) และ conflict กับผลของกล้อง / อาจารย์ · ประวัติการนำเข้า + รายละเอียดรายแถว
 - **ไฟล์ที่เกี่ยวข้อง:** `backend/pom.xml`, `backend/src/main/java/com/faculty/attendance/attendance/*Import*`, `backend/src/main/java/com/faculty/attendance/common/*`, `backend/README.md`

@@ -8,6 +8,8 @@
  * @property {string} error
  * @property {string} message    ข้อความภาษาไทย แสดงให้ผู้ใช้ได้
  * @property {string} path
+ * @property {Array<{ rowNo: number | null, column: string | null, value: string | null, message: string }>} [errors]
+ *   เฉพาะ 400 ของการนำเข้าผลเช็คชื่อ: error รายแถวของไฟล์ (rowNo = null = ปัญหาทั้งไฟล์ / mapping)
  */
 
 /**
@@ -65,14 +67,16 @@ export class ApiError extends Error {
    * @param {number|null} init.status
    * @param {string} init.message
    * @param {string|null} [init.path]
+   * @param {ApiErrorBody['errors'] | null} [init.errors]  error รายแถวจาก body (ไม่มี = null)
    * @param {unknown} [init.cause]
    */
-  constructor({ kind, status, message, path = null, cause }) {
+  constructor({ kind, status, message, path = null, errors = null, cause }) {
     super(message, { cause })
     this.name = 'ApiError'
     this.kind = kind
     this.status = status
     this.path = path
+    this.errors = errors
     this.action = ERROR_DEFAULTS[kind].action
   }
 }
@@ -122,6 +126,7 @@ export function normalizeError(error) {
     status: response.status,
     message: useServerMessage ? serverMessage : ERROR_DEFAULTS[kind].message,
     path: body.path ?? null,
+    errors: Array.isArray(body.errors) ? body.errors : null,
     cause: error,
   })
 }

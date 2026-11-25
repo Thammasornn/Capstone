@@ -2,6 +2,7 @@
 /** รายชื่อคาบปัจจุบัน (5.8) + เช็คชื่อด้วยมือ (B8) · เรียงยังไม่เข้าก่อน */
 import { computed, ref } from 'vue'
 import StatusBadge from '@/shared/components/StatusBadge.vue'
+import { attendanceSourceLabel } from '@/entities/attendance/import'
 import { getStatusMeta } from '@/entities/attendance/status'
 import { formatTimeOfDateTime } from '@/shared/utils/datetime'
 
@@ -16,8 +17,6 @@ const filtered = computed(() => {
     .filter((r) => !q || r.studentCode.includes(q) || r.studentName.toLowerCase().includes(q))
     .sort((a, b) => rank[a.status] - rank[b.status] || a.studentCode.localeCompare(b.studentCode))
 })
-
-const sourceLabel = { camera: 'กล้อง', manual: 'อาจารย์', system: 'ระบบ' }
 </script>
 
 <template>
@@ -38,7 +37,9 @@ const sourceLabel = { camera: 'กล้อง', manual: 'อาจารย์'
             <template v-if="row.checkInTime">
               · เข้า {{ formatTimeOfDateTime(row.checkInTime) }}
             </template>
-            <template v-if="row.source"> · {{ sourceLabel[row.source] ?? row.source }}</template>
+            <template v-if="row.source">
+              · {{ attendanceSourceLabel(row.source, row.importedFrom, { short: true }) }}</template
+            >
           </p>
         </div>
         <StatusBadge

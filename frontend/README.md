@@ -58,13 +58,13 @@ docker run -p 8080:80 -e BACKEND_URL=http://10.0.0.5:8081 bangmod-frontend:prod 
 | หน้า | route | API |
 |---|---|---|
 | เลือกห้องเรียน | `/classrooms` | B1 (รีเฟรชทุก 30 วินาที) |
-| Room Live | `/classrooms/:roomId` | B4, B2 (ภาพสด WHEP จาก MediaMTX), B3 SSE (`camera` / `faces` / `check_in` / `session`), 5.8, B8, เริ่มคาบ `POST /rooms/{roomId}/sessions` (เลือกกลุ่มจาก 5.3), จบคาบ `POST /class-sessions/{id}/end`, จัดการคาบ (`reanchor` / `extend` / `check-in-window`) |
+| Room Live | `/classrooms/:roomId` | B4, B2 (ภาพสด WHEP จาก MediaMTX), B3 SSE (`camera` / `faces` / `check_in` / `session`), 5.8, B8, เริ่มคาบ `POST /rooms/{roomId}/sessions` (เลือกกลุ่มจาก 5.3), จบคาบ `POST /class-sessions/{id}/end`, จัดการคาบ (`reanchor` / `extend` / `check-in-window`), นำเข้าผลเช็คชื่อ |
 | วิเคราะห์การเข้าเรียน | `/courses/analytics` | 5.4–5.6 (การ์ด, กราฟรายคาบ, ตารางคาบ, ตารางนักศึกษา + ความเสี่ยง) |
 | นักศึกษากลุ่มเสี่ยง | `/courses/at-risk` | 5.6 |
 | สถานะลงทะเบียนใบหน้า | `/courses/registration` | 5.6 (`faceRegistered`) |
 | จัดการรายวิชา | `/courses/manage` | 5.3, B6 (สวิตช์กล้อง), B5 DELETE |
 | เพิ่ม / แก้ไขรายวิชา | `/courses/new`, `/courses/:id/edit` | B5, `GET /rooms/options`, `GET /lecturers` |
-| รายงานรายคาบ | `/reports/sessions/:sessionId` | 5.7–5.8, B8, แก้เวลาคาบ ≤ 7 วัน (`reanchor` / `check-in-window`) |
+| รายงานรายคาบ | `/reports/sessions/:sessionId` | 5.7–5.8, B8, แก้เวลาคาบ ≤ 7 วัน (`reanchor` / `check-in-window`), นำเข้าผลเช็คชื่อ (`import-template`, `import/inspect`, `import`, `imports`) |
 | หน้าแรกนักศึกษา / วิชาของฉัน | `/student`, `/student/courses` | 5.3 + 5.9 ของทุกวิชา |
 | ประวัติการเข้าเรียน | `/student/attendance` | 5.9 |
 | ลงทะเบียนใบหน้า | `/student/face` | 5.10, `/me` |
@@ -75,6 +75,20 @@ docker run -p 8080:80 -e BACKEND_URL=http://10.0.0.5:8081 bangmod-frontend:prod 
 `app → features → entities → shared` — ฟีเจอร์ห้าม import ฟีเจอร์อื่น (ESLint ตรวจให้ที่ `shared/` และ `entities/`)
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-25 — นำเข้าผลเช็คชื่อจากไฟล์ (C3)
+- **ทำอะไร:**
+  - ปุ่ม "นำเข้าผลเช็คชื่อ" ในหน้าห้อง (มีคาบที่กำลังเรียน) และรายงานคาบ (คาบเริ่มแล้ว ไม่ใช่ scheduled / cancelled) → `AttendanceImportWizard.vue`
+    - ขั้น 1 เลือกแบบ (ไม่เลือกให้): template ของระบบ (ปุ่มดาวน์โหลด XLSX / CSV + วิธีกรอก) หรือไฟล์อื่น (เลือกที่มา Teams / Zoom / Google Form / ใบเซ็นชื่อ / อื่น ๆ) · เลือกไฟล์ (ตรวจ .csv / .xlsx และ ≤ 2 MB ก่อนส่ง) · เหตุผลบังคับ ≤ 300 ตัวอักษร · แจ้งข้อจำกัดไฟล์ + วิธีเตรียมรายงาน Teams
+    - ขั้น 2 (ไฟล์อื่น) `ImportMappingStep.vue`: ตาราง sampleRows · ทุก dropdown เริ่ม "— เลือก —" · คอลัมน์ตัวระบุ + ชนิด (บังคับ) · คอลัมน์เวลา → ต้องเลือกรูปแบบเวลา (แสดงค่าจริงในไฟล์ให้เทียบ) · คอลัมน์สถานะ → จับคู่ทุกค่าใน `distinctValues` (ไม่มีในนั้น = ค่าเกิน 20 ใช้ไม่ได้ แจ้งเตือน) · ไม่เลือกทั้งคู่ → ต้องเลือกสถานะเริ่มต้น · "ถัดไป" กดได้เมื่อครบ
+    - ขั้น 3 `ImportPreviewStep.vue` (`dryRun: true`): เตือน `duplicateOf` · ช่วงเวลาของคาบ · ตัวเลขสรุป · แท็บ จะบันทึก / ขัดแย้ง (ผลเดิม → ผลจากไฟล์ + "จะแทนที่ / คงผลเดิม" ตาม checkbox) / ข้าม / จับคู่ไม่ได้ (เหตุผลภาษาไทย) · checkbox แทนที่ผลจากกล้อง / ผลที่อาจารย์แก้ (ไม่ติ๊กไว้ก่อน) เปลี่ยนแล้วเรียก dryRun ใหม่ · 400 + `errors[]` แสดงตาราง แถว / คอลัมน์ / ค่า / ข้อความ + ปุ่ม "เลือกไฟล์ใหม่" / "แก้การเลือกคอลัมน์"
+    - ขั้น 4 "ยืนยันบันทึก" (`dryRun: false`) → toast "บันทึก N คน · ข้าม … · ขัดแย้ง …" → ปิด → โหลดรายชื่อ / สรุปใหม่
+  - รายงานคาบ: ส่วน "ประวัติการนำเข้า" (`ImportHistory.vue`: เวลา ผู้นำเข้า ที่มา ไฟล์ จำนวน) กดดูทุกแถวจากไฟล์ (ค่าดิบ → นักศึกษา → สถานะ → ผล · แถวที่บันทึกจริงไฮไลต์)
+  - ที่มาของผลเช็คชื่อ `source = import` แสดง "นำเข้า (Teams)" / "นำเข้า (template)" ฯลฯ ตาม `importedFrom` ทั้งตารางรายงานคาบและรายชื่อหน้าห้อง (`attendanceSourceLabel`) · SSE `check_in` เก็บ `importedFrom` ถ้ามี
+  - `shared/api/errors.js`: `ApiError.errors` = `errors[]` จาก body (ไม่มี = `null` · หน้าอื่นไม่กระทบ) · `shared/api/http.js`: `downloadFile()` (ผ่าน axios แนบ token → blob → save · ชื่อไฟล์จาก `Content-Disposition` รวม `filename*=UTF-8''`) · `BaseDialog` เพิ่ม prop `wide` · `BaseSelect` ไม่ขยายเกินจอเมื่อตัวเลือกยาว (`w-full min-w-0`)
+- **ไฟล์ที่เกี่ยวข้อง:** `src/entities/attendance/import.js`, `src/entities/attendance/components/{AttendanceImportWizard,ImportMappingStep,ImportPreviewStep}.vue`, `src/features/session-report/components/ImportHistory.vue`, `src/features/session-report/components/AttendanceRosterTable.vue`, `src/features/session-report/pages/SessionReportPage.vue`, `src/features/room-monitor/pages/RoomLivePage.vue`, `src/features/room-monitor/components/LiveStudentList.vue`, `src/shared/api/errors.js`, `src/shared/api/http.js`, `src/shared/components/BaseDialog.vue`, `src/shared/components/BaseSelect.vue`
+- **เหตุผล:** ใช้ API นำเข้าผลเช็คชื่อของ backend (C2) ให้อาจารย์นำผลจากใบเซ็นชื่อ / Teams / Google Form เข้าระบบ โดยเห็นผลก่อนบันทึกและย้อนดูได้
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** wizard + API อยู่ที่ `entities/attendance` (ไม่ใช่ `features/session-report` ตามที่ prompt ยกตัวอย่าง) เพราะหน้าห้องก็ใช้ และฟีเจอร์ห้าม import กันเอง · ทดสอบใน browser กับ backend จริง + Postgres ชั่วคราว (01 + 02 + 03) บัญชี admin: หน้าห้องบนจอ 375px — ไฟล์ Teams CSV (อีเมล + `h:mm:ss a`) → preview 18:05 ตรงเวลา / 18:30 สาย / อีเมลไม่มีในระบบ = จับคู่ไม่ได้ → บันทึก 2 คน รายชื่อแสดง "นำเข้า (Teams)" · รายงานคาบ: ประวัติ + รายละเอียดรายแถว, template ผิด 3 แถว → ตาราง error, template ที่ขัดแย้งกับผลที่อาจารย์แก้ → ติ๊กแทนที่ → dryRun ใหม่ → บันทึก "นำเข้า (template)", Google Form คอลัมน์สถานะจับคู่ 2 ค่า → preview ถูก · ดาวน์โหลด template ตรวจด้วย curl (header `Content-Disposition`) + ทดสอบตัวแยกชื่อไฟล์ (ไม่ได้กดดาวน์โหลดใน browser เพื่อไม่ save ไฟล์ลงเครื่อง) · ยังไม่ได้ทดสอบใน browser: แถบเตือน `duplicateOf`, ไฟล์ XLSX จริง, มือถือจริง
 
 ### 2026-11-25 — เมนู "จัดการคาบ" + Preview & Confirm (ปรับเวลาคาบที่เริ่มแล้ว)
 - **ทำอะไร:**

@@ -1,7 +1,8 @@
 <script setup>
-/** รายชื่อทั้งคาบ (5.8) + ที่มาของการเช็คชื่อ + ปุ่มแก้ไข (B8) */
+/** รายชื่อทั้งคาบ (5.8) + ที่มาของการเช็คชื่อ (import แสดงตาม importedFrom) + ปุ่มแก้ไข (B8) */
 import DataTable from '@/shared/components/DataTable.vue'
 import StatusBadge from '@/shared/components/StatusBadge.vue'
+import { attendanceSourceLabel } from '@/entities/attendance/import'
 import { getStatusMeta } from '@/entities/attendance/status'
 import { formatTimeOfDateTime } from '@/shared/utils/datetime'
 
@@ -20,7 +21,6 @@ const columns = [
   { key: 'source', label: 'ที่มา' },
   { key: 'actions', label: '' },
 ]
-const sourceLabel = { camera: 'กล้อง', manual: 'อาจารย์', system: 'ระบบ (ไม่พบ)' }
 </script>
 
 <template>
@@ -30,7 +30,9 @@ const sourceLabel = { camera: 'กล้อง', manual: 'อาจารย์'
     </template>
     <template #cell-checkInTime="{ value }">{{ formatTimeOfDateTime(value) }}</template>
     <template #cell-checkOutTime="{ value }">{{ formatTimeOfDateTime(value) }}</template>
-    <template #cell-source="{ value }">{{ value ? (sourceLabel[value] ?? value) : '-' }}</template>
+    <template #cell-source="{ row }">{{
+      attendanceSourceLabel(row.source, row.importedFrom)
+    }}</template>
     <template #cell-actions="{ row }">
       <button
         v-if="editable"

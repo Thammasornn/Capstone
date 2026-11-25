@@ -3,6 +3,7 @@
  * รายงานรายคาบ (5.7–5.8) + กรองสถานะ + เช็คชื่อด้วยมือ (B8)
  * คาบ completed ไม่เกิน 7 วัน → "แก้เวลาคาบ" (เริ่มนับเวลาใหม่ / ปรับช่วงเช็คชื่อ + Preview & Confirm)
  * route นี้เข้าได้เฉพาะ staff · เกิน 7 วัน backend ตอบ 409 จึงซ่อนปุ่มและบอกให้เช็คชื่อด้วยมือแทน
+ * คาบเริ่มแล้ว (ไม่ใช่ scheduled / cancelled) → "นำเข้าผลเช็คชื่อ" (AttendanceImportWizard) + ประวัติการนำเข้า
  */
 import { computed, ref, watch } from 'vue'
 import BaseSelect from '@/shared/components/BaseSelect.vue'
@@ -14,11 +15,15 @@ import { useToast } from '@/shared/composables/useToast'
 import { formatThaiDate, isSessionInFuture, parseLocalDate } from '@/shared/utils/datetime'
 import { describeAdjustResult } from '@/entities/attendance/adjust-summary'
 import SessionAdjustMenu from '@/entities/attendance/components/SessionAdjustMenu.vue'
+import AttendanceImportWizard from '@/entities/attendance/components/AttendanceImportWizard.vue'
+import { describeImportResult } from '@/entities/attendance/import'
+import BaseButton from '@/shared/components/BaseButton.vue'
 import ManualAttendanceDialog from '@/entities/attendance/components/ManualAttendanceDialog.vue'
 import { ATTENDANCE_STATUS, ATTENDANCE_STATUS_ORDER } from '@/entities/attendance/status'
 import { useCourseStore } from '@/entities/course/store'
 import { getSessionAttendance, getSessionSummary } from '../api'
 import AttendanceRosterTable from '../components/AttendanceRosterTable.vue'
+import ImportHistory from '../components/ImportHistory.vue'
 import SessionHeader from '../components/SessionHeader.vue'
 
 const props = defineProps({ sessionId: { type: String, required: true } })
@@ -74,6 +79,15 @@ const adjustLabel = computed(() => {
 })
 async function onAdjusted({ result, mode }) {
   toast.show(describeAdjustResult(result, mode), { tone: 'success' })
+  await report.run()
+}
+
+// ---------- นำเข้าผลเช็คชื่อ ----------
+const importOpen = ref(false)
+const importReload = ref(0)
+async function onImported(result) {
+  toast.show(describeImportResult(result), { tone: 'success' })
+  importReload.value++
   await report.run()
 }
 
@@ -137,14 +151,29 @@ async function onSaved() {
             placeholder="ทั้งหมด"
           />
         </div>
-        <RefreshButton
-          :loading="report.loading.value"
-          :updated-at="updatedAt"
-          @refresh="report.run"
-        />
+        <div class="flex flex-wrap items-center gap-2">
+          <BaseButton v-if="started" variant="secondary" @click="importOpen = true">
+            นำเข้าผลเช็คชื่อ
+          </BaseButton>
+          <RefreshButton
+            :loading="report.loading.value"
+            :updated-at="updatedAt"
+            @refresh="report.run"
+          />
+        </div>
       </div>
 
       <AttendanceRosterTable :rows="rows" :editable="started" @edit="openEdit" />
+
+      <ImportHistory v-if="started" :session-id="sessionId" :reload-key="importReload" />
+
+      <AttendanceImportWizard
+        v-if="started"
+        v-model:open="importOpen"
+        :session-id="sessionId"
+        :label="adjustLabel"
+        @imported="onImported"
+      />
 
       <ManualAttendanceDialog
         v-model:open="dialogOpen"

@@ -66,3 +66,42 @@ export async function getJson(url, config) {
   const { data } = await http.get(url, config)
   return data
 }
+
+/**
+ * ชื่อไฟล์จาก Content-Disposition (รองรับ filename*=UTF-8''... ของ Spring) — ไม่มี = null
+ * @param {string | undefined | null} header
+ */
+export function filenameFromDisposition(header) {
+  if (!header) return null
+  const star = /filename\*\s*=\s*(?:UTF-8|utf-8)''([^;]+)/.exec(header)
+  if (star) {
+    try {
+      return decodeURIComponent(star[1].trim().replace(/^"|"$/g, ''))
+    } catch {
+      /* ใช้ filename= แทน */
+    }
+  }
+  const plain = /filename\s*=\s*"?([^";]+)"?/.exec(header)
+  return plain ? plain[1].trim() : null
+}
+
+/**
+ * ดาวน์โหลดไฟล์ผ่าน http (แนบ token ให้) แล้วให้เบราว์เซอร์ save — ชื่อไฟล์จาก Content-Disposition
+ * @param {string} url
+ * @param {import('axios').AxiosRequestConfig} [config]
+ * @param {string} [fallbackName] ใช้เมื่อ server ไม่ส่งชื่อไฟล์
+ * @returns {Promise<string>} ชื่อไฟล์ที่ save
+ */
+export async function downloadFile(url, config = {}, fallbackName = 'download') {
+  const response = await http.get(url, { ...config, responseType: 'blob' })
+  const name = filenameFromDisposition(response.headers['content-disposition']) ?? fallbackName
+  const href = URL.createObjectURL(response.data)
+  const a = document.createElement('a')
+  a.href = href
+  a.download = name
+  document.body.append(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(href), 1000)
+  return name
+}

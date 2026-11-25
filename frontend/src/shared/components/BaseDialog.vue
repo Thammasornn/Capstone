@@ -8,6 +8,8 @@ import { onMounted, ref, watch } from 'vue'
 defineProps({
   title: { type: String, required: true },
   description: { type: String, default: '' },
+  /** กว้างขึ้น (สำหรับตาราง) — ยังพอดีจอมือถือ */
+  wide: { type: Boolean, default: false },
 })
 const open = defineModel('open', { type: Boolean, default: false })
 const dialog = ref(/** @type {HTMLDialogElement | null} */ (null))
@@ -25,7 +27,8 @@ onMounted(() => sync(open.value))
 <template>
   <dialog
     ref="dialog"
-    class="m-auto w-[min(520px,calc(100vw-2rem))] rounded-card border border-line bg-surface p-0 text-ink shadow-card backdrop:bg-dark/40"
+    class="m-auto rounded-card border border-line bg-surface p-0 text-ink shadow-card backdrop:bg-dark/40"
+    :class="wide ? 'w-[min(880px,calc(100vw-2rem))]' : 'w-[min(520px,calc(100vw-2rem))]'"
     :aria-label="title"
     @close="open = false"
     @click.self="open = false"

@@ -8,6 +8,7 @@
  *  - ไม่มีคาบ → "เริ่มคาบตอนนี้" (เลือกกลุ่มเรียน) · มีคาบ → "จบคาบ" (คนที่ยังไม่มีผล = ขาด)
  *  - มีคาบ → เมนู "จัดการคาบ" (เริ่มนับเวลาใหม่ / ยืดเวลาจบ / ปรับช่วงเช็คชื่อ + Preview & Confirm)
  *    route นี้เข้าได้เฉพาะ staff · currentSession ของ B4 คือคาบที่กำลังเรียน
+ *  - มีคาบ → "นำเข้าผลเช็คชื่อ" (AttendanceImportWizard) เช่น กล้องเสียแล้วใช้ใบเซ็นชื่อ
  */
 import { computed, ref, watch } from 'vue'
 import BaseButton from '@/shared/components/BaseButton.vue'
@@ -24,6 +25,8 @@ import { formatTime } from '@/shared/utils/datetime'
 import { describeAdjustResult } from '@/entities/attendance/adjust-summary'
 import ManualAttendanceDialog from '@/entities/attendance/components/ManualAttendanceDialog.vue'
 import SessionAdjustMenu from '@/entities/attendance/components/SessionAdjustMenu.vue'
+import AttendanceImportWizard from '@/entities/attendance/components/AttendanceImportWizard.vue'
+import { describeImportResult } from '@/entities/attendance/import'
 import { endSessionNow, getLiveRoster, getRoom, getRooms } from '../api'
 import { useRoomEvents } from '../composables/useRoomEvents'
 import CameraStatusBadge from '../components/CameraStatusBadge.vue'
@@ -87,7 +90,13 @@ const { status: streamStatus } = useRoomEvents(() => props.roomId, {
     if (data.sessionId !== session.value?.sessionId) return
     roster.value = roster.value.map((r) =>
       r.studentId === data.studentId
-        ? { ...r, status: data.status, checkInTime: data.checkInTime, source: data.source }
+        ? {
+            ...r,
+            status: data.status,
+            checkInTime: data.checkInTime,
+            source: data.source,
+            importedFrom: data.importedFrom ?? (data.source === 'import' ? r.importedFrom : null),
+          }
         : r,
     )
     if (data.source === 'camera' && data.status !== 'absent') {
@@ -166,6 +175,13 @@ async function onAdjusted({ result, mode }) {
   await loadRoster({ silent: true })
 }
 
+// ---------- นำเข้าผลเช็คชื่อ ----------
+const importOpen = ref(false)
+async function onImported(result) {
+  toast.show(describeImportResult(result), { tone: 'success' })
+  await loadRoster({ silent: true })
+}
+
 const liveLabel = computed(
   () =>
     ({
@@ -207,6 +223,9 @@ const liveLabel = computed(
             :label="sessionLabel"
             @applied="onAdjusted"
           />
+          <BaseButton v-if="session" variant="secondary" @click="importOpen = true">
+            นำเข้าผลเช็คชื่อ
+          </BaseButton>
           <BaseButton v-if="session" variant="secondary" @click="endOpen = true">จบคาบ</BaseButton>
           <BaseButton v-else @click="startOpen = true">เริ่มคาบตอนนี้</BaseButton>
           <RoomSwitcher v-if="rooms.data.value" :rooms="rooms.data.value" :room-id="roomId" />
@@ -266,6 +285,14 @@ const liveLabel = computed(
           <BaseButton variant="danger" :loading="ending" @click="endSession">จบคาบ</BaseButton>
         </template>
       </BaseDialog>
+
+      <AttendanceImportWizard
+        v-if="session"
+        v-model:open="importOpen"
+        :session-id="session.sessionId"
+        :label="sessionLabel"
+        @imported="onImported"
+      />
 
       <ManualAttendanceDialog
         v-if="session"

@@ -14,7 +14,7 @@ const id = useId()
 </script>
 
 <template>
-  <div class="flex flex-col gap-1.5">
+  <div class="flex min-w-0 flex-col gap-1.5">
     <label :for="id" class="text-xs font-medium text-muted" :class="hideLabel && 'sr-only'">
       {{ label }}
     </label>
@@ -22,7 +22,7 @@ const id = useId()
       :id="id"
       v-model="model"
       :disabled="disabled"
-      class="min-h-11 rounded-field border border-line bg-surface px-3 py-2 text-sm text-ink focus:border-primary disabled:opacity-60"
+      class="min-h-11 w-full min-w-0 rounded-field border border-line bg-surface px-3 py-2 text-sm text-ink focus:border-primary disabled:opacity-60"
     >
       <option v-if="placeholder" :value="null">{{ placeholder }}</option>
       <option
