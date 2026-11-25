@@ -31,10 +31,15 @@ public final class CourseDtos {
 
     /**
      * startedSessionsNotChanged: เฉพาะ PUT — คาบตั้งแต่วันนี้ของกลุ่มที่แก้ตารางเรียน แต่ระบบไม่ได้แก้ตาม
-     * (เริ่มแล้ว / มีข้อมูลแล้ว / เวลาใหม่ย้อนไปก่อนตอนนี้) ให้ FE แจ้งผู้ใช้ · GET / POST = ว่าง
+     * (เริ่มแล้ว / มีข้อมูลแล้ว / เวลาใหม่ย้อนไปก่อนตอนนี้ · ไม่รวมคาบที่แก้รายคาบ) ให้ FE แจ้งผู้ใช้ · GET / POST = ว่าง
      */
     public record CourseDetail(UUID courseId, String courseCode, String courseName, List<SectionDetail> sections,
-                               List<SessionNotChanged> startedSessionsNotChanged) {}
+                               List<SessionNotChanged> startedSessionsNotChanged,
+                               List<OverriddenSessionKept> overriddenSessionsKept) {}
+
+    /** PUT: คาบในอนาคตที่แก้รายคาบไว้ (เลื่อน / ยกเลิก / คาบเพิ่ม) จึงไม่เปลี่ยนตามแม่แบบใหม่ · GET / POST = ว่าง */
+    public record OverriddenSessionKept(UUID sessionId, java.time.LocalDate sessionDate, String sectionCode,
+                                        String sessionStatus, boolean isExtra) {}
 
     /** คาบที่ไม่ได้เปลี่ยนตามตารางเรียนใหม่ · ปรับเวลาคาบเดียวได้ที่ /api/class-sessions/{id}/reanchor | extend | check-in-window */
     public record SessionNotChanged(UUID sessionId, java.time.LocalDate sessionDate, String sectionCode,

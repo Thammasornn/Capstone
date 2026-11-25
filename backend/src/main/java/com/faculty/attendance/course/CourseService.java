@@ -114,8 +114,10 @@ public class CourseService {
         }
         bySemester.forEach((sem, list) -> prepared.addAll(prepare(list, courseId, sem, lecturerScope)));
 
-        List<SessionNotChanged> notChanged = tx.execute(t -> {
+        record Kept(List<SessionNotChanged> notChanged, List<OverriddenSessionKept> overridden) {}
+        Kept result = tx.execute(t -> {
             List<SessionNotChanged> kept = new ArrayList<>();
+            List<OverriddenSessionKept> overridden = new ArrayList<>();
             repo.updateCourse(courseId, code, name);
             for (Prepared p : prepared) {
                 // กลุ่มเดิมที่ตารางเรียนเปลี่ยน: คาบที่ระบบไม่ได้แก้ตาม (เริ่มแล้ว / มีข้อมูล) ต้องแจ้งผู้ใช้ ไม่เงียบ
@@ -123,15 +125,17 @@ public class CourseService {
                 UUID id = saveSection(courseId, p.semesterId(), p);
                 if (sigBefore != null && !sigBefore.equals(repo.sectionSignature(id))) {
                     kept.addAll(repo.sessionsNotMatchingSection(id));
+                    overridden.addAll(repo.overriddenFutureSessions(id));
                 }
             }
             audit.log(u.userId(), "course.update", "course", courseId,
                     toJson(Map.of("course_code", before.courseCode(), "course_name", before.courseName())),
                     toJson(Map.of("course_code", code, "course_name", name, "sections", prepared.size())), ip);
-            return kept;
+            return new Kept(kept, overridden);
         });
         CourseDetail d = detail(courseId, lecturerScope);
-        return new CourseDetail(d.courseId(), d.courseCode(), d.courseName(), d.sections(), notChanged);
+        return new CourseDetail(d.courseId(), d.courseCode(), d.courseName(), d.sections(), result.notChanged(),
+                result.overridden());
     }
 
     /** Q5 soft delete · lecturer ลบได้เมื่อสอนทุกกลุ่มของวิชานั้น */
@@ -305,7 +309,7 @@ public class CourseService {
         var c = repo.findCourse(courseId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "ไม่พบรายวิชา"));
         return new CourseDetail(c.courseId(), c.courseCode(), c.courseName(), repo.sections(courseId, lecturerId),
-                List.of());
+                List.of(), List.of());
     }
 
     private String toJson(Object o) {

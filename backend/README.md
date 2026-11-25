@@ -69,6 +69,37 @@ mvn spring-boot:run        # http://localhost:8081
 | `POST /rooms/{roomId}/sessions` `{sectionId}` — เริ่มคาบของกลุ่มเรียนนี้ในห้องนี้ "ตอนนี้" (เปิดเช็คชื่อทันที · ความยาว / ช่วงตรงเวลา / สายตามกลุ่มเรียน · 409 = ห้องมีคาบอื่นเวลาทับ / กลุ่มเรียนมีคาบที่กำลังเรียนหรือจบแล้ววันนี้ · audit `session.start_now` + event `session`) | ปุ่มเริ่มคาบ (Room Live) | admin, อาจารย์ผู้สอน |
 | `POST /class-sessions/{sessionId}/end` — จบคาบที่กำลังเรียน "ตอนนี้" (ช่วงเช็คชื่อที่ยังเปิดถูกตัด → คนที่ยังไม่มีผล = absent `system` · audit `session.end_now` + event `session`) | ปุ่มจบคาบ (Room Live) | admin, อาจารย์ผู้สอน |
 
+### คาบเรียน (คาบจริงรายคาบ · คาบที่ยังไม่เริ่ม / ยกเลิก / ชดเชย)
+
+แยกจาก **รายวิชา** (แม่แบบตารางเรียน — `PUT /courses/{id}`) · สิทธิ์ admin / อาจารย์ผู้สอน (`requireSectionStaff`) · ไม่พบ 404 · ทุกการเปลี่ยนแปลง `reason` บังคับ (≤ 500) · transaction + lock แถวคาบ · audit · คาบของวันนี้ส่ง SSE `session` (ห้องเดิม + ห้องใหม่ถ้าย้าย) · เวลา `"HH:mm"`, วันที่ `"yyyy-MM-dd"` (เวลาไทย) · คาบที่กำลังเรียน / จบแล้ว ใช้ reanchor / extend / check-in-window ด้านล่าง
+
+| เส้น | body | response |
+|---|---|---|
+| `GET /sections/{sectionId}/sessions` | — | `{sectionId, semesterStart, semesterEnd, sessions: [SessionView]}` เรียงตามวันที่ (รวม cancelled / คาบเพิ่ม) |
+| `PATCH /class-sessions/{id}` | `{sessionDate?, startTime?, endTime?, checkInOpens?, onTimeUntil?, lateUntil?, checkInCloses?, roomId?, reason}` (ไม่ส่ง = ค่าเดิม) | `SessionView` · audit `session.reschedule` |
+| `POST /class-sessions/{id}/cancel` | `{reason, makeup?: {sessionDate, startTime, endTime, checkInOpens, onTimeUntil, lateUntil, checkInCloses, roomId}}` | `{session: SessionView, keptAttendanceCount, makeup: SessionView \| null}` · audit `session.cancel` (+ `session.makeup_create`) |
+| `POST /sections/{sectionId}/sessions` | `{sessionDate, startTime, endTime, checkInOpens, onTimeUntil, lateUntil, checkInCloses, roomId, makeupForSessionId?, reason}` (ครบทุกค่า) | 201 `SessionView` · audit `session.makeup_create` |
+| `POST /class-sessions/{id}/restore` | `{reason}` | `SessionView` · audit `session.restore` |
+
+`SessionView = {sessionId, sectionId, sessionNo, sessionDate, originalDate, startTime, endTime, checkInOpens, onTimeUntil, lateUntil, checkInCloses, roomId, roomCode, sessionStatus, isOverridden, isExtra, makeupForSessionId, makeupForDate, makeupSessionId, cancelReason, attendance: {onTime, late, absent, noRecord}, allowedActions}` · `sessionStatus` = สถานะตามเวลาจริง (job อัปเดต DB ช้าได้ ≤ 1 นาที) · `makeupSessionId` = คาบชดเชยของคาบนี้
+
+| สถานะ (ตามเวลาจริง) | `allowedActions` |
+|---|---|
+| scheduled (ยังไม่ถึงเวลาเริ่ม) | `reschedule`, `cancel` |
+| scheduled ที่ถึงเวลาแล้ว / in_progress | `cancel`, `adjust` (= เมนูจัดการคาบที่หน้าห้อง) |
+| completed | `report` (+ `adjust` ถ้าภายใน 7 วัน) |
+| cancelled วันในอนาคต (ยังไม่มีคาบชดเชย) | `restore` |
+| cancelled อดีต / มีคาบชดเชยแล้ว | — |
+
+- **กติกาเวลา (400):** start < end, start ≤ เปิด ≤ ตรงเวลา ≤ สาย ≤ ปิด ≤ end · วันที่อยู่ในภาคเรียนของกลุ่ม · ห้องต้องมีและเปิดใช้ · รูปแบบเวลา / วันที่ผิด
+- **409:** ห้องชน `"ห้อง XXX มีคาบ YYY ในช่วงเวลานี้แล้ว"` (ไม่นับ cancelled) · กลุ่มมีคาบวันนั้นแล้ว `"วันนี้กลุ่มเรียนนี้มีคาบอยู่แล้ว (1 กลุ่มเรียนมีได้ 1 คาบต่อวัน)"` (นับ cancelled ด้วย เพราะ UNIQUE (section_id, session_date))
+- **PATCH:** คาบต้อง scheduled และยังไม่ถึงเวลาเริ่ม (409 `"คาบนี้เริ่มแล้ว ใช้เมนูจัดการคาบที่หน้าห้อง"`) · เวลาเริ่มใหม่ต้องอยู่ในอนาคต (400) · `original_date` = วันเดิมเมื่อเปลี่ยนวันครั้งแรก
+- **cancel:** ได้เฉพาะ scheduled / in_progress (completed / cancelled 409) · ไม่ลบผลเช็คชื่อ (`keptAttendanceCount` = จำนวนแถวที่เก็บไว้ · คาบ cancelled ไม่ถูกนับในสถิติ) · มี `makeup` → สร้างคาบชดเชยใน transaction เดียวกัน ถ้าคาบชดเชยไม่ผ่าน ไม่ยกเลิกอะไรเลย
+- **คาบเพิ่ม:** เวลาเริ่มอยู่ในอนาคต · `makeupForSessionId` ต้องเป็นคาบของกลุ่มเดียวกันที่ cancelled แล้ว (ไม่งั้น 409 `"ต้องยกเลิกคาบเดิมก่อน หรือใช้ปุ่มยกเลิก + ชดเชย"`) และยังไม่มีคาบชดเชย (409) · นักศึกษา = ที่ลงทะเบียนกลุ่มนั้น (กล้อง / ลงขาดอัตโนมัติทำงานปกติ)
+- **restore:** cancelled + ยังไม่ถึงเวลาเริ่ม · วันนั้นไม่มีคาบอื่นของกลุ่ม · ห้องไม่ชน · มีคาบชดเชยชี้มา → 409 `"มีคาบชดเชยของคาบนี้แล้ว ยกเลิกคาบชดเชยก่อน"`
+- **กับรายวิชา:** คาบที่แก้รายคาบ (`is_overridden`: เลื่อน / ยกเลิก / คืน / คาบเพิ่ม / เริ่มตอนนี้) ไม่เปลี่ยนตามแม่แบบใหม่ และไม่มีคาบซ้ำในวันเดิมที่ถูกเลื่อนออก · `PUT /courses/{id}` คืน `overriddenSessionsKept: [{sessionId, sessionDate, sectionCode, sessionStatus, isExtra}]` (คาบในอนาคตที่แก้รายคาบของกลุ่มที่ตารางเรียนเปลี่ยน) · `startedSessionsNotChanged` ไม่รวมคาบที่แก้รายคาบแล้ว
+- **เริ่มคาบตอนนี้ (`POST /rooms/{id}/sessions`):** วันนี้ไม่มีคาบ → สร้างเป็นคาบเพิ่ม (`is_extra`) · ใช้คาบเดิมของวันนี้ → `is_overridden`, ล้าง `cancel_reason` · คาบ cancelled ที่มีคาบชดเชยแล้ว → 409
+
 ### ปรับเวลาคาบที่เริ่มแล้ว (คาบเดียว · ไม่แตะตารางเรียนของกลุ่มเรียน)
 
 สิทธิ์ admin / อาจารย์ผู้สอน (`requireSectionStaff`) · `reason` บังคับ (≤ 500 ตัวอักษร) · เวลาเป็น `"HH:mm"` · `dryRun: true` = ดูผลก่อน ไม่เขียน DB (Preview & Confirm)
@@ -145,6 +176,12 @@ mvn spring-boot:run        # http://localhost:8081
 > SSE และ event อยู่ในหน่วยความจำของ instance เดียว ถ้ารันหลาย replica ต้องเปลี่ยน `RoomEventHub` ไปใช้ pub/sub กลาง
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-25 — คาบเรียน: API จัดการคาบรายคาบ (D2)
+- **ทำอะไร:** เพิ่ม `ClassSessionController` / `ClassSessionService`: `GET /api/sections/{id}/sessions` (+ `allowedActions` ต่อคาบ), `PATCH /api/class-sessions/{id}` (เลื่อน / แก้คาบที่ยังไม่เริ่ม), `POST .../cancel` (+ คาบชดเชยในคำขอเดียว rollback ทั้งคำขอถ้าไม่ผ่าน), `POST /api/sections/{id}/sessions` (คาบชดเชย / คาบพิเศษ), `POST .../restore` · ตรวจเวลา / ภาคเรียน / ห้องชน / 1 คาบต่อวัน · audit + SSE · `ClassSessionRepository` เพิ่ม `hasMakeup`, `section` · `PUT /api/courses/{id}` เพิ่ม `overriddenSessionsKept` และ `startedSessionsNotChanged` ไม่รวมคาบที่แก้รายคาบ (`CourseRepository.overriddenFutureSessions`) · เริ่มคาบตอนนี้: คาบใหม่ = `is_extra`, ใช้คาบเดิม = `is_overridden` + ล้าง `cancel_reason`, คาบ cancelled ที่มีคาบชดเชยแล้วเปิดไม่ได้ (409)
+- **ไฟล์ที่เกี่ยวข้อง:** `src/main/java/com/faculty/attendance/attendance/ClassSession{Controller,Service}.java` (ใหม่), `attendance/ClassSessionRepository.java`, `attendance/SessionControl{Service,Repository}.java`, `course/Course{Repository,Service,Dtos}.java`, `README.md`
+- **เหตุผล:** แยกการแก้คาบจริงรายคาบ (เลื่อน / ยกเลิก / ชดเชย) ออกจากแม่แบบตารางเรียนของรายวิชา โดยแก้แม่แบบทีหลังแล้วคาบที่แก้ไว้ไม่หาย / ไม่ซ้ำ
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** กติกาที่เลือกเอง: `sessionStatus` ใน response = สถานะตามเวลาจริง · `restore` ไม่อยู่ใน `allowedActions` เมื่อมีคาบชดเชยแล้ว · 1 คาบเดิมมีคาบชดเชยได้ 1 คาบ (ไม่นับคาบชดเชยที่ถูกยกเลิก) · ยกเลิกคาบที่กำลังเรียนได้ (ผลเช็คชื่อเก็บไว้แต่ไม่นับ) · คาบชดเชยวันเดียวกับคาบที่ยกเลิกไม่ได้ (UNIQUE ใน DB) · GET list คืน object (มีช่วงภาคเรียน) ไม่ใช่ array · ทดสอบกับ backend จริง + Postgres ชั่วคราว (01 ใหม่ + 02 + 03): list + allowedActions ทุกสถานะ, PATCH (คาบที่กำลังเรียน 409, ไม่มีเหตุผล / เวลาอดีต / นอกภาคเรียน / ลำดับเวลาผิด 400, วันซ้ำ 409, ห้องชนกลุ่มอื่น 409, เลื่อน 12-01 → 12-02 ได้ `original_date`) → **PUT รายวิชาเปลี่ยนเวลาเป็น 13:30: คาบที่เลื่อนคงอยู่ ไม่มีคาบใหม่วันที่ 12-01 คาบอื่นเปลี่ยนเป็น 13:30 และอยู่ใน `overriddenSessionsKept`** · cancel + makeup (makeup ผิด → ไม่ยกเลิก), restore ที่มีคาบชดเชย 409, cancel ซ้ำ 409, คาบเพิ่มวันที่มีคาบ 409 / ชดเชยคาบที่ไม่ได้ยกเลิก 409 / body ไม่ครบ 400 / สร้างได้ 201, cancel → restore, ยกเลิกคาบที่กำลังเรียน → หน้าห้องไม่มีคาบ → เริ่มตอนนี้เปิดใหม่ได้ (`cancel_reason` ว่าง), นักศึกษา 403, กลุ่มไม่มี 404 · `./dev.sh test` + `./dev.sh smoke` (15 ข้อ) ผ่าน · FE (D3) ยังไม่ได้ทำ
 
 ### 2026-11-25 — คาบเรียน (จัดการรายคาบ): data layer (D1)
 - **ทำอะไร:** `CourseRepository.regenerateSessions` ไม่ลบคาบที่ `is_overridden` และคาบที่มีคาบชดเชยอ้างถึง (ไม่งั้นชน FK) · ไม่สร้างคาบในวันที่ตรงกับ `original_date` ของคาบที่ถูกเลื่อน · แยก `renumberSessions(sectionId)` ออกมาใช้ร่วม · เพิ่ม `attendance/ClassSessionRepository.java` (`listBySection` + จำนวน on_time / late / absent / ยังไม่มีผล · `lock` · `existsOnDate` · `roomConflict` · `hasAttendance` · `reschedule` · `cancel` · `restore` · `insertExtra`) · ไม่มี endpoint ใหม่ (รอ D2)

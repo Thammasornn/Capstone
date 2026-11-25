@@ -112,6 +112,28 @@ public class ClassSessionRepository {
                 .stream().findFirst();
     }
 
+    /** มีคาบชดเชย (ทุกสถานะ ยกเว้น cancelled) ที่ชี้มาที่คาบนี้ไหม */
+    public boolean hasMakeup(UUID sessionId) {
+        return !jdbc.queryForList("""
+                SELECT 1 FROM class_sessions WHERE makeup_for_session_id = ? AND session_status <> 'cancelled' LIMIT 1
+                """, sessionId).isEmpty();
+    }
+
+    public record SectionRef(UUID sectionId, LocalDate semesterStart, LocalDate semesterEnd) {}
+
+    /** กลุ่มเรียนที่ยังไม่ถูกลบ + ช่วงภาคเรียน */
+    public Optional<SectionRef> section(UUID sectionId) {
+        return jdbc.query("""
+                SELECT s.section_id, se.start_date, se.end_date
+                FROM sections s
+                JOIN courses c ON c.course_id = s.course_id AND c.deleted_at IS NULL
+                JOIN semesters se ON se.semester_id = s.semester_id
+                WHERE s.section_id = ? AND s.deleted_at IS NULL
+                """, (rs, i) -> new SectionRef(rs.getObject("section_id", UUID.class),
+                        rs.getDate("start_date").toLocalDate(), rs.getDate("end_date").toLocalDate()), sectionId)
+                .stream().findFirst();
+    }
+
     /** มีแถวใน attendance_records ไหม */
     public boolean hasAttendance(UUID sessionId) {
         return !jdbc.queryForList("SELECT 1 FROM attendance_records WHERE session_id = ? LIMIT 1", sessionId)

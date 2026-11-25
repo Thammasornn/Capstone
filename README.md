@@ -85,6 +85,12 @@ Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/uat/` แยก 
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-25 — backend: API คาบเรียน (D2)
+- **ทำอะไร:** รายการคาบของกลุ่มเรียน + ปุ่มที่ทำได้ (`allowedActions`), เลื่อน / แก้คาบที่ยังไม่เริ่ม, ยกเลิก (+ ชดเชย), เพิ่มคาบชดเชย / คาบพิเศษ, คืนคาบที่ยกเลิก · แก้ตารางรายวิชาแล้วคาบที่แก้รายคาบไม่หาย / ไม่ซ้ำ (`overriddenSessionsKept`)
+- **ไฟล์ที่เกี่ยวข้อง:** `backend/src/main/java/com/faculty/attendance/attendance/ClassSession*.java`, `backend/src/main/java/com/faculty/attendance/attendance/SessionControl*.java`, `backend/src/main/java/com/faculty/attendance/course/*`, `backend/README.md`
+- **เหตุผล:** แยกคาบจริงรายวันออกจากแม่แบบตารางเรียน (ต่อจาก D1)
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** push พร้อม D1 / D3 · CD บน uat จะหยุด (D1 แก้ `backend/db/`) → รัน SQL บน uat ตาม `backend/db/README.md` แล้ว `ALLOW_DB_CHANGE=1 ~/bangmod-cd/bin/deploy.sh uat`
+
 ### 2026-11-25 — คาบเรียน (จัดการรายคาบ): DB + data layer (D1)
 - **ทำอะไร:** `class_sessions` มีคอลัมน์สำหรับแก้รายคาบ (`is_overridden`, `original_date`, `makeup_for_session_id`, `is_extra`, `cancel_reason`) · สคริปต์อัปเดต DB เดิม `backend/db/06_class_session_management.sql` · `regenerateSessions` ไม่ลบ / สร้างซ้ำคาบที่แก้รายคาบแล้ว · `ClassSessionRepository` ใหม่สำหรับ D2 · เอกสาร DB อัปเดตแล้ว
 - **ไฟล์ที่เกี่ยวข้อง:** `backend/db/`, `backend/src/main/java/.../course/CourseRepository.java`, `backend/src/main/java/.../attendance/ClassSessionRepository.java`, `docs/database/database-design.md`

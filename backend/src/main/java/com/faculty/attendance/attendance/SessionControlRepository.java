@@ -71,21 +71,25 @@ public class SessionControlRepository {
                 """, String.class, roomId, date, exceptSection, to, from).stream().findFirst();
     }
 
+    /** วันนี้ไม่มีคาบตามตาราง → คาบเพิ่ม (is_extra) · regenerateSessions ไม่แตะ */
     public UUID insertInProgress(UUID sectionId, UUID roomId, LocalDate date, Times t) {
         return jdbc.queryForObject("""
                 INSERT INTO class_sessions (section_id, session_no, session_date, room_id, start_time, end_time,
-                                            check_in_opens, check_in_closes, on_time_until, late_until, session_status)
-                SELECT ?, coalesce(max(session_no), 0) + 1, ?, ?, ?, ?, ?, ?, ?, ?, 'in_progress'
+                                            check_in_opens, check_in_closes, on_time_until, late_until, session_status,
+                                            is_extra, is_overridden)
+                SELECT ?, coalesce(max(session_no), 0) + 1, ?, ?, ?, ?, ?, ?, ?, ?, 'in_progress', true, true
                 FROM class_sessions WHERE section_id = ?
                 RETURNING session_id
                 """, UUID.class, sectionId, date, roomId, t.start(), t.end(), t.opens(), t.closes(),
                 t.onTimeUntil(), t.lateUntil(), sectionId);
     }
 
+    /** ย้ายคาบวันนี้ (ยังไม่ถึงเวลา / ยกเลิก) มาเริ่มตอนนี้ → แก้รายคาบ (is_overridden) · ล้าง cancel_reason */
     public void moveToNow(UUID sessionId, UUID roomId, Times t) {
         jdbc.update("""
                 UPDATE class_sessions SET room_id = ?, start_time = ?, end_time = ?, check_in_opens = ?,
-                       check_in_closes = ?, on_time_until = ?, late_until = ?, session_status = 'in_progress'
+                       check_in_closes = ?, on_time_until = ?, late_until = ?, session_status = 'in_progress',
+                       cancel_reason = NULL, is_overridden = true
                 WHERE session_id = ?
                 """, roomId, t.start(), t.end(), t.opens(), t.closes(), t.onTimeUntil(), t.lateUntil(), sessionId);
     }

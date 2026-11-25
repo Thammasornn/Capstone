@@ -244,7 +244,7 @@ public class CourseRepository {
                 SELECT cs.session_id, cs.session_date, s.section_code, cs.session_status, cs.start_time, cs.end_time
                 FROM class_sessions cs
                 JOIN sections s ON s.section_id = cs.section_id
-                WHERE cs.section_id = ? AND cs.session_status <> 'cancelled'
+                WHERE cs.section_id = ? AND cs.session_status <> 'cancelled' AND NOT cs.is_overridden
                   AND cs.session_date >= (%s)::date
                   AND (cs.room_id <> s.room_id OR cs.start_time <> s.start_time OR cs.end_time <> s.end_time
                        OR cs.check_in_opens <> s.check_in_opens OR cs.check_in_closes <> s.check_in_closes
@@ -257,6 +257,24 @@ public class CourseRepository {
                         rs.getObject("session_id", UUID.class), rs.getDate("session_date").toLocalDate(),
                         rs.getString("section_code"), rs.getString("session_status"),
                         rs.getTime("start_time").toLocalTime(), rs.getTime("end_time").toLocalTime()), sectionId);
+    }
+
+    /**
+     * คาบในอนาคตของ section ที่แก้รายคาบไว้ (is_overridden: เลื่อน / ยกเลิก / คาบเพิ่ม) → ไม่เปลี่ยนตามแม่แบบใหม่
+     * (regenerateSessions ไม่แตะ) · แจ้งผู้ใช้ผ่าน overriddenSessionsKept
+     */
+    public List<CourseDtos.OverriddenSessionKept> overriddenFutureSessions(UUID sectionId) {
+        return jdbc.query("""
+                SELECT cs.session_id, cs.session_date, s.section_code, cs.session_status, cs.is_extra
+                FROM class_sessions cs
+                JOIN sections s ON s.section_id = cs.section_id
+                WHERE cs.section_id = ? AND cs.is_overridden
+                  AND (cs.session_date + cs.start_time) > %s
+                ORDER BY cs.session_date, cs.start_time
+                """.formatted(NOW_TH), (rs, i) -> new CourseDtos.OverriddenSessionKept(
+                        rs.getObject("session_id", UUID.class), rs.getDate("session_date").toLocalDate(),
+                        rs.getString("section_code"), rs.getString("session_status"), rs.getBoolean("is_extra")),
+                sectionId);
     }
 
     /** Q5 soft delete + ยกเลิกคาบที่ยังไม่เริ่ม · คืน deleted_at */

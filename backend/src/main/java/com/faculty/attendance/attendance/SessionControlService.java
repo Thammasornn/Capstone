@@ -48,10 +48,12 @@ public class SessionControlService {
     private final AuditLogRepository audit;
     private final RoomEventHub hub;
     private final TransactionTemplate tx;
+    private final ClassSessionRepository sessions;
 
     public SessionControlService(SessionControlRepository repo, AttendanceRepository attendance, RoomRepository rooms,
                                  AccessService access, AuditLogRepository audit, RoomEventHub hub,
-                                 TransactionTemplate tx) {
+                                 TransactionTemplate tx, ClassSessionRepository sessions) {
+        this.sessions = sessions;
         this.repo = repo;
         this.attendance = attendance;
         this.rooms = rooms;
@@ -94,7 +96,11 @@ public class SessionControlService {
                     case "scheduled" -> {
                         if (started) throw conflict("กลุ่มเรียนนี้มีคาบที่กำลังเรียนอยู่แล้ว");
                     }
-                    default -> { }   // cancelled → ใช้แถวเดิม เปิดเรียนชดเชยตอนนี้
+                    default -> {     // cancelled → ใช้แถวเดิม เปิดเรียนตอนนี้ (ถ้ายังไม่มีคาบชดเชยของคาบนี้)
+                        if (sessions.hasMakeup(e.sessionId())) {
+                            throw conflict("คาบนี้ถูกยกเลิกและมีคาบชดเชยแล้ว ยกเลิกคาบชดเชยก่อน");
+                        }
+                    }
                 }
                 sessionId = e.sessionId();
                 if (!e.roomId().equals(roomId)) previousRoom = e.roomId();
