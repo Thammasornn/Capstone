@@ -9,8 +9,11 @@
  *  - มีคาบ → เมนู "จัดการคาบ" (เริ่มนับเวลาใหม่ / ยืดเวลาจบ / ปรับช่วงเช็คชื่อ + Preview & Confirm)
  *    route นี้เข้าได้เฉพาะ staff · currentSession ของ B4 คือคาบที่กำลังเรียน
  *  - มีคาบ → "นำเข้าผลเช็คชื่อ" (AttendanceImportWizard) เช่น กล้องเสียแล้วใช้ใบเซ็นชื่อ
+ *  - ?manage=1 (ลิงก์จากหน้าคาบเรียน) → เปิดเมนู "จัดการคาบ" ไว้ให้
+ *  - SSE session sessionStatus = cancelled ของคาบที่แสดงอยู่ → "คาบนี้ถูกยกเลิก" แทนสถานะกำลังเรียน
  */
 import { computed, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import BaseButton from '@/shared/components/BaseButton.vue'
 import BaseCard from '@/shared/components/BaseCard.vue'
 import BaseDialog from '@/shared/components/BaseDialog.vue'
@@ -39,6 +42,8 @@ import StartSessionDialog from '../components/StartSessionDialog.vue'
 const props = defineProps({ roomId: { type: String, required: true } })
 const ROSTER_FALLBACK_MS = 15_000
 const toast = useToast()
+const route = useRoute()
+const openManageMenu = computed(() => route.query.manage === '1')
 
 const room = useAsyncState(() => getRoom(props.roomId), { immediate: false })
 const rooms = useAsyncState(getRooms)
@@ -104,8 +109,23 @@ const { status: streamStatus } = useRoomEvents(() => props.roomId, {
       toast.show(`${who?.studentName ?? data.studentCode} เข้าเรียนแล้ว`, { tone: 'success' })
     }
   },
-  session: () => loadRoom(),
+  session: (data) => {
+    // คาบที่แสดงอยู่ถูกยกเลิก (จากหน้าคาบเรียน) → แจ้งแทนสถานะกำลังเรียน
+    if (data?.sessionStatus === 'cancelled' && data.sessionId === session.value?.sessionId) {
+      cancelledSession.value = { ...session.value }
+    }
+    loadRoom()
+  },
 })
+
+/** คาบที่เพิ่งถูกยกเลิกระหว่างเรียน (แสดงจนกว่าจะมีคาบใหม่ในห้อง) */
+const cancelledSession = ref(/** @type {any} */ (null))
+watch(
+  () => session.value?.sessionId,
+  (id) => {
+    if (id) cancelledSession.value = null
+  },
+)
 
 // SSE ยังไม่ open = ไม่ได้รับ check_in → โหลดรายชื่อเองทุก 15 วินาที (SSE ใช้ได้แล้วจะหยุดเอง)
 usePolling(async () => {
@@ -213,6 +233,15 @@ const liveLabel = computed(
             {{ session.courseCode }} {{ session.courseName }} · กลุ่ม {{ session.sectionCode }} ·
             {{ formatTime(session.startTime) }}–{{ formatTime(session.endTime) }}
           </p>
+          <p
+            v-else-if="cancelledSession"
+            role="alert"
+            class="mt-2 rounded-field bg-danger-bg px-3 py-2 text-sm font-semibold text-danger"
+          >
+            คาบนี้ถูกยกเลิก — {{ cancelledSession.courseCode }}-{{ cancelledSession.sectionCode }}
+            {{ formatTime(cancelledSession.startTime) }}–{{ formatTime(cancelledSession.endTime) }}
+            · กล้องหยุดเช็คชื่อแล้ว ผลที่บันทึกไว้ถูกเก็บแต่ไม่นับในสถิติ
+          </p>
           <p v-else class="mt-1 text-sm text-muted">ยังไม่มีคาบเรียนในห้องนี้ตอนนี้</p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
@@ -221,6 +250,7 @@ const liveLabel = computed(
             :session-id="session.sessionId"
             :times="session"
             :label="sessionLabel"
+            :default-open="openManageMenu"
             @applied="onAdjusted"
           />
           <BaseButton v-if="session" variant="secondary" @click="importOpen = true">

@@ -68,3 +68,65 @@ export function getRoomOptions() {
 export function getLecturers() {
   return getJson('/lecturers')
 }
+
+// ---------- คาบเรียน (คาบจริงรายคาบ · D2) ----------
+
+/**
+ * เวลา "HH:mm" · วันที่ "yyyy-MM-dd" (เวลาไทย)
+ * @typedef {'reschedule' | 'cancel' | 'restore' | 'adjust' | 'report'} SessionAction
+ *
+ * @typedef {object} SessionValues
+ * @property {string} sessionDate
+ * @property {string} startTime
+ * @property {string} endTime
+ * @property {string} checkInOpens
+ * @property {string} onTimeUntil
+ * @property {string} lateUntil
+ * @property {string} checkInCloses
+ * @property {string} roomId
+ *
+ * @typedef {SessionValues & {
+ *   sessionId: string, sectionId: string, sessionNo: number, originalDate: string | null,
+ *   roomCode: string, sessionStatus: 'scheduled' | 'in_progress' | 'completed' | 'cancelled',
+ *   isOverridden: boolean, isExtra: boolean, makeupForSessionId: string | null,
+ *   makeupForDate: string | null, makeupSessionId: string | null, cancelReason: string | null,
+ *   attendance: { onTime: number, late: number, absent: number, noRecord: number },
+ *   allowedActions: SessionAction[],
+ * }} SessionView  sessionStatus = สถานะตามเวลาจริง
+ */
+
+/**
+ * GET /sections/{sectionId}/sessions — รวมคาบที่ยกเลิก / คาบเพิ่ม เรียงตามวันที่
+ * @returns {Promise<{ sectionId: string, semesterStart: string, semesterEnd: string, sessions: SessionView[] }>}
+ */
+export function listSectionSessions(sectionId) {
+  return getJson(`/sections/${sectionId}/sessions`)
+}
+
+/** PATCH /class-sessions/{id} — แก้ / เลื่อนคาบที่ยังไม่เริ่ม @param {Partial<SessionValues> & { reason: string }} body @returns {Promise<SessionView>} */
+export async function rescheduleSession(sessionId, body) {
+  const { data } = await http.patch(`/class-sessions/${sessionId}`, body)
+  return data
+}
+
+/**
+ * POST /class-sessions/{id}/cancel — ยกเลิก (+ คาบชดเชยในคำขอเดียว: ชดเชยไม่ผ่าน = ไม่ยกเลิก)
+ * @param {{ reason: string, makeup?: SessionValues }} body
+ * @returns {Promise<{ session: SessionView, keptAttendanceCount: number, makeup: SessionView | null }>}
+ */
+export async function cancelSession(sessionId, body) {
+  const { data } = await http.post(`/class-sessions/${sessionId}/cancel`, body)
+  return data
+}
+
+/** POST /sections/{sectionId}/sessions — คาบชดเชย / คาบพิเศษ @param {SessionValues & { makeupForSessionId?: string, reason: string }} body @returns {Promise<SessionView>} */
+export async function createSectionSession(sectionId, body) {
+  const { data } = await http.post(`/sections/${sectionId}/sessions`, body)
+  return data
+}
+
+/** POST /class-sessions/{id}/restore — คืนคาบที่ยกเลิก (ยังไม่ถึงเวลาเริ่ม · ยังไม่มีคาบชดเชย) @returns {Promise<SessionView>} */
+export async function restoreSession(sessionId, reason) {
+  const { data } = await http.post(`/class-sessions/${sessionId}/restore`, { reason })
+  return data
+}

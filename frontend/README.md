@@ -64,6 +64,7 @@ docker run -p 8080:80 -e BACKEND_URL=http://10.0.0.5:8081 bangmod-frontend:prod 
 | สถานะลงทะเบียนใบหน้า | `/courses/registration` | 5.6 (`faceRegistered`) |
 | จัดการรายวิชา | `/courses/manage` | 5.3, B6 (สวิตช์กล้อง), B5 DELETE |
 | เพิ่ม / แก้ไขรายวิชา | `/courses/new`, `/courses/:id/edit` | B5, `GET /rooms/options`, `GET /lecturers` |
+| คาบเรียน (คาบจริงรายคาบของกลุ่มเรียน) | `/courses/:courseId/sections/:sectionId/sessions` | D2: `GET /sections/{id}/sessions`, `PATCH /class-sessions/{id}`, `POST .../cancel`, `POST .../restore`, `POST /sections/{id}/sessions`, `GET /rooms/options`                                                                                                                  |
 | รายงานรายคาบ | `/reports/sessions/:sessionId` | 5.7–5.8, B8, แก้เวลาคาบ ≤ 7 วัน (`reanchor` / `check-in-window`), นำเข้าผลเช็คชื่อ (`import-template`, `import/inspect`, `import`, `imports`) |
 | หน้าแรกนักศึกษา / วิชาของฉัน | `/student`, `/student/courses` | 5.3 + 5.9 ของทุกวิชา |
 | ประวัติการเข้าเรียน | `/student/attendance` | 5.9 |
@@ -75,6 +76,21 @@ docker run -p 8080:80 -e BACKEND_URL=http://10.0.0.5:8081 bangmod-frontend:prod 
 `app → features → entities → shared` — ฟีเจอร์ห้าม import ฟีเจอร์อื่น (ESLint ตรวจให้ที่ `shared/` และ `entities/`)
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-25 — frontend: หน้า "คาบเรียน" — เลื่อน / ยกเลิก / ชดเชยคาบรายคาบ (D3)
+- **ทำอะไร:**
+  - หน้าใหม่ `SectionSessionsPage` (route `section-sessions`, roles = `COURSE_EDITORS`) เข้าจากปุ่ม "คาบเรียน" ต่อกลุ่มเรียนใน `CourseTable` และจากหน้าแก้ไขรายวิชา · หัวหน้า: รหัสวิชา-กลุ่ม, ตารางปกติ (วัน / เวลา / ห้อง / ช่วงเช็คชื่อ) + ปุ่ม "เพิ่มคาบชดเชย / คาบพิเศษ" · ตัวกรอง กำลังจะถึง (ค่าเริ่มต้น) / ผ่านไปแล้ว (ล่าสุดก่อน) / ยกเลิก / ทั้งหมด · จอใหญ่เป็นตาราง มือถือเป็น card
+  - ป้ายต่อคาบ (`SessionBadges`): เลื่อนจาก d/m, ชดเชยคาบ d/m, คาบพิเศษ, แก้รายคาบ, มีคาบชดเชยแล้ว, ยกเลิก: เหตุผล · ผลเช็คชื่อ ตรงเวลา / สาย / ขาด (+ ยังไม่มีผล ตอนกำลังเรียน)
+  - ปุ่มต่อคาบ (`SessionActions`) แสดงตาม `allowedActions` เท่านั้น: แก้ / เลื่อน · ยกเลิก · คืนคาบ (ยืนยัน + เหตุผล) · adjust → หน้าห้อง `?manage=1` (เปิดเมนูจัดการคาบให้) สำหรับคาบที่กำลังเรียน / Session Report ("แก้เวลาคาบ") สำหรับคาบที่จบ ≤ 7 วัน · รายงาน
+  - `SessionForm` (ใช้ร่วม): วันที่, เวลาเรียน (`TimeRangeField`), เปิดเช็คชื่อ / ตรงเวลาถึง / สายถึง / ปิดเช็คชื่อ + แถบเวลา, ห้อง (`GET /rooms/options`) · `SessionEditDialog` (แก้ / เลื่อน + เพิ่มคาบ เลือกได้ว่าชดเชยคาบที่ยกเลิกคาบไหน ไม่เลือก = คาบพิเศษ) · `SessionCancelDialog` (เหตุผล + "สร้างคาบชดเชยเลย" เปิดฟอร์มคาบชดเชยใน dialog เดียว ส่งคำขอเดียว · เตือนคาบที่กำลังเรียน · มีผลเช็คชื่อแล้ว → "ผลเช็คชื่อจะถูกเก็บไว้ แต่ไม่นับในสถิติ")
+  - `composables/sessionForm.js`: ค่าเริ่มต้นคาบใหม่ตามตารางปกติของกลุ่ม (ตรงเวลาถึง = เปิด + `onTimeMinutes`, สายถึง = `lateUntil` ของกลุ่มหรือปิดเช็คชื่อ) · ตรวจก่อนส่ง: ลำดับเวลา (เริ่ม ≤ เปิด ≤ ตรงเวลา ≤ สาย ≤ ปิด ≤ จบ), เวลาเริ่มต้องอยู่ในอนาคต, วันที่ในภาคเรียน, ห้อง, เหตุผลบังคับ ≤ 500 · error 400 / 409 ของ backend แสดงในฟอร์ม (`normalizeError`) · สำเร็จ → toast + โหลดรายการใหม่ · ส่งเวลาเป็น "HH:mm"
+  - `CheckInTimelinePreview` รับ `onTimeUntil` / `lateUntil` (เวลาจริงของคาบ) ได้ · ไม่ส่ง = แบบเดิม
+  - `CourseFormPage`: ข้อความใต้หัวข้อ "แก้ตารางเรียนที่นี่มีผลกับคาบที่ยังไม่เริ่มและยังไม่ถูกแก้รายคาบ · เลื่อน / ยกเลิก / ชดเชยคาบ ที่หน้า คาบเรียน" + ลิงก์ (กลุ่มเดียว = ลิงก์ตรง · หลายกลุ่ม = ลิงก์ "คาบเรียนของกลุ่มนี้ →" ในแต่ละกลุ่ม) · หลังบันทึก แสดง `overriddenSessionsKept` (ยกเลิกไว้ / คาบชดเชย-พิเศษ / แก้รายคาบไว้ + ลิงก์ไปหน้าคาบเรียน) รวมกับ `startedSessionsNotChanged`
+  - `RoomLivePage`: SSE `session` ที่ `sessionStatus = cancelled` ของคาบที่แสดงอยู่ → "คาบนี้ถูกยกเลิก" แทนสถานะกำลังเรียน (หายเมื่อมีคาบใหม่) · `?manage=1` → เปิดเมนูจัดการคาบไว้
+  - `SessionAdjustMenu`: prop `defaultOpen` · เมนูเลือกชิดซ้าย / ขวาเองตามตำแหน่งปุ่ม (เดิมชิดขวาบนจอ ≥ sm ทำให้เมนูล้นซ้ายในหน้าห้องเมื่อปุ่มขึ้นบรรทัดใหม่)
+- **ไฟล์ที่เกี่ยวข้อง:** `src/features/course-management/pages/SectionSessionsPage.vue` (ใหม่), `src/features/course-management/components/{SessionForm,SessionEditDialog,SessionCancelDialog,SessionBadges,SessionActions}.vue` (ใหม่), `src/features/course-management/composables/sessionForm.js` (ใหม่), `src/features/course-management/api.js`, `src/features/course-management/components/{CourseTable,CheckInTimelinePreview}.vue`, `src/features/course-management/pages/CourseFormPage.vue`, `src/features/room-monitor/pages/RoomLivePage.vue`, `src/entities/attendance/components/SessionAdjustMenu.vue`, `src/app/router/routes.js`
+- **เหตุผล:** แยก "รายวิชา" (แม่แบบตารางเรียน) ออกจาก "คาบเรียน" (คาบจริงแต่ละวัน) ให้อาจารย์เลื่อน / ยกเลิก / ชดเชยคาบได้โดยไม่แก้ตารางทั้งเทอม (ต่อจาก D1 / D2)
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ทดสอบกับ backend จริง (D2) + Postgres ชั่วคราว (01 + 02 + 03): เลื่อนคาบ 1/12 → 2/12 (ไม่มีเหตุผล / ลำดับช่วงเช็คชื่อผิด → error ในฟอร์ม · เลื่อนไปวันที่มีคาบ → 409 ในฟอร์ม), ยกเลิก + ชดเชยวันที่มีคาบ → 409 และคาบเดิมไม่ถูกยกเลิก, ยกเลิก + ชดเชย 10/12 สำเร็จ, ยกเลิก → คืนคาบ, คาบพิเศษ 17/12, ยกเลิก 22/12 แล้วเพิ่มคาบชดเชยจากปุ่มหัวหน้า (เลือกคาบที่ยกเลิก) → ป้าย "ชดเชยคาบ 22/12", แก้เวลารายวิชา → รายการ `overriddenSessionsKept` + ลิงก์, ยกเลิกคาบที่กำลังเรียนจากอีกแท็บ → หน้าห้องขึ้น "คาบนี้ถูกยกเลิก" ทันที (SSE), `?manage=1` เปิดเมนู, มือถือ 375px ไม่ล้นจอ (card + dialog ยกเลิก + ชดเชย), เมนู "แก้เวลาคาบ" ในรายงานคาบไม่ล้นจอทั้งจอใหญ่และมือถือ · ยังไม่ได้ทดสอบ: lecturer (ทดสอบด้วย admin), ห้องชนกับกลุ่มอื่น (409 แสดงผ่าน `normalizeError` เหมือน error อื่น) · ข้อสังเกตฝั่ง backend: ข้อความ 409 "วันนี้กลุ่มเรียนนี้มีคาบอยู่แล้ว" ขึ้นต้นว่า "วันนี้" แม้วันที่เลือกเป็นวันอื่น
 
 ### 2026-11-25 — นำเข้าผลเช็คชื่อจากไฟล์ (C3)
 - **ทำอะไร:**

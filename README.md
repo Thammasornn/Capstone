@@ -85,6 +85,12 @@ Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/uat/` แยก 
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-25 — frontend: หน้า "คาบเรียน" (D3)
+- **ทำอะไร:** หน้าใหม่ "คาบเรียน" ต่อกลุ่มเรียน (`/courses/:courseId/sections/:sectionId/sessions`) — รายการคาบจริง + ตัวกรอง + ป้าย (เลื่อนจาก / ชดเชยคาบ / คาบพิเศษ / ยกเลิก) + ปุ่มตาม `allowedActions`: แก้ / เลื่อน, ยกเลิก (+ สร้างคาบชดเชยใน dialog เดียว), คืนคาบ, เพิ่มคาบชดเชย / คาบพิเศษ, ลิงก์ไปปรับเวลาที่หน้าห้อง / รายงานคาบ · หน้าแก้ไขรายวิชาบอกขอบเขตของการแก้ตาราง + แสดง `overriddenSessionsKept` · หน้าห้องแสดง "คาบนี้ถูกยกเลิก" เมื่อคาบถูกยกเลิกระหว่างเรียน (SSE) · เมนูจัดการคาบไม่ล้นจอ
+- **ไฟล์ที่เกี่ยวข้อง:** `frontend/src/features/course-management/**`, `frontend/src/features/room-monitor/pages/RoomLivePage.vue`, `frontend/src/entities/attendance/components/SessionAdjustMenu.vue`, `frontend/src/app/router/routes.js`, `frontend/README.md`
+- **เหตุผล:** ส่วน FE ของฟีเจอร์ "คาบเรียน" (ต่อจาก D1 DB / D2 BE)
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** push พร้อม D1 / D2 · ต้องรัน `06_class_session_management.sql` บน uat ก่อน (ดูรายการ D1)
+
 ### 2026-11-25 — backend: API คาบเรียน (D2)
 - **ทำอะไร:** รายการคาบของกลุ่มเรียน + ปุ่มที่ทำได้ (`allowedActions`), เลื่อน / แก้คาบที่ยังไม่เริ่ม, ยกเลิก (+ ชดเชย), เพิ่มคาบชดเชย / คาบพิเศษ, คืนคาบที่ยกเลิก · แก้ตารางรายวิชาแล้วคาบที่แก้รายคาบไม่หาย / ไม่ซ้ำ (`overriddenSessionsKept`)
 - **ไฟล์ที่เกี่ยวข้อง:** `backend/src/main/java/com/faculty/attendance/attendance/ClassSession*.java`, `backend/src/main/java/com/faculty/attendance/attendance/SessionControl*.java`, `backend/src/main/java/com/faculty/attendance/course/*`, `backend/README.md`

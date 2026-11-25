@@ -1,7 +1,8 @@
 <script setup>
 /**
  * เพิ่ม / แก้ไขรายวิชา (B5) — ตารางเรียน ห้อง ช่วงเช็คชื่อ และสวิตช์กล้องผูกที่กลุ่มเรียน
- * แก้ตารางเรียนแล้วมีผลกับคาบที่ยังไม่เริ่มเท่านั้น (D2)
+ * แก้ตารางเรียนแล้วมีผลกับคาบที่ยังไม่เริ่มและยังไม่ถูกแก้รายคาบ (D2)
+ * เลื่อน / ยกเลิก / ชดเชยคาบ ที่หน้า "คาบเรียน" ของแต่ละกลุ่มเรียน (SectionSessionsPage)
  */
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -54,6 +55,7 @@ const roomOptions = computed(() =>
     label: `${r.roomCode}${r.building ? ` · ${r.building}` : ''}${r.capacity ? ` (${r.capacity} ที่)` : ''}`,
   })),
 )
+const existingSections = computed(() => form.sections.filter((s) => s.sectionId))
 const lecturerOptions = computed(() =>
   (lecturers.data.value ?? []).map((l) => ({ value: l.lecturerId, label: l.name })),
 )
@@ -68,10 +70,13 @@ async function onSubmit() {
     tone: 'success',
   })
   courseStore.load({ force: true }).catch(() => {})
-  // PUT: คาบที่เริ่มแล้ว / มีข้อมูลแล้วไม่ถูกแก้ตามตารางใหม่ → แจ้งให้ชัดก่อนกลับหน้ารายการ
+  // PUT: คาบที่เริ่มแล้ว / แก้รายคาบไว้ ไม่ถูกแก้ตามตารางใหม่ → แจ้งให้ชัดก่อนกลับหน้ารายการ
   const notChanged = saved.startedSessionsNotChanged ?? []
-  if (notChanged.length) {
+  const kept = saved.overriddenSessionsKept ?? []
+  if (notChanged.length || kept.length) {
     notChangedSessions.value = notChanged
+    keptSessions.value = kept
+    savedSections.value = saved.sections ?? []
     window.scrollTo({ top: 0, behavior: 'smooth' })
     return
   }
@@ -84,6 +89,27 @@ const NOT_CHANGED_REASON = {
   in_progress: 'กำลังเรียนอยู่',
   completed: 'จบไปแล้ว',
 }
+/** @type {import('vue').Ref<Array<{ sessionId: string, sessionDate: string, sectionCode: string, sessionStatus: string, isExtra: boolean }>>} */
+const keptSessions = ref([])
+const savedSections = ref(/** @type {any[]} */ ([]))
+function keptText(s) {
+  const why =
+    s.sessionStatus === 'cancelled'
+      ? 'ยกเลิกไว้'
+      : s.isExtra
+        ? 'เป็นคาบชดเชย / คาบพิเศษ'
+        : 'แก้รายคาบไว้ (เช่น เลื่อนวัน)'
+  return `คาบวันที่ ${formatThaiDate(s.sessionDate)} (กลุ่ม ${s.sectionCode}) ${why} จึงคงตามที่แก้`
+}
+/** ลิงก์หน้าคาบเรียนของกลุ่ม (จับคู่ด้วย sectionCode) */
+function sessionsLink(sectionCode) {
+  const sec = savedSections.value.find((x) => x.sectionCode === sectionCode)
+  return sec && props.courseId
+    ? { name: 'section-sessions', params: { courseId: props.courseId, sectionId: sec.sectionId } }
+    : null
+}
+const hasNotice = computed(() => notChangedSessions.value.length + keptSessions.value.length > 0)
+
 function notChangedText(s) {
   const why = NOT_CHANGED_REASON[s.sessionStatus] ?? 'เริ่มไปแล้ว'
   return `คาบวันที่ ${formatThaiDate(s.sessionDate)} (กลุ่ม ${s.sectionCode} · ${formatTime(s.startTime)}–${formatTime(s.endTime)}) ${why} จึงไม่ถูกแก้`
@@ -98,17 +124,40 @@ function notChangedText(s) {
       >
       <h1 class="mt-2 text-[28px] font-bold">{{ isEdit ? 'แก้ไขรายวิชา' : 'เพิ่มรายวิชา' }}</h1>
       <p v-if="isEdit" class="mt-1 text-sm text-muted">
-        แก้ตารางเรียนแล้วมีผลกับคาบที่ยังไม่เริ่มเท่านั้น ผลเช็คชื่อที่ผ่านมาไม่เปลี่ยน
+        แก้ตารางเรียนที่นี่มีผลกับคาบที่ยังไม่เริ่มและยังไม่ถูกแก้รายคาบ · เลื่อน / ยกเลิก /
+        ชดเชยคาบ ที่หน้า
+        <template v-if="existingSections.length === 1">
+          <RouterLink
+            :to="{
+              name: 'section-sessions',
+              params: { courseId, sectionId: existingSections[0].sectionId },
+            }"
+            class="font-semibold text-primary hover:underline"
+            >คาบเรียน</RouterLink
+          >
+        </template>
+        <template v-else>คาบเรียน (ลิงก์ในแต่ละกลุ่มเรียนด้านล่าง)</template>
       </p>
     </div>
 
     <div
-      v-if="notChangedSessions.length"
+      v-if="hasNotice"
       role="status"
       class="flex flex-col gap-3 rounded-card border border-warning bg-warning-bg px-4 py-4 text-sm text-warning"
     >
       <p class="font-semibold">บันทึกการแก้ไขแล้ว แต่มีคาบที่ไม่ได้เปลี่ยนตามตารางใหม่</p>
-      <ul class="flex list-disc flex-col gap-1 pl-5">
+      <ul v-if="keptSessions.length" class="flex list-disc flex-col gap-1 pl-5">
+        <li v-for="s in keptSessions" :key="s.sessionId">
+          {{ keptText(s) }}
+          <template v-if="sessionsLink(s.sectionCode)">
+            —
+            <RouterLink :to="sessionsLink(s.sectionCode)" class="font-semibold underline"
+              >ดูคาบเรียน</RouterLink
+            >
+          </template>
+        </li>
+      </ul>
+      <ul v-if="notChangedSessions.length" class="flex list-disc flex-col gap-1 pl-5">
         <li v-for="s in notChangedSessions" :key="s.sessionId">
           {{ notChangedText(s) }} —
           <RouterLink
@@ -118,7 +167,7 @@ function notChangedText(s) {
           >
         </li>
       </ul>
-      <p>
+      <p v-if="notChangedSessions.length">
         ปรับเวลาคาบที่กำลังเรียนได้ที่หน้าห้อง เมนู "จัดการคาบ" · คาบที่จบแล้วแก้ได้ที่รายงานคาบ
         ปุ่ม "แก้เวลาคาบ" (ภายใน 7 วัน)
       </p>
@@ -170,6 +219,16 @@ function notChangedText(s) {
               >ใหม่</span
             >
           </h2>
+          <RouterLink
+            v-if="section.sectionId && courseId"
+            :to="{
+              name: 'section-sessions',
+              params: { courseId, sectionId: section.sectionId },
+            }"
+            class="text-xs font-semibold text-primary hover:underline"
+          >
+            คาบเรียนของกลุ่มนี้ →
+          </RouterLink>
           <button
             v-if="!section.sectionId && form.sections.length > 1"
             type="button"

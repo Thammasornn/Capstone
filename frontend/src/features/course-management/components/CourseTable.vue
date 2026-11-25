@@ -1,6 +1,6 @@
 <script setup>
 /**
- * ตารางรายวิชา: 1 แถวต่อกลุ่มเรียน + สวิตช์กล้อง (B6) + แก้ไข / ลบ
+ * ตารางรายวิชา: 1 แถวต่อกลุ่มเรียน + สวิตช์กล้อง (B6) + คาบเรียน (ของกลุ่มนี้) / แก้ไข / ลบ
  * ทุกแถวแสดงรหัสวิชาและปุ่ม (ปุ่มทำกับทั้งรายวิชา) — แถวที่ 2+ ของวิชาเดียวกันแสดงแบบจาง
  */
 import { computed } from 'vue'
@@ -55,6 +55,16 @@ const columns = [
     </template>
     <template #cell-actions="{ row }">
       <div class="flex gap-1">
+        <RouterLink
+          :to="{
+            name: 'section-sessions',
+            params: { courseId: row.course.courseId, sectionId: row.sectionId },
+          }"
+          class="rounded-button px-2 py-1 text-xs font-semibold whitespace-nowrap text-primary hover:bg-primary/5"
+          :aria-label="`คาบเรียน ${row.course.courseCode} กลุ่ม ${row.sectionCode}`"
+        >
+          คาบเรียน
+        </RouterLink>
         <RouterLink
           :to="{ name: 'course-edit', params: { courseId: row.course.courseId } }"
           class="rounded-button px-2 py-1 text-xs font-semibold text-primary hover:bg-primary/5"

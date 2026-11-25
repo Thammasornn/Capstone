@@ -111,6 +111,13 @@ export const routes = [
         meta: { title: 'แก้ไขรายวิชา', roles: COURSE_EDITORS },
       },
       {
+        path: 'courses/:courseId/sections/:sectionId/sessions',
+        name: 'section-sessions',
+        component: () => import('@/features/course-management/pages/SectionSessionsPage.vue'),
+        props: true,
+        meta: { title: 'คาบเรียน', roles: COURSE_EDITORS },
+      },
+      {
         path: 'courses',
         component: CourseHubLayout,
         children: [
