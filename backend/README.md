@@ -6,7 +6,7 @@ Spring Boot 4 · Java · PostgreSQL ([`db/`](db/)) · แบบฐานข้�
 
 | โฟลเดอร์ | เนื้อหา |
 |---|---|
-| [`db/`](db/) | สร้างฐานข้อมูล `bangmod_attendance` (20 ตาราง + 4 view) และข้อมูล Mock-Up ภาค 1/2569 — เริ่มที่ [`db/README.md`](db/README.md) |
+| [`db/`](db/) | สร้างฐานข้อมูล `bangmod_attendance` (22 ตาราง + 4 view) และข้อมูล Mock-Up ภาค 1/2569 — เริ่มที่ [`db/README.md`](db/README.md) |
 | `src/main/java/.../auth` | Login (JWT), `/api/me`, ตรวจสิทธิ์ admin / lecturer / student |
 | `src/main/java/.../dashboard` | API 5.3–5.9 (Dashboard, Session Report, ประวัติรายคน) |
 | `src/main/java/.../face` | ลงทะเบียนใบหน้า, สถานะ, ถอนความยินยอม (B7) |
@@ -112,6 +112,12 @@ mvn spring-boot:run        # http://localhost:8081
 > SSE และ event อยู่ในหน่วยความจำของ instance เดียว ถ้ารันหลาย replica ต้องเปลี่ยน `RoomEventHub` ไปใช้ pub/sub กลาง
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-25 — นำเข้าผลเช็คชื่อจากไฟล์: data layer (C1)
+- **ทำอะไร:** เพิ่ม `attendance/AttendanceImportRepository.java` (`findSession` / `lockSession` · `activeStudentsByCode` · `currentRecords` · `findImportBySha` · `insertImport` · `insertRows` แบบ batch · `upsertImported` → `source = import` · `history` · `rows` · `sessionOfImport`) · `AttendanceRepository.upsertManual` ล้าง `import_id` เมื่ออาจารย์แก้ทับแถว import · `AttendanceService.recordSighting` กล้องไม่ทับแถว import (ignored `import_record`) · `GET /class-sessions/{id}/attendance` คืน `importedFrom` (method ของการนำเข้า หรือ null) และ `source` เป็น `import` ได้แล้ว · ไม่มี endpoint ใหม่ (รอ C2)
+- **ไฟล์ที่เกี่ยวข้อง:** `src/main/java/.../attendance/AttendanceImportRepository.java`, `AttendanceRepository.java`, `AttendanceService.java`, `AttendanceDtos.java`, `src/main/java/.../dashboard/DashboardRepository.java`, `DashboardDtos.java`, `db/` (ดู `db/README.md`)
+- **เหตุผล:** เตรียม data layer ให้ C2 (service / controller ของการนำเข้า) · ตรวจที่อื่นที่เช็ค `source` แล้ว: `SessionAdjustService` ปรับเฉพาะแถว camera / system → แถว import นับเป็น "ไม่เปลี่ยน" เหมือน manual (ถูกแล้ว) · view ใน `01` และ dashboard นับตาม `status` จึงนับแถว import เป็นผลเช็คชื่อปกติ
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** **ต้องรัน `db/05_attendance_import.sql` กับ DB ก่อน deploy backend รุ่นนี้** (uat: CD จะหยุด · prod: ก่อน deploy prod ครั้งถัดไป) ไม่งั้น session attendance error · `./dev.sh test` + `./dev.sh smoke` ผ่าน · ทดสอบ `importedFrom` ผ่าน API จริงและ `upsertImported` → `upsertManual` ด้วย SQL แล้ว
 
 ### 2026-11-25 — คืนช่วงเวลาเช็คชื่อของคาบใน B1 / B4 / 5.7
 - **ทำอะไร:** เพิ่ม `checkInOpens`, `onTimeUntil`, `lateUntil`, `checkInCloses` (string `"HH:mm"` จาก `class_sessions` ไม่ใช่ของกลุ่มเรียน) ใน `currentSession` ของ `GET /api/rooms` และ `GET /api/rooms/{id}` และใน `GET /api/class-sessions/{id}/attendance/summary`

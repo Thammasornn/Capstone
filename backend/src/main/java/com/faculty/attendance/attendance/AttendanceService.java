@@ -130,8 +130,13 @@ public class AttendanceService {
             var existing = repo.findRecordForUpdate(s.sessionId(), in.studentId());
             if (existing.isPresent()) {
                 RecordRow r = existing.get();
-                if (!"camera".equals(r.source())) {
-                    return ignored("manual".equals(r.source()) ? "manual_record" : "check_in_closed", s.sessionId());
+                if (!"camera".equals(r.source())) {     // กล้องไม่ทับแถว manual / import / system
+                    String why = switch (r.source()) {
+                        case "manual" -> "manual_record";
+                        case "import" -> "import_record";
+                        default -> "check_in_closed";
+                    };
+                    return ignored(why, s.sessionId());
                 }
                 repo.touchCameraLastSeen(s.sessionId(), in.studentId(), Times.offset(seenAt));
                 return new SightingResult("seen", null, s.sessionId(), r.status());

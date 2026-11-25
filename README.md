@@ -85,6 +85,12 @@ Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/uat/` แยก 
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-25 — นำเข้าผลเช็คชื่อจากไฟล์: DB + data layer (C1)
+- **ทำอะไร:** ตารางใหม่ `attendance_imports` / `attendance_import_rows` + `attendance_records.source = import` / `import_id` · สคริปต์อัปเดต DB เดิม `backend/db/05_attendance_import.sql` (รันซ้ำได้ ไม่ลบข้อมูล) · backend: `AttendanceImportRepository` + แถว import ไม่ถูกกล้องทับ / อาจารย์แก้ทับได้ · session attendance คืน `importedFrom` · เอกสาร DB อัปเดตแล้ว
+- **ไฟล์ที่เกี่ยวข้อง:** `backend/db/`, `backend/src/main/java/.../attendance/`, `backend/src/main/java/.../dashboard/`, `docs/database/database-design.md`
+- **เหตุผล:** ส่วนแรก (C1) ของฟีเจอร์นำเข้าผลเช็คชื่อ — ต่อด้วย C2 (BE) และ C3 (FE)
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ⚠️ **commit นี้แก้ `backend/db/` → CD บน uat จะหยุด** จนกว่าจะรัน `05_attendance_import.sql` บน uat แล้วสั่ง `ALLOW_DB_CHANGE=1 ~/bangmod-cd/bin/deploy.sh uat` (คำสั่งใน `backend/db/README.md`) · prod: รัน `05` ก่อน deploy prod ครั้งถัดไป · ยังไม่ push (รอ push พร้อม C2)
+
 ### 2026-11-25 — frontend: เมนู "จัดการคาบ" + Preview & Confirm
 - **ทำอะไร:** หน้าห้องมีเมนู "จัดการคาบ" (เริ่มนับเวลาใหม่ / ยืดเวลาจบ / ปรับช่วงเช็คชื่อ) · รายงานคาบที่จบไม่เกิน 7 วันมีปุ่ม "แก้เวลาคาบ" · ดูผลกระทบก่อนยืนยัน (`dryRun`) แยกผลดีขึ้น / แย่ลง (เลือกได้) / เปิดให้เช็คชื่อใหม่ · ฟอร์มรายวิชาส่ง `lateUntil` เดิมกลับไป (เดิมถูกล้างเป็น NULL ทุกครั้งที่แก้) และแจ้งคาบที่ไม่ถูกแก้ตามตารางใหม่ (`startedSessionsNotChanged`)
 - **ไฟล์ที่เกี่ยวข้อง:** `frontend/src/entities/attendance/**`, `frontend/src/features/room-monitor/pages/RoomLivePage.vue`, `frontend/src/features/session-report/pages/SessionReportPage.vue`, `frontend/src/features/course-management/**`, `frontend/README.md`

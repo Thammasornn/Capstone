@@ -4,6 +4,7 @@
 --   psql -U postgres -d bangmod_attendance -f 01_schema.sql
 -- Source: "Database Design (Idea) — Bangmod Smart Attendance R1" (revised 2026-11-21)
 --   Release 1 : 17 tables   ·   Release 2–3 : 3 tables (created empty-ready)
+--   + attendance import (2026-11-25): 2 tables — DBs created before that: run 05_attendance_import.sql
 -- Conventions: UUID PKs · snake_case · enums = VARCHAR + CHECK (JPA @Enumerated(STRING))
 -- =====================================================================
 
@@ -204,6 +205,52 @@ CREATE INDEX idx_class_sessions_room_date ON class_sessions (room_id, session_da
 -- Group 4 — Attendance
 -- =====================================================================
 
+-- One row per file import into one session (onsite classes only) · the file itself is NOT stored
+CREATE TABLE attendance_imports (
+  import_id        uuid         PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id       uuid         NOT NULL REFERENCES class_sessions (session_id),
+  mode             varchar(10)  NOT NULL CHECK (mode IN ('template', 'mapped')),
+  method           varchar(15)  NOT NULL
+                   CHECK (method IN ('template', 'teams', 'zoom', 'google_form', 'paper', 'other')),
+  file_name        varchar(255) NOT NULL,                        -- name only, the file is not kept
+  file_sha256      char(64)     NOT NULL CHECK (file_sha256 ~ '^[0-9a-f]{64}$'),   -- same file uploaded again?
+  mapping          jsonb,                                        -- columns / timeFormat / statusValues / defaultStatus
+  reason           text         NOT NULL,
+  override_camera  boolean      NOT NULL DEFAULT false,
+  override_manual  boolean      NOT NULL DEFAULT false,
+  total_rows       smallint     NOT NULL CHECK (total_rows BETWEEN 1 AND 500),
+  inserted_count   smallint     NOT NULL CHECK (inserted_count >= 0),
+  replaced_count   smallint     NOT NULL CHECK (replaced_count >= 0),
+  skipped_count    smallint     NOT NULL CHECK (skipped_count >= 0),
+  conflict_count   smallint     NOT NULL CHECK (conflict_count >= 0),
+  unmatched_count  smallint     NOT NULL CHECK (unmatched_count >= 0),
+  imported_by      uuid         NOT NULL REFERENCES users (user_id),
+  imported_at      timestamptz  NOT NULL DEFAULT now(),
+  CHECK ((mode = 'template') = (method = 'template')),
+  CHECK ((mode = 'mapped') = (mapping IS NOT NULL))
+);
+CREATE INDEX idx_attendance_imports_session ON attendance_imports (session_id, imported_at DESC);
+
+-- Every row read from the imported file (raw values cut to 255 chars) and what was done with it
+-- PDPA: raw_identifier of an unmatched row may be an outsider's e-mail — staff only
+CREATE TABLE attendance_import_rows (
+  import_id         uuid         NOT NULL REFERENCES attendance_imports (import_id) ON DELETE CASCADE,
+  row_no            smallint     NOT NULL CHECK (row_no > 0),
+  raw_identifier    varchar(255),
+  raw_join_time     varchar(255),
+  raw_status        varchar(255),
+  student_id        uuid         REFERENCES student_profiles (student_id),
+  status            varchar(10)  CHECK (status IN ('on_time', 'late', 'absent')),
+  check_in_time     timestamptz,
+  action            varchar(10)  NOT NULL
+                    CHECK (action IN ('insert', 'replace', 'skip', 'conflict', 'unmatched')),
+  unmatched_reason  varchar(15)  CHECK (unmatched_reason IN ('not_found', 'not_enrolled', 'duplicate')),
+  applied           boolean      NOT NULL DEFAULT false,         -- true = written to attendance_records
+  PRIMARY KEY (import_id, row_no),
+  CHECK ((action = 'unmatched') = (unmatched_reason IS NOT NULL)),
+  CHECK (action = 'unmatched' OR student_id IS NOT NULL)
+);
+
 CREATE TABLE attendance_records (
   attendance_id  uuid         PRIMARY KEY DEFAULT gen_random_uuid(),
   session_id     uuid         NOT NULL REFERENCES class_sessions (session_id),
@@ -211,13 +258,17 @@ CREATE TABLE attendance_records (
   status         varchar(10)  NOT NULL CHECK (status IN ('on_time', 'late', 'absent')),
   check_in_time  timestamptz,                -- first time the camera (or lecturer) saw the student
   last_seen_at   timestamptz,                -- last sighting: check-out / stayed until the end
-  source         varchar(10)  NOT NULL CHECK (source IN ('camera', 'manual', 'system')),
+  source         varchar(10)  NOT NULL
+                 CONSTRAINT attendance_records_source_check
+                 CHECK (source IN ('camera', 'manual', 'system', 'import')),
   match_score    numeric(5,4) CHECK (match_score BETWEEN -1 AND 1),   -- SFace cosine similarity
   recorded_by    uuid         REFERENCES users (user_id),            -- required when source = manual (B8)
   reason         text,
+  import_id      uuid         REFERENCES attendance_imports (import_id),   -- source = import (who / why: the import)
   created_at     timestamptz  NOT NULL DEFAULT now(),
   updated_at     timestamptz  NOT NULL DEFAULT now(),
   UNIQUE (session_id, student_id),
+  CONSTRAINT attendance_records_import_check CHECK ((source = 'import') = (import_id IS NOT NULL)),
   CHECK ((source = 'manual') = (recorded_by IS NOT NULL)),
   CHECK (source <> 'manual' OR reason IS NOT NULL),
   CHECK ((status = 'absent') = (check_in_time IS NULL)),

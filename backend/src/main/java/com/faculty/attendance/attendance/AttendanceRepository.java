@@ -118,6 +118,7 @@ public class AttendanceRepository {
                                          THEN NULL
                                          ELSE greatest(attendance_records.last_seen_at, EXCLUDED.check_in_time) END,
                     source        = 'manual',
+                    import_id     = NULL,
                     recorded_by   = EXCLUDED.recorded_by,
                     reason        = EXCLUDED.reason
                 """, sessionId, studentId, status, checkInTime, recordedBy, reason);

@@ -31,7 +31,8 @@ public final class AttendanceDtos {
 
     /**
      * result: checked_in (บันทึกครั้งแรก) | seen (อัปเดต last_seen_at) | ignored
-     * reason (เมื่อ ignored): no_session | camera_disabled | not_enrolled | no_consent | check_in_closed | manual_record
+     * reason (เมื่อ ignored): no_session | camera_disabled | not_enrolled | no_consent | check_in_closed |
+     * manual_record (อาจารย์บันทึกแล้ว) | import_record (มีผลจากการนำเข้าไฟล์แล้ว)
      */
     public record SightingResult(String result, String reason, UUID sessionId, String status) {}
 }

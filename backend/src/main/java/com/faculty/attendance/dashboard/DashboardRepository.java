@@ -270,19 +270,21 @@ public class DashboardRepository {
     public List<AttendanceRow> sessionAttendance(UUID sessionId, String status) {
         return jdbc.query("""
                 SELECT sp.student_id, sp.student_code, u.first_name || ' ' || u.last_name AS name,
-                       a.check_in_time, a.last_seen_at, COALESCE(a.status, 'absent') AS status, a.source
+                       a.check_in_time, a.last_seen_at, COALESCE(a.status, 'absent') AS status, a.source,
+                       ai.method AS imported_from
                 FROM class_sessions cs
                 JOIN enrollments e ON e.section_id = cs.section_id AND e.status = 'active'
                 JOIN student_profiles sp ON sp.student_id = e.student_id
                 JOIN users u ON u.user_id = sp.student_id
                 LEFT JOIN attendance_records a ON a.session_id = cs.session_id AND a.student_id = sp.student_id
+                LEFT JOIN attendance_imports ai ON ai.import_id = a.import_id
                 WHERE cs.session_id = ?
                   AND (?::text IS NULL OR COALESCE(a.status, 'absent') = ?::text)
                 ORDER BY sp.student_code
                 """,
                 (rs, i) -> new AttendanceRow(rs.getObject("student_id", UUID.class), rs.getString("student_code"),
                         rs.getString("name"), ts(rs, "check_in_time"), ts(rs, "last_seen_at"),
-                        rs.getString("status"), rs.getString("source")),
+                        rs.getString("status"), rs.getString("source"), rs.getString("imported_from")),
                 sessionId, status, status);
     }
 

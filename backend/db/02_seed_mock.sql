@@ -18,7 +18,8 @@ BEGIN;
 SET LOCAL timezone = 'Asia/Bangkok';
 
 TRUNCATE notifications, occupancy_snapshots, follow_ups, audit_logs, data_deletion_jobs,
-         face_embeddings, consent_records, consent_versions, attendance_records, class_sessions,
+         face_embeddings, consent_records, consent_versions, attendance_records,
+         attendance_import_rows, attendance_imports, class_sessions,
          enrollments, section_lecturers, section_class_days, sections, courses, semesters,
          cameras, rooms, student_profiles, users;
 

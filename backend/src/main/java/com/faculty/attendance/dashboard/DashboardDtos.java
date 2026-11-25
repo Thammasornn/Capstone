@@ -59,10 +59,13 @@ public final class DashboardDtos {
                                          int onTime, int late, int absent, double attendanceRate) {}
 
     // ---- GET /class-sessions/{sessionId}/attendance[?status=] ----
-    /** source = camera | manual | system | null (null = ยังไม่มีแถว ถือว่า absent) · ขอเพิ่มใน B8 */
+    /**
+     * source = camera | manual | system | import | null (null = ยังไม่มีแถว ถือว่า absent) · ขอเพิ่มใน B8
+     * importedFrom = method ของการนำเข้า (template | teams | zoom | google_form | paper | other) เมื่อ source = import · อื่น ๆ null
+     */
     public record AttendanceRow(UUID studentId, String studentCode, String studentName,
                                 LocalDateTime checkInTime, LocalDateTime checkOutTime, String status,
-                                String source) {}
+                                String source, String importedFrom) {}
 
     public record SessionAttendanceResponse(UUID sessionId, LocalDate sessionDate, List<AttendanceRow> items) {}
 

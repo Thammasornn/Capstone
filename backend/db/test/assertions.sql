@@ -8,10 +8,10 @@ DO $$
 DECLARE
   n int;
 BEGIN
-  -- 20 tables, 4 views
+  -- 22 tables, 4 views
   SELECT count(*) INTO n FROM information_schema.tables
    WHERE table_schema = 'public' AND table_type = 'BASE TABLE';
-  IF n <> 20 THEN RAISE EXCEPTION 'expected 20 tables, found %', n; END IF;
+  IF n <> 22 THEN RAISE EXCEPTION 'expected 22 tables, found %', n; END IF;
 
   SELECT count(*) INTO n FROM information_schema.views WHERE table_schema = 'public';
   IF n <> 4 THEN RAISE EXCEPTION 'expected 4 views, found %', n; END IF;

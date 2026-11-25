@@ -4,7 +4,7 @@
 > Jira: CP-105 (idea), CP-85 (Conceptual DB Design) · SQL ที่ใช้จริง: [`backend/db/`](../../backend/db/)
 > เอกสารต้นฉบับ (แก้ไข/คอมเมนต์ได้): [Database Design (Idea)](https://claude.ai/artifact/85qfBkTYTy2F6RsACQ4K99)
 
-PostgreSQL ของ Release 1 มี **17 ตาราง** ใน 6 กลุ่ม และเตรียมตารางของ R2–R3 ไว้อีก 3 ตาราง (รวม 20) + 4 view
+PostgreSQL ของ Release 1 มี **17 ตาราง** ใน 6 กลุ่ม และเตรียมตารางของ R2–R3 ไว้อีก 3 ตาราง + ตารางนำเข้าผลเช็คชื่อจากไฟล์ 2 ตาราง (รวม 22) + 4 view
 
 **หลักการออกแบบ**
 
@@ -34,6 +34,11 @@ erDiagram
     student_profiles ||--o{ enrollments : "enrolls"
     class_sessions ||--o{ attendance_records : "records"
     student_profiles ||--o{ attendance_records : "attends"
+    class_sessions ||--o{ attendance_imports : "imported into"
+    users ||--o{ attendance_imports : "imports"
+    attendance_imports ||--|{ attendance_import_rows : "reads"
+    attendance_imports |o--o{ attendance_records : "source = import"
+    student_profiles |o--o{ attendance_import_rows : "matched to"
     student_profiles ||--o{ consent_records : "gives"
     consent_versions ||--o{ consent_records : "version of"
     consent_records ||--o{ face_embeddings : "authorises"
@@ -135,9 +140,38 @@ erDiagram
         varchar status "on_time | late | absent"
         timestamptz check_in_time
         timestamptz last_seen_at
-        varchar source "camera | manual | system"
+        varchar source "camera | manual | system | import"
         numeric match_score
         uuid recorded_by FK
+        uuid import_id FK "source = import"
+    }
+    attendance_imports {
+        uuid import_id PK
+        uuid session_id FK
+        varchar mode "template | mapped"
+        varchar method "template | teams | zoom | google_form | paper | other"
+        varchar file_name "name only, no file"
+        char file_sha256
+        jsonb mapping "mapped only"
+        text reason
+        boolean override_camera
+        boolean override_manual
+        smallint total_rows "1-500"
+        uuid imported_by FK
+        timestamptz imported_at
+    }
+    attendance_import_rows {
+        uuid import_id PK, FK
+        smallint row_no PK
+        varchar raw_identifier
+        varchar raw_join_time
+        varchar raw_status
+        uuid student_id FK
+        varchar status
+        timestamptz check_in_time
+        varchar action "insert | replace | skip | conflict | unmatched"
+        varchar unmatched_reason "not_found | not_enrolled | duplicate"
+        boolean applied
     }
     consent_versions {
         varchar version PK
@@ -214,7 +248,9 @@ erDiagram
 | | `section_lecturers` | ผู้สอน (ใช้ตรวจสิทธิ์ "เห็นเฉพาะกลุ่มที่สอน") |
 | | `enrollments` | นักศึกษาในกลุ่ม + วันถอน |
 | | `class_sessions` | คาบแต่ละครั้ง + เลขคาบ + สำเนาเวลา/กฎ + สถานะ |
-| 4 การเข้าเรียน | `attendance_records` | ผลเช็คชื่อ 1 แถวต่อคนต่อคาบ แยกที่มา camera / manual / system |
+| 4 การเข้าเรียน | `attendance_records` | ผลเช็คชื่อ 1 แถวต่อคนต่อคาบ แยกที่มา camera / manual / system / import |
+| | `attendance_imports` | การนำเข้าผลเช็คชื่อจากไฟล์ 1 ครั้ง (คาบเดียว · คลาสออนไซต์): วิธี / ชื่อไฟล์ + SHA-256 / คอลัมน์ที่เลือก / เหตุผล / ผู้นำเข้า / จำนวนแต่ละผล · **ไม่เก็บตัวไฟล์** |
+| | `attendance_import_rows` | ทุกแถวที่อ่านจากไฟล์: ค่าดิบ, นักศึกษาที่จับคู่ได้, ผลที่ตั้งใจ, ทำอะไร (insert / replace / skip / conflict / unmatched), เขียนจริงไหม (`applied`) |
 | 5 ใบหน้าและ PDPA | `consent_versions` | ฉบับข้อความยินยอม + hash |
 | | `consent_records` | หลักฐานให้ / ถอนความยินยอม (append-only) |
 | | `face_embeddings` | เวกเตอร์ใบหน้า 3–5 ชุดต่อคน ไม่มีรูป |
@@ -238,8 +274,16 @@ Attendance Rules ของ R2 ไม่ต้องมีตารางให�
 | ปิดช่วงเช็คชื่อ | absent | job INSERT `source = system` ให้คนที่ยังไม่มีแถว |
 
 - กล้องเขียนเฉพาะเมื่อ `camera_attendance_enabled = true` และ consent ล่าสุดเป็น `granted`
-- กล้องไม่เขียนทับแถว `manual`; อาจารย์แก้ได้ทุกแถวพร้อม `audit_logs`
-- `attendanceRate` = (on_time + late) ÷ คาบที่เริ่มแล้ว × 100
+- กล้องไม่เขียนทับแถว `manual` และ `import`; อาจารย์แก้ได้ทุกแถวพร้อม `audit_logs`
+- `attendanceRate` = (on_time + late) ÷ คาบที่เริ่มแล้ว × 100 (แถว `import` นับเหมือนผลเช็คชื่อปกติ)
+
+**นำเข้าผลเช็คชื่อจากไฟล์** (template ของระบบ หรือไฟล์ Teams / Zoom / Google Form ที่ผู้ใช้เลือกคอลัมน์เอง)
+
+- ลำดับความสำคัญของที่มา: **manual > import > camera > system** · การนำเข้าจะทับแถว `camera` / `manual` ที่มีอยู่หรือไม่ ขึ้นกับตัวเลือก `override_camera` / `override_manual` ที่ผู้นำเข้าเลือก (บันทึกไว้ใน `attendance_imports` · กติกาละเอียดอยู่ฝั่ง Backend — C2)
+- แถวที่เขียนจากไฟล์: `source = import`, `import_id` = การนำเข้านั้น (CHECK `(source = 'import') = (import_id IS NOT NULL)`) · `recorded_by` / `reason` = NULL เพราะผู้นำเข้าและเหตุผลอยู่ใน `attendance_imports`
+- อาจารย์แก้แถว import ด้วยมือ → กลายเป็น `manual` และล้าง `import_id` · กล้องเห็นคนที่มีแถว import → ไม่เขียน (`import_record`)
+- `file_sha256` ใช้เตือนว่าเคยนำเข้าไฟล์เดียวกันในคาบนี้แล้ว · ค่าดิบตัดไม่เกิน 255 ตัวอักษร · ไม่เกิน 500 แถวต่อไฟล์
+- **PDPA:** `raw_identifier` ของแถวที่จับคู่ไม่ได้อาจเป็นอีเมล / ชื่อของบุคคลภายนอก (เช่นผู้เข้าร่วม Teams) → เปิดให้เห็นเฉพาะ staff (lecturer / admin) ไม่ส่งให้ student · นโยบายลบ / ระยะเก็บข้อมูลส่วนนี้ทำใน R2
 
 **PDPA**
 
@@ -263,6 +307,7 @@ Attendance Rules ของ R2 ไม่ต้องมีตารางให�
 | Registration Status | 5.6 `faceRegistered=false` | enrollments + `v_face_registration` |
 | Analytics / At-Risk | 5.4–5.6 | sections, class_sessions, enrollments, attendance_records, `v_face_registration` (backend คำนวณเองใน `DashboardRepository` นับคาบที่เริ่มแล้ว · `v_student_section_attendance` ยังนับเฉพาะ `completed` และยังไม่ได้ใช้) |
 | Session Report + เช็คชื่อด้วยมือ | 5.7–5.8, B8 | class_sessions, attendance_records, audit_logs |
+| นำเข้าผลเช็คชื่อจากไฟล์ | (C2) | class_sessions, enrollments, attendance_imports, attendance_import_rows, attendance_records |
 
 ## คำถามที่ยังเปิดอยู่
 
@@ -274,4 +319,5 @@ Attendance Rules ของ R2 ไม่ต้องมีตารางให�
 - [ ] สถานะ "ลา" (`excused`) — Sonnet มี แต่ API v1.0 ไม่มี
 - [ ] ชื่อตารางแบบ MS_ / TR_ หรือ snake_case ตรงๆ
 - [ ] B9 และระยะเก็บข้อมูล 30 วัน — รอ DPO
+- [ ] ระยะเก็บ / ลบ `attendance_import_rows` (ค่าดิบอาจเป็นข้อมูลบุคคลภายนอก) — R2
 - [ ] อาจารย์ไม่มี `lecturerCode` / `department` ใน schema (`GET /me` ส่ง null) — เพิ่มคอลัมน์ หรือตัดออกจาก API
