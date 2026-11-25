@@ -132,7 +132,8 @@ watch(
       <p v-if="idSamples.length" class="text-xs text-muted sm:col-span-2">
         ตัวอย่างค่า: {{ idSamples.join(' · ') }}
         <template v-if="draft.identifierType === 'email'">
-          — อีเมลต้องขึ้นต้นด้วยรหัสนักศึกษา 11 หลัก</template
+          — อีเมลต้องขึ้นต้นด้วยรหัสนักศึกษา 11 หลักทุกแถว (แถวอื่น เช่น อีเมลอาจารย์
+          ต้องลบออกจากไฟล์ก่อน ไม่งั้นทั้งไฟล์ไม่ผ่าน)</template
         >
       </p>
     </section>

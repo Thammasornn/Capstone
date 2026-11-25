@@ -343,7 +343,8 @@ const nextDisabled = computed(() => {
             CSV (UTF-8 คั่นด้วย comma) หรือ XLSX (ชีตแรก) · หัวตารางอยู่แถวแรก · ≤ 2 MB · ≤
             {{ IMPORT_MAX_ROWS }} แถว
             <template v-if="kind === 'mapped'">
-              · รายงาน Teams: เปิดใน Excel แล้ว Save As เป็น XLSX และลบส่วน Summary ด้านบนออกก่อน
+              · รายงาน Teams: เปิดใน Excel แล้ว Save As เป็น XLSX และลบส่วน Summary ด้านบนออกก่อน ·
+              ลบแถวที่ไม่ใช่นักศึกษา (เช่น อาจารย์) ออกด้วย
             </template>
           </p>
         </div>
