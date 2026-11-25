@@ -55,11 +55,11 @@ mvn spring-boot:run        # http://localhost:8081
 | `GET /test-accounts` (อีเมล ชื่อ role สถานะใบหน้า / ความยินยอม จำนวนวิชา · ไม่มีรหัสผ่าน) | หน้า Login (local / uat) | ไม่ต้อง login · มีเฉพาะเมื่อ `TEST_ACCOUNTS_ENABLED=true` |
 | `GET /courses` (+ ตารางเรียนของ section ตาม B5) | 5.3 | ตาม role |
 | `GET /courses/{id}/attendance/summary · sessions · students` | 5.4–5.6 | admin, อาจารย์ผู้สอน |
-| `GET /class-sessions/{id}/attendance/summary`, `GET /class-sessions/{id}/attendance` (+ `source`) | 5.7–5.8 | admin, อาจารย์ผู้สอน |
+| `GET /class-sessions/{id}/attendance/summary` (+ `checkInOpens`, `onTimeUntil`, `lateUntil`, `checkInCloses` `"HH:mm"` ของคาบ), `GET /class-sessions/{id}/attendance` (+ `source`) | 5.7–5.8 | admin, อาจารย์ผู้สอน |
 | `GET /courses/{courseId}/students/{studentId}/attendance` | — | admin, อาจารย์ผู้สอน, นักศึกษาเอง |
 | `POST /students/{id}/face/register`, `GET .../face/status` | 5.10–5.11 | นักศึกษาเอง / admin (ดูสถานะ: + อาจารย์ผู้สอน) |
 | `DELETE /students/{id}/face` | B7 | นักศึกษาเอง / admin · แจ้ง AI Service ให้ลบ embedding (`aiNotified`) |
-| `GET /rooms`, `GET /rooms/{id}` | B1, B4 | admin, lecturer (เฉพาะห้องที่มีกลุ่มของตน) |
+| `GET /rooms`, `GET /rooms/{id}` (`currentSession` มี `checkInOpens`, `onTimeUntil`, `lateUntil`, `checkInCloses` `"HH:mm"` ของคาบ · ไม่มีคาบ = `currentSession: null`) | B1, B4 | admin, lecturer (เฉพาะห้องที่มีกลุ่มของตน) |
 | `GET /rooms/{id}/stream` | B2 | เหมือน B1 |
 | `GET /rooms/{id}/events?access_token=` (SSE: `camera`, `faces`, `check_in`, `session`) | B3 | เหมือน B1 |
 | `GET/POST /courses`, `GET/PUT/DELETE /courses/{id}` | B5 | admin, lecturer (แก้ได้เฉพาะกลุ่มที่สอน) · ลบ = soft delete |
@@ -112,6 +112,12 @@ mvn spring-boot:run        # http://localhost:8081
 > SSE และ event อยู่ในหน่วยความจำของ instance เดียว ถ้ารันหลาย replica ต้องเปลี่ยน `RoomEventHub` ไปใช้ pub/sub กลาง
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-25 — คืนช่วงเวลาเช็คชื่อของคาบใน B1 / B4 / 5.7
+- **ทำอะไร:** เพิ่ม `checkInOpens`, `onTimeUntil`, `lateUntil`, `checkInCloses` (string `"HH:mm"` จาก `class_sessions` ไม่ใช่ของกลุ่มเรียน) ใน `currentSession` ของ `GET /api/rooms` และ `GET /api/rooms/{id}` และใน `GET /api/class-sessions/{id}/attendance/summary`
+- **ไฟล์ที่เกี่ยวข้อง:** `src/main/java/com/faculty/attendance/room/RoomDtos.java`, `room/RoomRepository.java`, `dashboard/DashboardDtos.java`, `dashboard/DashboardRepository.java`, `dashboard/DashboardService.java`, `README.md`
+- **เหตุผล:** FE ต้องแสดงค่าปัจจุบัน / ตั้งค่าเริ่มต้นในฟอร์มปรับเวลาคาบ (reanchor / extend / check-in-window) แต่ไม่มี GET ไหนคืนช่วงเช็คชื่อของคาบ
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ไม่แก้ schema (คอลัมน์มีครบใน `class_sessions`) · 4 field ใหม่เป็น `"HH:mm"` แต่ `startTime` / `endTime` เดิมยังเป็น `"HH:mm:ss"` · ห้องที่ไม่มีคาบ `currentSession` = `null` ทั้งก้อน · ทดสอบกับ Postgres ชั่วคราว (seed 02 + 03): ห้อง 4303 มีค่าครบ, ห้องอื่น null, summary คาบที่กำลังเรียน / จบแล้วมีค่า · `./dev.sh smoke` ผ่าน 15 ข้อ · `./dev.sh test`: backend ผ่าน แต่ `frontend: format` ไม่ผ่านจากไฟล์ FE ที่ยังไม่ commit (`SessionAdjustDialog.vue`, `SessionAdjustPreview.vue`) ไม่เกี่ยวกับงานนี้
 
 ### 2026-11-25 — ปรับเวลาคาบที่เริ่มแล้ว (reanchor / extend / check-in-window)
 - **ทำอะไร:** เพิ่ม `SessionAdjustController` / `Service` / `Repository`: `POST /api/class-sessions/{id}/reanchor` (เริ่มจริงช้ากว่าตาราง เลื่อนช่วงเช็คชื่อตาม), `/extend` (ปรับเวลาจบ ตรวจห้องชน), `/check-in-window` (ปรับตรงเวลา / สาย / ปิดเช็คชื่อ) · บังคับ reason · `dryRun` · คิดผลเช็คชื่อใหม่แบบไม่ลงโทษย้อนหลัง (upgrade ใช้เลย, downgrade ต้อง `applyDowngrades`, absent ของระบบถูกเปิดใหม่ถ้าคาบยังเรียนอยู่) · audit ต่อคาบ + ต่อแถว · SSE `session` / `check_in` · แก้บั๊ก `CourseRepository.regenerateSessions`: คาบวันนี้ที่ยังไม่เริ่มแต่เวลาเริ่มใหม่ย้อนไปก่อนตอนนี้ถูกลบโดยไม่ถูกสร้างคืน (หายเงียบ) → ตอนนี้ลบเฉพาะเมื่อเวลาใหม่ยังอยู่ในอนาคต · `PUT /api/courses/{id}` เพิ่ม `startedSessionsNotChanged` (`CourseDetail` มี field นี้ทุกเส้น ค่าเป็น `[]` ใน GET / POST)

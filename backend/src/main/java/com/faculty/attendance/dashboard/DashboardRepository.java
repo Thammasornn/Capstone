@@ -69,12 +69,17 @@ public class DashboardRepository {
     }
 
     public record SessionInfo(UUID id, UUID sectionId, String sectionCode, UUID courseId, LocalDate sessionDate,
-                              LocalTime startTime, LocalTime endTime, String status) {}
+                              LocalTime startTime, LocalTime endTime, String status, String checkInOpens,
+                              String onTimeUntil, String lateUntil, String checkInCloses) {}
 
     public Optional<SessionInfo> findSession(UUID sessionId) {
         return jdbc.query("""
                 SELECT cs.session_id, cs.section_id, sec.section_code, sec.course_id, cs.session_date,
-                       cs.start_time, cs.end_time, cs.session_status
+                       cs.start_time, cs.end_time, cs.session_status,
+                       to_char(cs.check_in_opens, 'HH24:MI') AS check_in_opens,
+                       to_char(cs.on_time_until, 'HH24:MI') AS on_time_until,
+                       to_char(cs.late_until, 'HH24:MI') AS late_until,
+                       to_char(cs.check_in_closes, 'HH24:MI') AS check_in_closes
                 FROM class_sessions cs
                 JOIN sections sec ON sec.section_id = cs.section_id
                 JOIN courses c ON c.course_id = sec.course_id
@@ -84,7 +89,8 @@ public class DashboardRepository {
                         rs.getObject("section_id", UUID.class), rs.getString("section_code"),
                         rs.getObject("course_id", UUID.class), rs.getDate("session_date").toLocalDate(),
                         rs.getTime("start_time").toLocalTime(), rs.getTime("end_time").toLocalTime(),
-                        rs.getString("session_status")),
+                        rs.getString("session_status"), rs.getString("check_in_opens"),
+                        rs.getString("on_time_until"), rs.getString("late_until"), rs.getString("check_in_closes")),
                 sessionId).stream().findFirst();
     }
 

@@ -23,11 +23,16 @@ public class RoomRepository {
     private static final String ROOM_SQL = """
             SELECT r.room_id, r.room_code, c.camera_code, c.status AS camera_status,
                    cur.session_id, cur.course_code, cur.course_name, cur.section_code,
-                   cur.start_time, cur.end_time, cur.checked_in, cur.total_students
+                   cur.start_time, cur.end_time, cur.check_in_opens, cur.on_time_until, cur.late_until, cur.check_in_closes,
+                   cur.checked_in, cur.total_students
             FROM rooms r
             LEFT JOIN cameras c ON c.room_id = r.room_id AND c.is_active
             LEFT JOIN LATERAL (
                 SELECT cs.session_id, co.course_code, co.course_name, s.section_code, cs.start_time, cs.end_time,
+                       to_char(cs.check_in_opens, 'HH24:MI') AS check_in_opens,
+                       to_char(cs.on_time_until, 'HH24:MI') AS on_time_until,
+                       to_char(cs.late_until, 'HH24:MI') AS late_until,
+                       to_char(cs.check_in_closes, 'HH24:MI') AS check_in_closes,
                        (SELECT count(*) FROM attendance_records ar
                          WHERE ar.session_id = cs.session_id AND ar.status IN ('on_time', 'late')) AS checked_in,
                        (SELECT count(*) FROM enrollments e
@@ -103,7 +108,8 @@ public class RoomRepository {
         CurrentSession current = sessionId == null ? null : new CurrentSession(sessionId,
                 rs.getString("course_code"), rs.getString("course_name"), rs.getString("section_code"),
                 rs.getTime("start_time").toLocalTime(), rs.getTime("end_time").toLocalTime(),
-                rs.getInt("checked_in"), rs.getInt("total_students"));
+                rs.getString("check_in_opens"), rs.getString("on_time_until"), rs.getString("late_until"),
+                rs.getString("check_in_closes"), rs.getInt("checked_in"), rs.getInt("total_students"));
         return new Room(rs.getObject("room_id", UUID.class), rs.getString("room_code"),
                 rs.getString("camera_code"), rs.getString("camera_status"), current);
     }

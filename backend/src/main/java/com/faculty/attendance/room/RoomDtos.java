@@ -8,9 +8,13 @@ import java.util.UUID;
 public final class RoomDtos {
     private RoomDtos() {}
 
-    /** คาบที่กำลังเรียนอยู่ในห้องตอนนี้ (null = "Class not started") */
+    /**
+     * คาบที่กำลังเรียนอยู่ในห้องตอนนี้ (null = "Class not started")
+     * checkInOpens / onTimeUntil / lateUntil / checkInCloses = "HH:mm" ของคาบนี้ (class_sessions ไม่ใช่ของกลุ่มเรียน)
+     */
     public record CurrentSession(UUID sessionId, String courseCode, String courseName, String sectionCode,
-                                 LocalTime startTime, LocalTime endTime, int checkedIn, int totalStudents) {}
+                                 LocalTime startTime, LocalTime endTime, String checkInOpens, String onTimeUntil,
+                                 String lateUntil, String checkInCloses, int checkedIn, int totalStudents) {}
 
     /** B1 / B4 · cameraStatus = live | no_signal (ไม่มีกล้อง = null) */
     public record Room(UUID roomId, String roomCode, String cameraCode, String cameraStatus,

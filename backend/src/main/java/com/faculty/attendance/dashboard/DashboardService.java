@@ -80,8 +80,8 @@ public class DashboardService {
         var s = requireSession(sessionId);
         var c = repo.sessionSummary(sessionId);
         return new SessionSummaryResponse(sessionId, s.sectionId(), s.sectionCode(), s.courseId(),
-                s.sessionDate(), s.startTime(), s.endTime(), s.status(),
-                c.total(), c.onTime(), c.late(), c.absent(), c.attendanceRate());
+                s.sessionDate(), s.startTime(), s.endTime(), s.status(), s.checkInOpens(), s.onTimeUntil(),
+                s.lateUntil(), s.checkInCloses(), c.total(), c.onTime(), c.late(), c.absent(), c.attendanceRate());
     }
 
     public SessionAttendanceResponse sessionAttendance(UUID sessionId, String status) {

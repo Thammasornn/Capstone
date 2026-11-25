@@ -54,7 +54,8 @@ public final class DashboardDtos {
     // ---- GET /class-sessions/{sessionId}/attendance/summary ----
     public record SessionSummaryResponse(UUID sessionId, UUID sectionId, String sectionCode, UUID courseId,
                                          LocalDate sessionDate, LocalTime startTime, LocalTime endTime,
-                                         String sessionStatus, int totalStudents,
+                                         String sessionStatus, String checkInOpens, String onTimeUntil,
+                                         String lateUntil, String checkInCloses, int totalStudents,
                                          int onTime, int late, int absent, double attendanceRate) {}
 
     // ---- GET /class-sessions/{sessionId}/attendance[?status=] ----
