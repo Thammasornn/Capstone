@@ -92,7 +92,7 @@ mvn spring-boot:run        # http://localhost:8081
 | cancelled อดีต / มีคาบชดเชยแล้ว | — |
 
 - **กติกาเวลา (400):** start < end, start ≤ เปิด ≤ ตรงเวลา ≤ สาย ≤ ปิด ≤ end · วันที่อยู่ในภาคเรียนของกลุ่ม · ห้องต้องมีและเปิดใช้ · รูปแบบเวลา / วันที่ผิด
-- **409:** ห้องชน `"ห้อง XXX มีคาบ YYY ในช่วงเวลานี้แล้ว"` (ไม่นับ cancelled) · กลุ่มมีคาบวันนั้นแล้ว `"วันนี้กลุ่มเรียนนี้มีคาบอยู่แล้ว (1 กลุ่มเรียนมีได้ 1 คาบต่อวัน)"` (นับ cancelled ด้วย เพราะ UNIQUE (section_id, session_date))
+- **409:** ห้องชน `"ห้อง XXX มีคาบ YYY ในช่วงเวลานี้แล้ว"` (ไม่นับ cancelled) · กลุ่มมีคาบวันนั้นแล้ว `"วันที่ <yyyy-MM-dd> กลุ่มเรียนนี้มีคาบอยู่แล้ว (1 กลุ่มเรียนมีได้ 1 คาบต่อวัน)"` (วันที่ที่ขอเลื่อน / เพิ่ม / คืน) (นับ cancelled ด้วย เพราะ UNIQUE (section_id, session_date))
 - **PATCH:** คาบต้อง scheduled และยังไม่ถึงเวลาเริ่ม (409 `"คาบนี้เริ่มแล้ว ใช้เมนูจัดการคาบที่หน้าห้อง"`) · เวลาเริ่มใหม่ต้องอยู่ในอนาคต (400) · `original_date` = วันเดิมเมื่อเปลี่ยนวันครั้งแรก
 - **cancel:** ได้เฉพาะ scheduled / in_progress (completed / cancelled 409) · ไม่ลบผลเช็คชื่อ (`keptAttendanceCount` = จำนวนแถวที่เก็บไว้ · คาบ cancelled ไม่ถูกนับในสถิติ) · มี `makeup` → สร้างคาบชดเชยใน transaction เดียวกัน ถ้าคาบชดเชยไม่ผ่าน ไม่ยกเลิกอะไรเลย
 - **คาบเพิ่ม:** เวลาเริ่มอยู่ในอนาคต · `makeupForSessionId` ต้องเป็นคาบของกลุ่มเดียวกันที่ cancelled แล้ว (ไม่งั้น 409 `"ต้องยกเลิกคาบเดิมก่อน หรือใช้ปุ่มยกเลิก + ชดเชย"`) และยังไม่มีคาบชดเชย (409) · นักศึกษา = ที่ลงทะเบียนกลุ่มนั้น (กล้อง / ลงขาดอัตโนมัติทำงานปกติ)
@@ -176,6 +176,12 @@ mvn spring-boot:run        # http://localhost:8081
 > SSE และ event อยู่ในหน่วยความจำของ instance เดียว ถ้ารันหลาย replica ต้องเปลี่ยน `RoomEventHub` ไปใช้ pub/sub กลาง
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-25 — ข้อความ 409 "มีคาบอยู่แล้ว" บอกวันที่จริง
+- **ทำอะไร:** `ClassSessionService` (PATCH เลื่อนคาบ, เพิ่มคาบ / คาบชดเชยใน cancel, restore) เปลี่ยนข้อความจาก "วันนี้กลุ่มเรียนนี้มีคาบอยู่แล้ว ..." เป็น "วันที่ 2026-12-02 กลุ่มเรียนนี้มีคาบอยู่แล้ว (1 กลุ่มเรียนมีได้ 1 คาบต่อวัน)" (รูปแบบ yyyy-MM-dd เหมือนข้อความภาคเรียน) · ปุ่มเริ่มคาบตอนนี้ (`SessionControlService`) คง "วันนี้" ไว้เพราะเป็นวันนี้จริง
+- **ไฟล์ที่เกี่ยวข้อง:** `src/main/java/com/faculty/attendance/attendance/ClassSessionService.java`, `README.md`
+- **เหตุผล:** FE เจอข้อความขึ้นต้นด้วย "วันนี้" ทั้งที่วันที่เลือกเป็นวันอื่น
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** FE ไม่ได้ match ข้อความนี้แบบ string (ค้นใน `frontend/src`, `frontend/tests` แล้ว) · `./dev.sh test` ผ่าน
 
 ### 2026-11-25 — คาบเรียน: API จัดการคาบรายคาบ (D2)
 - **ทำอะไร:** เพิ่ม `ClassSessionController` / `ClassSessionService`: `GET /api/sections/{id}/sessions` (+ `allowedActions` ต่อคาบ), `PATCH /api/class-sessions/{id}` (เลื่อน / แก้คาบที่ยังไม่เริ่ม), `POST .../cancel` (+ คาบชดเชยในคำขอเดียว rollback ทั้งคำขอถ้าไม่ผ่าน), `POST /api/sections/{id}/sessions` (คาบชดเชย / คาบพิเศษ), `POST .../restore` · ตรวจเวลา / ภาคเรียน / ห้องชน / 1 คาบต่อวัน · audit + SSE · `ClassSessionRepository` เพิ่ม `hasMakeup`, `section` · `PUT /api/courses/{id}` เพิ่ม `overriddenSessionsKept` และ `startedSessionsNotChanged` ไม่รวมคาบที่แก้รายคาบ (`CourseRepository.overriddenFutureSessions`) · เริ่มคาบตอนนี้: คาบใหม่ = `is_extra`, ใช้คาบเดิม = `is_overridden` + ล้าง `cancel_reason`, คาบ cancelled ที่มีคาบชดเชยแล้วเปิดไม่ได้ (409)

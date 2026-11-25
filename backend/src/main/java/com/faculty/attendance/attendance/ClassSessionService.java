@@ -117,7 +117,7 @@ public class ClassSessionService {
             }
             validate(v, new SectionRef(s.sectionId(), s.semesterStart(), s.semesterEnd()));
             if (!v.sessionDate().equals(s.sessionDate()) && repo.existsOnDate(s.sectionId(), v.sessionDate(), sessionId)) {
-                throw conflict("วันนี้กลุ่มเรียนนี้มีคาบอยู่แล้ว (1 กลุ่มเรียนมีได้ 1 คาบต่อวัน)");
+                throw sameDay(v.sessionDate());
             }
             checkRoom(v, sessionId);
             repo.reschedule(sessionId, v);
@@ -199,7 +199,7 @@ public class ClassSessionService {
         }
         validate(v, sec);
         if (repo.existsOnDate(sectionId, v.sessionDate(), null)) {
-            throw conflict("วันนี้กลุ่มเรียนนี้มีคาบอยู่แล้ว (1 กลุ่มเรียนมีได้ 1 คาบต่อวัน)");
+            throw sameDay(v.sessionDate());
         }
         checkRoom(v, null);
         UUID id = repo.insertExtra(sectionId, v, makeupFor);
@@ -221,7 +221,7 @@ public class ClassSessionService {
             if (!start(s).isAfter(now)) throw conflict("คืนได้เฉพาะคาบที่ยังไม่ถึงเวลาเริ่ม");
             if (repo.hasMakeup(sessionId)) throw conflict("มีคาบชดเชยของคาบนี้แล้ว ยกเลิกคาบชดเชยก่อน");
             if (repo.existsOnDate(s.sectionId(), s.sessionDate(), sessionId)) {
-                throw conflict("วันนี้กลุ่มเรียนนี้มีคาบอยู่แล้ว (1 กลุ่มเรียนมีได้ 1 คาบต่อวัน)");
+                throw sameDay(s.sessionDate());
             }
             checkRoom(values(s), sessionId);
             repo.restore(sessionId);
@@ -387,6 +387,11 @@ public class ClassSessionService {
 
     private static ResponseStatusException bad(String msg) {
         return new ResponseStatusException(HttpStatus.BAD_REQUEST, msg);
+    }
+
+    /** 409 กลุ่มเรียนมีคาบในวันนั้นแล้ว · ใส่วันที่จริง (yyyy-MM-dd เหมือนข้อความภาคเรียน) */
+    private static ResponseStatusException sameDay(LocalDate date) {
+        return conflict("วันที่ " + date + " กลุ่มเรียนนี้มีคาบอยู่แล้ว (1 กลุ่มเรียนมีได้ 1 คาบต่อวัน)");
     }
 
     private static ResponseStatusException conflict(String msg) {
