@@ -73,6 +73,14 @@ public class AttendanceImportRepository {
         return out;
     }
 
+    /** รหัสนักศึกษาที่มีในระบบ (ไว้แยก not_found กับ not_enrolled ตอนจับคู่ไม่ได้) */
+    public java.util.Set<String> existingStudentCodes(java.util.Collection<String> codes) {
+        if (codes.isEmpty()) return java.util.Set.of();
+        return new java.util.HashSet<>(jdbc.queryForList(
+                "SELECT student_code FROM student_profiles WHERE student_code = ANY (?)", String.class,
+                (Object) codes.toArray(String[]::new)));
+    }
+
     // ---------- attendance_records ----------
 
     public record CurrentRecord(UUID studentId, String source, String status, OffsetDateTime checkInTime,

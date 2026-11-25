@@ -32,7 +32,7 @@ import tools.jackson.databind.json.JsonMapper;
  *  - check-in-window: ปรับช่วงตรงเวลา / สาย / ปิดเช็คชื่อ (check_in_opens คงเดิม)
  *
  * reanchor + check-in-window คิดผลเช็คชื่อใหม่ตามกฎ "ไม่ลงโทษย้อนหลัง":
- *  manual ไม่เปลี่ยน · camera คิดใหม่จาก check_in_time (ดีขึ้น = ใช้เลย, แย่ลง = ใช้เมื่อ applyDowngrades) ·
+ *  manual / import ไม่เปลี่ยน · camera คิดใหม่จาก check_in_time (ดีขึ้น = ใช้เลย, แย่ลง = ใช้เมื่อ applyDowngrades) ·
  *  system (absent) ลบทิ้งเมื่อคาบยังเรียนอยู่และช่วงเช็คชื่อใหม่ยังไม่ปิด (กล้องเช็คชื่อได้อีก)
  * dryRun = true คืนผลแบบเดียวกันแต่ไม่เขียน DB (Preview & Confirm)
  */

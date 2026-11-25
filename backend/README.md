@@ -94,6 +94,39 @@ mvn spring-boot:run        # http://localhost:8081
 - **ข้อจำกัด:** คาบ completed — คนที่กล้องเห็นหลังปิดเช็คชื่อเดิมไม่ได้ถูกเก็บไว้ (`recordSighting` คืน `check_in_closed` โดยไม่บันทึก) จึงกู้ไม่ได้ ต้องใช้เช็คชื่อด้วยมือ (B8) หรือ import
 - `PUT /courses/{id}` ตอบ `startedSessionsNotChanged: [{sessionId, sessionDate, sectionCode, sessionStatus, startTime, endTime}]` = คาบตั้งแต่วันนี้ของกลุ่มที่แก้ตารางเรียน แต่ระบบไม่ได้แก้ตาม (เริ่มแล้ว / มีข้อมูลแล้ว / เวลาใหม่ย้อนไปก่อนตอนนี้) ให้ FE แจ้งผู้ใช้และปรับด้วยเส้นด้านบน · GET / POST = `[]`
 
+### นำเข้าผลเช็คชื่อจากไฟล์ (คลาสออนไซต์)
+
+สิทธิ์ admin / อาจารย์ผู้สอน (`requireSession`) · ไม่พบคาบ 404 · คาบยกเลิก / ยังไม่ถึงเวลาเริ่ม 409 (ยกเว้นดาวน์โหลด template) · ไฟล์ ≤ 2 MB, ≤ 500 แถวข้อมูล, CSV UTF-8 (มี / ไม่มี BOM) คั่นด้วย comma หรือ XLSX (ชีตแรก), หัวตารางอยู่แถวแรก · อ่านใน memory แล้วทิ้ง ไม่เก็บไฟล์ (เก็บแค่ชื่อไฟล์ + SHA-256 + ข้อมูลแต่ละแถวใน `attendance_imports` / `attendance_import_rows`) · ไม่เดาคอลัมน์ / encoding / ตัวคั่น / รูปแบบเวลา / ความหมายของค่าสถานะ
+
+| เส้น | request | response |
+|---|---|---|
+| `GET /class-sessions/{id}/attendance/import-template?format=xlsx\|csv` | — | ไฟล์ `attendance_<courseCode>-<sectionCode>_<sessionDate>.<ext>` คอลัมน์ `student_code, student_name, status, check_in_time` (กรอกรหัส / ชื่อให้แล้ว) · XLSX มี dropdown `on_time, late, absent` + ชีต "วิธีกรอก" · CSV มี BOM |
+| `POST /class-sessions/{id}/attendance/import/inspect` | multipart `file` | `{headers, sampleRows (5 แถวแรก), distinctValues (คอลัมน์ที่มีค่าไม่ซ้ำ ≤ 20), rowCount}` · ไม่บันทึก |
+| `POST /class-sessions/{id}/attendance/import` | multipart `file`, `mode` (`template`\|`mapped`), `method` (`template`\|`teams`\|`zoom`\|`google_form`\|`paper`\|`other` · template ↔ template), `reason` (บังคับ ≤ 300), `dryRun` (ค่าเริ่มต้น `true`), `overrideCamera`, `overrideManual` (ค่าเริ่มต้น `false`), `mapping` (JSON string บังคับเมื่อ mapped) | `{dryRun, mode, importId, duplicateOf, sessionWindow, rows: [{rowNo, studentId, studentCode, studentName, fromSource, fromStatus, toStatus, checkInTime, action, applied}], unmatched: [{rowNo, value, reason}], summary: {totalRows, insert, replace, skip, conflict, unmatched, applied}}` |
+| `GET /class-sessions/{id}/attendance/imports` | — | `[{importId, importedAt, importedById, importedBy, mode, method, fileName, reason, overrideCamera, overrideManual, totalRows, insert, replace, skip, conflict, unmatched}]` ใหม่ → เก่า |
+| `GET /class-sessions/{id}/attendance/imports/{importId}` | — | `{summary (เหมือนรายการด้านบน), mapping, rows: [{rowNo, rawIdentifier, rawJoinTime, rawStatus, studentId, studentCode, studentName, status, checkInTime, action, unmatchedReason, applied}]}` · import ของคาบอื่น = 404 |
+
+- **template:** หัวตารางต้องตรงทุกตัวตามลำดับ · `student_code` 11 หลัก · `status` ว่าง / `on_time` / `late` / `absent` (ว่าง = ข้าม ไม่นับใน `totalRows`) · `check_in_time` ว่าง / `HH:mm` · absent ห้ามมีเวลา · มีเวลาแต่ status ว่าง = error
+- **mapped** `mapping = {identifierColumn, identifierType: email|student_code, joinTimeColumn?, timeFormat?, statusColumn?, statusValues?: {"มา": "on_time"}, defaultStatus?: on_time|late}` · คอลัมน์ที่อ้างต้องมีจริง · มี `joinTimeColumn` ต้องมี `timeFormat` จาก `HH:mm`, `HH:mm:ss`, `d/M/yyyy HH:mm:ss`, `M/d/yyyy`, `h:mm:ss a`, `yyyy-MM-dd HH:mm:ss` เท่านั้น (เวลาอย่างเดียวใช้วันที่ของคาบ · `M/d/yyyy` มีแต่วันที่ = ถือว่าไม่มีเวลาเข้า) · มี `statusColumn` ต้องมี `statusValues` ครบทุกค่าที่ไม่ว่าง · แถวที่ไม่มีทั้งเวลาและสถานะใช้ `defaultStatus` (ไม่กำหนด = error) · email ต้องเป็น `<รหัส 11 หลัก>@...` · XLSX อ่านค่าตามที่ Excel แสดง (ตรงกับ `inspect`)
+- **ไฟล์ผิด → 400 ไม่บันทึกอะไร:** `{timestamp, status: 400, error, message: "ไฟล์มีข้อผิดพลาด 3 แถว", path, errors: [{rowNo, column, value, message}]}` (ปัญหาทั้งไฟล์ / mapping: `rowNo = null`) · error ของ API อื่นรูปแบบเดิม
+- **จับคู่:** รหัส 11 หลัก → นักศึกษา active ในกลุ่มเรียน · ไม่พบ `not_found` / มีในระบบแต่ไม่อยู่ในกลุ่ม `not_enrolled` / ซ้ำในไฟล์ (ใช้แถวแรก) `duplicate` → อยู่ใน `unmatched` (ไม่ใช่ 400)
+- **สถานะ:** จากไฟล์ / `statusValues` → ไม่มีใช้เวลาเข้าเทียบ `onTimeUntil` / `lateUntil` ของคาบ (เกิน `lateUntil` = late ไม่ลงโทษเป็น absent) → ไม่มีทั้งคู่ใช้ `defaultStatus` · `checkInTime` = เวลาจากไฟล์ถ้าอยู่ใน (เริ่มคาบ − 1 ชม.)–เลิกคาบ ไม่งั้นเวลาเริ่มคาบ · absent = null
+- **กติกาการทับผลเดิม** (ลำดับปกติ manual > import > camera > system · override = ผู้ใช้ยืนยันเองว่าไฟล์ถูกกว่า บันทึก flag ไว้ใน `attendance_imports`):
+
+| ผลเดิม | action | เขียนลง `attendance_records` |
+|---|---|---|
+| ไม่มีแถว | `insert` | ✅ |
+| `system` (absent อัตโนมัติ) | `replace` | ✅ |
+| `import` (ไฟล์ครั้งก่อน) | `replace` | ✅ ไฟล์ล่าสุดชนะ |
+| `camera` สถานะเหมือนไฟล์ | `skip` | — |
+| `camera` สถานะต่าง | `conflict` | เฉพาะ `overrideCamera = true` |
+| `manual` (อาจารย์แก้เอง) | `conflict` (แม้สถานะเหมือนกัน) | เฉพาะ `overrideManual = true` |
+| ไม่อยู่ในไฟล์ / status ว่าง (template) | — | ไม่แตะ |
+
+- `applied` = เขียนจริงแล้ว (dryRun = `false` ทุกแถว, `summary.applied = 0`) · ไฟล์ SHA-256 เดียวกับที่เคยนำเข้าในคาบนี้ → `duplicateOf: {importId, importedAt, importedBy, fileName}` (เตือน ไม่บล็อก)
+- **บันทึก (`dryRun = false`):** transaction เดียว ล็อกคาบ + แถวเช็คชื่อ คำนวณใหม่ด้วยข้อมูลที่ล็อกแล้ว → `attendance_imports` + ทุกแถวของไฟล์ใน `attendance_import_rows` (รวม skip / conflict / unmatched) → เขียน `source = import` เฉพาะแถวที่ apply → audit `attendance.import` (สรุป) · คาบกำลังเรียน → SSE `check_in` (`source: "import"`) ของคนที่เปลี่ยน
+- หลังนำเข้า: อาจารย์แก้ทับด้วย B8 ได้ (`import_id` ถูกล้าง) · กล้องไม่ทับแถว import · reanchor / check-in-window ไม่เปลี่ยนแถว import (เหมือน manual)
+
 ### AI Service → backend (`X-Internal-Key`, ไม่เปิดออกนอก cluster)
 
 | เส้น | ใช้ทำอะไร |
@@ -112,6 +145,12 @@ mvn spring-boot:run        # http://localhost:8081
 > SSE และ event อยู่ในหน่วยความจำของ instance เดียว ถ้ารันหลาย replica ต้องเปลี่ยน `RoomEventHub` ไปใช้ pub/sub กลาง
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-25 — นำเข้าผลเช็คชื่อจากไฟล์: API (C2)
+- **ทำอะไร:** เพิ่ม `AttendanceImportController` / `AttendanceImportService` / `ImportFileReader` / `ImportTemplates` / `ImportDtos`: ดาวน์โหลด template (XLSX มี dropdown + ชีตวิธีกรอก / CSV มี BOM), `inspect` (หัวตาราง + ตัวอย่าง + ค่าที่ไม่ซ้ำ), `import` แบบ `template` / `mapped` พร้อม `dryRun` (ค่าเริ่มต้น), ประวัติ และรายละเอียดรายแถว · ตรวจไฟล์แบบไม่เดา (UTF-8 เข้ม, comma เท่านั้น, รูปแบบเวลา 6 แบบที่กำหนด, `statusValues` ต้องครบ) · error รายแถวด้วย `ImportValidationException` + handler ใน `ApiErrors` (API อื่นรูปแบบเดิม) · กติกาการทับผลเดิมตามตารางในหัวข้อ API · `AttendanceImportRepository.existingStudentCodes` แยก `not_found` / `not_enrolled` · เพิ่ม dependency `commons-csv 1.14.1`, `poi-ooxml 5.5.1` (ออกแล้ว > 2 สัปดาห์)
+- **ไฟล์ที่เกี่ยวข้อง:** `pom.xml`, `src/main/java/com/faculty/attendance/attendance/{AttendanceImportController,AttendanceImportService,ImportFileReader,ImportTemplates,ImportDtos}.java` (ใหม่), `attendance/AttendanceImportRepository.java`, `attendance/SessionAdjustService.java` (comment), `common/ImportValidationException.java` (ใหม่), `common/ApiErrors.java`, `README.md`
+- **เหตุผล:** ให้อาจารย์นำผลเช็คชื่อจากใบเซ็นชื่อ / Teams / Zoom / Google Form เข้าระบบได้โดยเห็นผลก่อนบันทึก และย้อนดูได้ว่าไฟล์ไหนเปลี่ยนอะไร
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** กำหนดกติกาการทับให้ชัด (DB ฝากไว้): manual = conflict เสมอแม้สถานะเหมือนกัน, camera ที่สถานะเหมือนไฟล์ = skip · ตามสเปก email ที่ไม่ใช่ `<รหัส 11 หลัก>@` = 400 ทั้งไฟล์ (เช่นอีเมลอาจารย์ใน Teams) ผู้ใช้ต้องลบแถวนั้นก่อน · ทดสอบกับ backend จริง + Postgres ชั่วคราว (01 ใหม่ + 02 + 03): template XLSX / CSV ดาวน์โหลดได้ (ชื่อไฟล์ถูก, BOM, dropdown, ชีต 2), template ผิด 3 แถว → 400 ครบ, ไม่มี reason / mode ↔ method ผิด 400, dryRun ไม่เขียน, ของจริง: camera conflict ถูกทับเมื่อ `overrideCamera`, manual conflict ไม่ถูกทับ, insert absent · DB มี import + 3 แถว + audit, ไฟล์เดิมซ้ำ → `duplicateOf` · mapped CSV (Teams): `statusValues` ไม่ครบ / อีเมลผิด → 400, not_found / not_enrolled / duplicate → unmatched, เวลาเกิน lateUntil = late, `overrideManual` ทับ manual, `defaultStatus` ใช้ได้, mapping อ้างคอลัมน์ไม่มี / timeFormat ไม่รองรับ → 400, CSV คั่น `;` / ไม่ใช่ UTF-8 / `.txt` → 400 · ประวัติ + รายละเอียด (import ของคาบอื่น 404) · B8 ทับแถว import ได้ (`import_id` ว่าง) · check-in-window ไม่แตะแถว import · คาบที่ยังไม่เริ่ม 409 (template 200) · นักศึกษา 403 · 5.8 `importedFrom` · `./dev.sh test` และ `./dev.sh smoke` (15 ข้อ) ผ่าน · ยังไม่ได้ทดสอบ SSE `check_in` ของ import ผ่านเบราว์เซอร์ และยังไม่ได้ทดสอบเส้นกล้องเจอแถว import ใน C2 (seed ชั่วคราวไม่มี consent — C1 ทดสอบแล้ว) · FE (C3) ยังไม่ได้ทำ
 
 ### 2026-11-25 — นำเข้าผลเช็คชื่อจากไฟล์: data layer (C1)
 - **ทำอะไร:** เพิ่ม `attendance/AttendanceImportRepository.java` (`findSession` / `lockSession` · `activeStudentsByCode` · `currentRecords` · `findImportBySha` · `insertImport` · `insertRows` แบบ batch · `upsertImported` → `source = import` · `history` · `rows` · `sessionOfImport`) · `AttendanceRepository.upsertManual` ล้าง `import_id` เมื่ออาจารย์แก้ทับแถว import · `AttendanceService.recordSighting` กล้องไม่ทับแถว import (ignored `import_record`) · `GET /class-sessions/{id}/attendance` คืน `importedFrom` (method ของการนำเข้า หรือ null) และ `source` เป็น `import` ได้แล้ว · ไม่มี endpoint ใหม่ (รอ C2)

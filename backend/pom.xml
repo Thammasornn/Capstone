@@ -53,6 +53,17 @@
       <groupId>org.flywaydb</groupId>
       <artifactId>flyway-database-postgresql</artifactId>
     </dependency>
+    <!-- นำเข้าผลเช็คชื่อจากไฟล์ (CSV / XLSX) · อ่านใน memory ไม่เขียนไฟล์ลง disk -->
+    <dependency>
+      <groupId>org.apache.commons</groupId>
+      <artifactId>commons-csv</artifactId>
+      <version>1.14.1</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.poi</groupId>
+      <artifactId>poi-ooxml</artifactId>
+      <version>5.5.1</version>
+    </dependency>
   </dependencies>
 
   <build>

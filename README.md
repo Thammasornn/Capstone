@@ -85,6 +85,12 @@ Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/uat/` แยก 
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-25 — backend: API นำเข้าผลเช็คชื่อจากไฟล์ (C2)
+- **ทำอะไร:** ดาวน์โหลด template, ตรวจหัวตาราง (`inspect`), นำเข้าแบบ `template` / `mapped` (Teams / Zoom / Google Form / ใบเซ็นชื่อ) พร้อมดูผลก่อนบันทึก (`dryRun`) และ conflict กับผลของกล้อง / อาจารย์ · ประวัติการนำเข้า + รายละเอียดรายแถว
+- **ไฟล์ที่เกี่ยวข้อง:** `backend/pom.xml`, `backend/src/main/java/com/faculty/attendance/attendance/*Import*`, `backend/src/main/java/com/faculty/attendance/common/*`, `backend/README.md`
+- **เหตุผล:** ให้นำผลเช็คชื่อจากแหล่งอื่นเข้าระบบได้โดยตรวจได้ย้อนหลัง (ต่อจาก C1 ที่เพิ่มตาราง)
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** push พร้อม C1 แล้ว CD บน uat จะหยุด (C1 แก้ `backend/db/`) — รัน `05_attendance_import.sql` บน uat ตาม `backend/db/README.md` แล้ว `ALLOW_DB_CHANGE=1 ~/bangmod-cd/bin/deploy.sh uat` · FE (C3) ยังไม่ได้ทำ
+
 ### 2026-11-25 — นำเข้าผลเช็คชื่อจากไฟล์: DB + data layer (C1)
 - **ทำอะไร:** ตารางใหม่ `attendance_imports` / `attendance_import_rows` + `attendance_records.source = import` / `import_id` · สคริปต์อัปเดต DB เดิม `backend/db/05_attendance_import.sql` (รันซ้ำได้ ไม่ลบข้อมูล) · backend: `AttendanceImportRepository` + แถว import ไม่ถูกกล้องทับ / อาจารย์แก้ทับได้ · session attendance คืน `importedFrom` · เอกสาร DB อัปเดตแล้ว
 - **ไฟล์ที่เกี่ยวข้อง:** `backend/db/`, `backend/src/main/java/.../attendance/`, `backend/src/main/java/.../dashboard/`, `docs/database/database-design.md`
