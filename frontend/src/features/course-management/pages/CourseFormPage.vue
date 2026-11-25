@@ -3,7 +3,7 @@
  * เพิ่ม / แก้ไขรายวิชา (B5) — ตารางเรียน ห้อง ช่วงเช็คชื่อ และสวิตช์กล้องผูกที่กลุ่มเรียน
  * แก้ตารางเรียนแล้วมีผลกับคาบที่ยังไม่เริ่มเท่านั้น (D2)
  */
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import BaseButton from '@/shared/components/BaseButton.vue'
 import BaseCard from '@/shared/components/BaseCard.vue'
@@ -14,6 +14,7 @@ import LoadingSkeleton from '@/shared/components/LoadingSkeleton.vue'
 import TextField from '@/shared/components/TextField.vue'
 import { useAsyncState } from '@/shared/composables/useAsyncState'
 import { useToast } from '@/shared/composables/useToast'
+import { formatThaiDate, formatTime } from '@/shared/utils/datetime'
 import { useCourseStore } from '@/entities/course/store'
 import { useAuthStore } from '@/features/auth/store'
 import { getLecturers, getRoomOptions } from '../api'
@@ -67,7 +68,25 @@ async function onSubmit() {
     tone: 'success',
   })
   courseStore.load({ force: true }).catch(() => {})
+  // PUT: คาบที่เริ่มแล้ว / มีข้อมูลแล้วไม่ถูกแก้ตามตารางใหม่ → แจ้งให้ชัดก่อนกลับหน้ารายการ
+  const notChanged = saved.startedSessionsNotChanged ?? []
+  if (notChanged.length) {
+    notChangedSessions.value = notChanged
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+    return
+  }
   router.push({ name: 'courses-manage' })
+}
+
+/** @type {import('vue').Ref<Array<{ sessionId: string, sessionDate: string, sectionCode: string, sessionStatus: string, startTime: string, endTime: string }>>} */
+const notChangedSessions = ref([])
+const NOT_CHANGED_REASON = {
+  in_progress: 'กำลังเรียนอยู่',
+  completed: 'จบไปแล้ว',
+}
+function notChangedText(s) {
+  const why = NOT_CHANGED_REASON[s.sessionStatus] ?? 'เริ่มไปแล้ว'
+  return `คาบวันที่ ${formatThaiDate(s.sessionDate)} (กลุ่ม ${s.sectionCode} · ${formatTime(s.startTime)}–${formatTime(s.endTime)}) ${why} จึงไม่ถูกแก้`
 }
 </script>
 
@@ -81,6 +100,40 @@ async function onSubmit() {
       <p v-if="isEdit" class="mt-1 text-sm text-muted">
         แก้ตารางเรียนแล้วมีผลกับคาบที่ยังไม่เริ่มเท่านั้น ผลเช็คชื่อที่ผ่านมาไม่เปลี่ยน
       </p>
+    </div>
+
+    <div
+      v-if="notChangedSessions.length"
+      role="status"
+      class="flex flex-col gap-3 rounded-card border border-warning bg-warning-bg px-4 py-4 text-sm text-warning"
+    >
+      <p class="font-semibold">บันทึกการแก้ไขแล้ว แต่มีคาบที่ไม่ได้เปลี่ยนตามตารางใหม่</p>
+      <ul class="flex list-disc flex-col gap-1 pl-5">
+        <li v-for="s in notChangedSessions" :key="s.sessionId">
+          {{ notChangedText(s) }} —
+          <RouterLink
+            :to="{ name: 'session-report', params: { sessionId: s.sessionId } }"
+            class="font-semibold underline"
+            >ดูคาบนี้</RouterLink
+          >
+        </li>
+      </ul>
+      <p>
+        ปรับเวลาคาบที่กำลังเรียนได้ที่หน้าห้อง เมนู "จัดการคาบ" · คาบที่จบแล้วแก้ได้ที่รายงานคาบ
+        ปุ่ม "แก้เวลาคาบ" (ภายใน 7 วัน)
+      </p>
+      <div class="flex flex-wrap gap-2">
+        <RouterLink
+          :to="{ name: 'room-selection' }"
+          class="inline-flex min-h-11 items-center rounded-button border border-line bg-surface px-4 font-semibold text-ink hover:bg-page"
+          >ไปหน้าห้องเรียน</RouterLink
+        >
+        <RouterLink
+          :to="{ name: 'courses-manage' }"
+          class="inline-flex min-h-11 items-center rounded-button border border-line bg-surface px-4 font-semibold text-ink hover:bg-page"
+          >กลับหน้ารายวิชา</RouterLink
+        >
+      </div>
     </div>
 
     <ErrorState v-if="loadError" :message="loadError.message" @retry="load" />

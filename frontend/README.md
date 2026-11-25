@@ -58,13 +58,13 @@ docker run -p 8080:80 -e BACKEND_URL=http://10.0.0.5:8081 bangmod-frontend:prod 
 | หน้า | route | API |
 |---|---|---|
 | เลือกห้องเรียน | `/classrooms` | B1 (รีเฟรชทุก 30 วินาที) |
-| Room Live | `/classrooms/:roomId` | B4, B2 (ภาพสด WHEP จาก MediaMTX), B3 SSE (`camera` / `faces` / `check_in` / `session`), 5.8, B8, เริ่มคาบ `POST /rooms/{roomId}/sessions` (เลือกกลุ่มจาก 5.3), จบคาบ `POST /class-sessions/{id}/end` |
+| Room Live | `/classrooms/:roomId` | B4, B2 (ภาพสด WHEP จาก MediaMTX), B3 SSE (`camera` / `faces` / `check_in` / `session`), 5.8, B8, เริ่มคาบ `POST /rooms/{roomId}/sessions` (เลือกกลุ่มจาก 5.3), จบคาบ `POST /class-sessions/{id}/end`, จัดการคาบ (`reanchor` / `extend` / `check-in-window`) |
 | วิเคราะห์การเข้าเรียน | `/courses/analytics` | 5.4–5.6 (การ์ด, กราฟรายคาบ, ตารางคาบ, ตารางนักศึกษา + ความเสี่ยง) |
 | นักศึกษากลุ่มเสี่ยง | `/courses/at-risk` | 5.6 |
 | สถานะลงทะเบียนใบหน้า | `/courses/registration` | 5.6 (`faceRegistered`) |
 | จัดการรายวิชา | `/courses/manage` | 5.3, B6 (สวิตช์กล้อง), B5 DELETE |
 | เพิ่ม / แก้ไขรายวิชา | `/courses/new`, `/courses/:id/edit` | B5, `GET /rooms/options`, `GET /lecturers` |
-| รายงานรายคาบ | `/reports/sessions/:sessionId` | 5.7–5.8, B8 |
+| รายงานรายคาบ | `/reports/sessions/:sessionId` | 5.7–5.8, B8, แก้เวลาคาบ ≤ 7 วัน (`reanchor` / `check-in-window`) |
 | หน้าแรกนักศึกษา / วิชาของฉัน | `/student`, `/student/courses` | 5.3 + 5.9 ของทุกวิชา |
 | ประวัติการเข้าเรียน | `/student/attendance` | 5.9 |
 | ลงทะเบียนใบหน้า | `/student/face` | 5.10, `/me` |
@@ -75,6 +75,17 @@ docker run -p 8080:80 -e BACKEND_URL=http://10.0.0.5:8081 bangmod-frontend:prod 
 `app → features → entities → shared` — ฟีเจอร์ห้าม import ฟีเจอร์อื่น (ESLint ตรวจให้ที่ `shared/` และ `entities/`)
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-25 — เมนู "จัดการคาบ" + Preview & Confirm (ปรับเวลาคาบที่เริ่มแล้ว)
+- **ทำอะไร:**
+  - `entities/attendance/api.js` เพิ่ม `reanchorSession`, `extendSession`, `adjustCheckInWindow` (`POST /class-sessions/{id}/reanchor | extend | check-in-window`)
+  - component ใหม่ใน `entities/attendance/components/` (ใช้ทั้งหน้าห้องและรายงานคาบ): `SessionAdjustMenu.vue` (ปุ่ม + เมนู ปิดเมื่อกดนอกเมนู / Esc, ปุ่มสูง 48px กดบนมือถือได้), `SessionAdjustDialog.vue` (ฟอร์ม + เวลาปัจจุบันของคาบ + เหตุผลบังคับ · "ดูผลกระทบ" = `dryRun: true` → "ยืนยัน" = เรียกซ้ำ `dryRun: false` · ยืดเวลาจบบันทึกเลยไม่มี preview · error 400/403/409 แสดงข้อความ backend ใน dialog ผ่าน `normalizeError`), `SessionAdjustPreview.vue` (เวลา เดิม → ใหม่ + รายชื่อ 3 กลุ่ม: ผลดีขึ้น / ผลแย่ลง มี checkbox "ใช้ผลที่แย่ลงด้วย" = `applyDowngrades` ค่าเริ่มต้นไม่ติ๊ก / เปิดให้เช็คชื่อใหม่ · "ผลที่ลงด้วยมือจะไม่เปลี่ยน") · `adjust-summary.js` ข้อความ toast สรุปผล
+  - `RoomLivePage.vue`: มีคาบ → เมนู "จัดการคาบ" ข้างปุ่ม "จบคาบ" (เริ่มนับเวลาใหม่ / ยืดเวลาจบ / ปรับช่วงเช็คชื่อ) · บันทึกแล้ว toast + โหลดห้อง / รายชื่อใหม่ (SSE ส่ง event ให้ด้วย · SSE หลุดมี poll 15 วินาที)
+  - `SessionReportPage.vue`: คาบ `completed` ที่ `sessionDate` ไม่เกิน 7 วัน → ปุ่ม "แก้เวลาคาบ" (เริ่มนับเวลาใหม่ / ปรับช่วงเช็คชื่อ) · เกิน 7 วันแสดง "แก้รายคนด้วยการเช็คชื่อด้วยมือ"
+  - ฟอร์มรายวิชา: แก้บั๊ก `toPayload` ไม่ส่ง `lateUntil` (backend เขียน `late_until = NULL` ทุกครั้งที่แก้) → ส่งค่าที่โหลดมากลับไปถ้ายังอยู่ในช่วง [เปิด + ตรงเวลา, ปิดเช็คชื่อ] · หลังบันทึกถ้า `startedSessionsNotChanged` ไม่ว่าง แสดงกล่องแจ้งรายคาบ ("คาบวันที่ … (กลุ่ม …) เริ่มไปแล้ว จึงไม่ถูกแก้") + ลิงก์ไปรายงานคาบ / หน้าห้อง แทนการกลับหน้ารายการเงียบ ๆ
+- **ไฟล์ที่เกี่ยวข้อง:** `src/entities/attendance/api.js`, `src/entities/attendance/adjust-summary.js`, `src/entities/attendance/components/SessionAdjustMenu.vue`, `src/entities/attendance/components/SessionAdjustDialog.vue`, `src/entities/attendance/components/SessionAdjustPreview.vue`, `src/features/room-monitor/pages/RoomLivePage.vue`, `src/features/session-report/pages/SessionReportPage.vue`, `src/features/course-management/composables/useCourseForm.js`, `src/features/course-management/pages/CourseFormPage.vue`
+- **เหตุผล:** backend เพิ่มเส้นปรับเวลาคาบที่เริ่มแล้ว (อาจารย์เข้าสาย เลิกช้า ฝนตก) · เดิมแก้รายวิชาแล้วคาบวันนี้ไม่เปลี่ยนแต่หน้าจอไม่บอก
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** เวลาปัจจุบันของคาบ (before) และค่าเริ่มต้นของฟอร์มอ่านจาก `checkInOpens` / `onTimeUntil` / `lateUntil` / `checkInCloses` ที่ backend เพิ่มใน B4 `currentSession` และ 5.7 summary (commit `22f5ad1`) · ทดสอบใน browser กับ backend จริง + Postgres ชั่วคราว (seed 02 + 03) บัญชี admin: หน้าห้องบนจอมือถือ 375px — เมนูไม่ล้นจอ, reanchor 400 แสดงข้อความ backend ใน dialog, preview late → on_time แล้วยืนยัน หัวข้อ / ตัวนับอัปเดต, ปรับช่วงเช็คชื่อ: ค่าเริ่มต้นตรงกับคาบ + downgrade ไม่ติ๊ก = คงผลเดิม (toast "แย่ลง 1 คน (คงผลเดิม)"), ยืดเวลาจบ 20:12 → 20:30 · รายงานคาบเมื่อวานมีปุ่ม + preview, คาบ 8 วันก่อนแสดงข้อความเช็คชื่อด้วยมือ · แก้เวลาเลิกของ INT201 → กล่องแจ้งคาบวันนี้ที่ไม่ถูกแก้ และ `late_until` คงเดิม · ข้อสังเกต: หลังปรับเวลา SSE `check_in` ของแถวที่ถูกคิดใหม่ทำให้มี toast "… เข้าเรียนแล้ว" ซ้ำกับ toast สรุป · ไม่มี MSW mock (หน้าห้อง / รายงานคาบใช้ backend จริง)
 
 ### 2026-11-25 — ปรับ README ให้ตรงกับโค้ดปัจจุบัน
 - **ทำอะไร:** ตารางหน้าจอ → API ของ Room Live เพิ่มเส้นเริ่ม / จบคาบ · แก้ "ไม่ต้องตั้ง CORS" เป็นคำอธิบาย `CORS_ORIGINS` (เปิดผ่าน bscit ต้องตั้ง) · เอาลิงก์ `claude/frontend-structure.md` (ไม่มีใน repo) ออก ชี้ไปหัวข้อ "ชั้นของโค้ด" แทน · `tests/e2e/README.md` เอาการอ้างถึงไฟล์นั้นออก

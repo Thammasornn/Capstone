@@ -6,6 +6,8 @@
  *  - SSE ยังไม่ต่อ / หลุด (เช่น proxy ข้างหน้า buffer) → โหลดรายชื่อใหม่ทุก 15 วินาทีแทน ข้อมูลยังเดิน
  *  - เช็คชื่อด้วยมือ (B8) ผ่าน ManualAttendanceDialog
  *  - ไม่มีคาบ → "เริ่มคาบตอนนี้" (เลือกกลุ่มเรียน) · มีคาบ → "จบคาบ" (คนที่ยังไม่มีผล = ขาด)
+ *  - มีคาบ → เมนู "จัดการคาบ" (เริ่มนับเวลาใหม่ / ยืดเวลาจบ / ปรับช่วงเช็คชื่อ + Preview & Confirm)
+ *    route นี้เข้าได้เฉพาะ staff · currentSession ของ B4 คือคาบที่กำลังเรียน
  */
 import { computed, ref, watch } from 'vue'
 import BaseButton from '@/shared/components/BaseButton.vue'
@@ -19,7 +21,9 @@ import { useAsyncState } from '@/shared/composables/useAsyncState'
 import { usePolling } from '@/shared/composables/usePolling'
 import { useToast } from '@/shared/composables/useToast'
 import { formatTime } from '@/shared/utils/datetime'
+import { describeAdjustResult } from '@/entities/attendance/adjust-summary'
 import ManualAttendanceDialog from '@/entities/attendance/components/ManualAttendanceDialog.vue'
+import SessionAdjustMenu from '@/entities/attendance/components/SessionAdjustMenu.vue'
 import { endSessionNow, getLiveRoster, getRoom, getRooms } from '../api'
 import { useRoomEvents } from '../composables/useRoomEvents'
 import CameraStatusBadge from '../components/CameraStatusBadge.vue'
@@ -149,6 +153,19 @@ async function endSession() {
   }
 }
 
+// ---------- จัดการคาบ (ปรับเวลา) ----------
+const sessionLabel = computed(() =>
+  session.value
+    ? `${session.value.courseCode}-${session.value.sectionCode} ${session.value.courseName}`
+    : '',
+)
+async function onAdjusted({ result, mode }) {
+  toast.show(describeAdjustResult(result, mode), { tone: 'success' })
+  // SSE ส่ง session / check_in ให้อยู่แล้ว · โหลดเองด้วยเผื่อ SSE หลุด (มี poll 15 วินาทีสำรอง)
+  await loadRoom()
+  await loadRoster({ silent: true })
+}
+
 const liveLabel = computed(
   () =>
     ({
@@ -183,6 +200,13 @@ const liveLabel = computed(
           <p v-else class="mt-1 text-sm text-muted">ยังไม่มีคาบเรียนในห้องนี้ตอนนี้</p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
+          <SessionAdjustMenu
+            v-if="session"
+            :session-id="session.sessionId"
+            :times="session"
+            :label="sessionLabel"
+            @applied="onAdjusted"
+          />
           <BaseButton v-if="session" variant="secondary" @click="endOpen = true">จบคาบ</BaseButton>
           <BaseButton v-else @click="startOpen = true">เริ่มคาบตอนนี้</BaseButton>
           <RoomSwitcher v-if="rooms.data.value" :rooms="rooms.data.value" :room-id="roomId" />

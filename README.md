@@ -85,6 +85,12 @@ Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/uat/` แยก 
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-25 — frontend: เมนู "จัดการคาบ" + Preview & Confirm
+- **ทำอะไร:** หน้าห้องมีเมนู "จัดการคาบ" (เริ่มนับเวลาใหม่ / ยืดเวลาจบ / ปรับช่วงเช็คชื่อ) · รายงานคาบที่จบไม่เกิน 7 วันมีปุ่ม "แก้เวลาคาบ" · ดูผลกระทบก่อนยืนยัน (`dryRun`) แยกผลดีขึ้น / แย่ลง (เลือกได้) / เปิดให้เช็คชื่อใหม่ · ฟอร์มรายวิชาส่ง `lateUntil` เดิมกลับไป (เดิมถูกล้างเป็น NULL ทุกครั้งที่แก้) และแจ้งคาบที่ไม่ถูกแก้ตามตารางใหม่ (`startedSessionsNotChanged`)
+- **ไฟล์ที่เกี่ยวข้อง:** `frontend/src/entities/attendance/**`, `frontend/src/features/room-monitor/pages/RoomLivePage.vue`, `frontend/src/features/session-report/pages/SessionReportPage.vue`, `frontend/src/features/course-management/**`, `frontend/README.md`
+- **เหตุผล:** ใช้เส้นปรับเวลาคาบที่ backend เพิ่ม (อาจารย์เข้าสาย เลิกช้า ฝนตก)
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** รายละเอียดและผลทดสอบใน `frontend/README.md`
+
 ### 2026-11-25 — backend: ปรับเวลาคาบที่เริ่มแล้ว
 - **ทำอะไร:** เพิ่ม `POST /api/class-sessions/{id}/reanchor` · `/extend` · `/check-in-window` (บังคับเหตุผล, `dryRun` ดูผลก่อน, คิดผลเช็คชื่อใหม่แบบไม่ลงโทษย้อนหลัง) · แก้บั๊กแก้รายวิชาแล้วคาบวันนี้หายเงียบ · `PUT /api/courses/{id}` บอกคาบที่ไม่ได้เปลี่ยนตาม (`startedSessionsNotChanged`)
 - **ไฟล์ที่เกี่ยวข้อง:** `backend/src/main/java/com/faculty/attendance/attendance/SessionAdjust*.java`, `backend/src/main/java/com/faculty/attendance/course/*`, `backend/README.md`

@@ -62,6 +62,19 @@ export function validateCourse(form, { requireLecturer = false } = {}) {
   return errors
 }
 
+/**
+ * ส่ง lateUntil ที่โหลดมากลับไป (ฟอร์มไม่มีช่องนี้ · ไม่ส่ง = backend ตั้ง late_until = NULL ทุกครั้งที่แก้)
+ * ส่งเฉพาะเมื่อยังอยู่ในช่วง [เปิด + ตรงเวลา, ปิดเช็คชื่อ] ของค่าที่แก้ใหม่ —
+ * ถ้าผู้ใช้ย่อช่วงเช็คชื่อจนเวลาเดิมใช้ไม่ได้ ไม่ส่ง = สายได้จนปิดเช็คชื่อ
+ */
+function keepLateUntil(s) {
+  const late = timeToMinutes(s.lateUntil)
+  const opens = timeToMinutes(s.checkInOpens)
+  const closes = timeToMinutes(s.checkInCloses)
+  if (late === null || opens === null || closes === null) return false
+  return late >= opens + Number(s.onTimeMinutes) && late <= closes
+}
+
 /** แปลงฟอร์ม → body ของ POST / PUT /courses */
 export function toPayload(form) {
   return {
@@ -78,6 +91,7 @@ export function toPayload(form) {
       checkInOpens: s.checkInOpens,
       checkInCloses: s.checkInCloses,
       onTimeMinutes: Number(s.onTimeMinutes),
+      ...(keepLateUntil(s) ? { lateUntil: s.lateUntil } : {}),
       cameraAttendanceEnabled: s.cameraAttendanceEnabled,
     })),
   }
