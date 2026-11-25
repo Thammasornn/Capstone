@@ -16,6 +16,15 @@ BEGIN
   SELECT count(*) INTO n FROM information_schema.views WHERE table_schema = 'public';
   IF n <> 4 THEN RAISE EXCEPTION 'expected 4 views, found %', n; END IF;
 
+  -- per-session management columns on class_sessions (01 or 06)
+  SELECT count(*) INTO n FROM information_schema.columns
+   WHERE table_schema = 'public' AND table_name = 'class_sessions'
+     AND column_name IN ('is_overridden', 'original_date', 'makeup_for_session_id', 'is_extra', 'cancel_reason');
+  IF n <> 5 THEN RAISE EXCEPTION 'class_sessions: expected 5 session-management columns, found %', n; END IF;
+  IF EXISTS (SELECT 1 FROM class_sessions WHERE is_extra AND NOT is_overridden) THEN
+    RAISE EXCEPTION 'class_sessions: an extra session must be overridden';
+  END IF;
+
   -- mock data volumes: 1 admin + 1 lecturer + 3 team students · 1 course / section · camera only in 4303
   IF (SELECT count(*) FROM users WHERE role = 'admin')    <> 1 THEN RAISE EXCEPTION 'admins';           END IF;
   IF (SELECT count(*) FROM users WHERE role = 'lecturer') <> 1 THEN RAISE EXCEPTION 'lecturers';        END IF;

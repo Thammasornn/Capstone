@@ -5,6 +5,7 @@
 -- Source: "Database Design (Idea) — Bangmod Smart Attendance R1" (revised 2026-11-21)
 --   Release 1 : 17 tables   ·   Release 2–3 : 3 tables (created empty-ready)
 --   + attendance import (2026-11-25): 2 tables — DBs created before that: run 05_attendance_import.sql
+--   + class session management (2026-11-25): columns on class_sessions — older DBs: run 06_class_session_management.sql
 -- Conventions: UUID PKs · snake_case · enums = VARCHAR + CHECK (JPA @Enumerated(STRING))
 -- =====================================================================
 
@@ -192,14 +193,24 @@ CREATE TABLE class_sessions (
   late_until       time        NOT NULL,
   session_status   varchar(15) NOT NULL DEFAULT 'scheduled'
                    CHECK (session_status IN ('scheduled', 'in_progress', 'completed', 'cancelled')),  -- Q8
+  -- per-session management: sections = template, class_sessions = the real classes
+  is_overridden          boolean     NOT NULL DEFAULT false,   -- edited per session → regenerateSessions leaves it alone
+  original_date          date,                                 -- date in the template, set the first time it is moved
+  makeup_for_session_id  uuid        REFERENCES class_sessions (session_id),   -- make-up class for that session
+  is_extra               boolean     NOT NULL DEFAULT false,   -- added by hand (make-up / extra), not from the template
+  cancel_reason          text,                                 -- NULL allowed (rows cancelled by deleting a course)
   created_at       timestamptz NOT NULL DEFAULT now(),
   updated_at       timestamptz NOT NULL DEFAULT now(),
   UNIQUE (section_id, session_date),
   UNIQUE (section_id, session_no),
   CHECK (end_time > start_time),
-  CHECK (check_in_opens <= on_time_until AND on_time_until <= late_until AND late_until <= check_in_closes)
+  CHECK (check_in_opens <= on_time_until AND on_time_until <= late_until AND late_until <= check_in_closes),
+  CONSTRAINT class_sessions_makeup_not_self_check CHECK (makeup_for_session_id <> session_id),
+  CONSTRAINT class_sessions_extra_overridden_check CHECK (NOT is_extra OR is_overridden)
 );
 CREATE INDEX idx_class_sessions_room_date ON class_sessions (room_id, session_date);   -- B1, B4
+CREATE INDEX idx_class_sessions_original_date ON class_sessions (section_id, original_date)
+  WHERE original_date IS NOT NULL;                                                      -- regenerateSessions
 
 -- =====================================================================
 -- Group 4 — Attendance

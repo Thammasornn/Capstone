@@ -9,7 +9,7 @@ PostgreSQL ของ Release 1 มี **17 ตาราง** ใน 6 กลุ�
 **หลักการออกแบบ**
 
 - ตารางเรียน ห้อง ช่วงเช็คชื่อ และสวิตช์กล้องผูกที่ `sections` ไม่ใช่ `courses` เพราะ 1 วิชามีหลายกลุ่มที่เรียนต่างห้องต่างเวลา (D1)
-- `class_sessions` เก็บสำเนาเวลาและกฎ ณ ตอนสร้างคาบ แก้ตารางเรียนแล้วมีผลเฉพาะคาบที่ยังไม่เริ่ม ผลเช็คชื่อย้อนหลังไม่เปลี่ยน (D2)
+- `class_sessions` เก็บสำเนาเวลาและกฎ ณ ตอนสร้างคาบ แก้ตารางเรียนแล้วมีผลเฉพาะคาบที่ยังไม่เริ่ม ผลเช็คชื่อย้อนหลังไม่เปลี่ยน (D2) · คาบที่แก้รายคาบแล้ว (`is_overridden`) แก้ตารางเรียนทีหลังก็ไม่เปลี่ยน
 - **ไม่เก็บรูปใบหน้า** เก็บเฉพาะ embedding (เข้ารหัส) และลบจริงเมื่อถอนความยินยอม — ตรงตามข้อความยินยอม v1
 - หลักฐานความยินยอมเป็นแบบเพิ่มแถวอย่างเดียว (ให้ / ถอน / ให้ใหม่) ไม่เขียนทับ (D5)
 - กลุ่มเสี่ยงไม่เก็บในตาราง คำนวณจากจำนวนครั้งที่ขาด (0–1 Low, 2 Medium, 3+ High)
@@ -34,6 +34,7 @@ erDiagram
     student_profiles ||--o{ enrollments : "enrolls"
     class_sessions ||--o{ attendance_records : "records"
     student_profiles ||--o{ attendance_records : "attends"
+    class_sessions |o--o{ class_sessions : "make-up for"
     class_sessions ||--o{ attendance_imports : "imported into"
     users ||--o{ attendance_imports : "imports"
     attendance_imports ||--|{ attendance_import_rows : "reads"
@@ -132,6 +133,11 @@ erDiagram
         time on_time_until
         time late_until
         varchar session_status
+        boolean is_overridden "edited per session"
+        date original_date "date in the template"
+        uuid makeup_for_session_id FK
+        boolean is_extra "make-up / extra"
+        text cancel_reason
     }
     attendance_records {
         uuid attendance_id PK
@@ -247,7 +253,7 @@ erDiagram
 | | `section_class_days` | วันเรียนต่อสัปดาห์ (หลายวันได้) |
 | | `section_lecturers` | ผู้สอน (ใช้ตรวจสิทธิ์ "เห็นเฉพาะกลุ่มที่สอน") |
 | | `enrollments` | นักศึกษาในกลุ่ม + วันถอน |
-| | `class_sessions` | คาบแต่ละครั้ง + เลขคาบ + สำเนาเวลา/กฎ + สถานะ |
+| | `class_sessions` | คาบแต่ละครั้ง + เลขคาบ + สำเนาเวลา/กฎ + สถานะ + การแก้รายคาบ (เลื่อน / ยกเลิก + เหตุผล / คาบชดเชยหรือคาบพิเศษ) |
 | 4 การเข้าเรียน | `attendance_records` | ผลเช็คชื่อ 1 แถวต่อคนต่อคาบ แยกที่มา camera / manual / system / import |
 | | `attendance_imports` | การนำเข้าผลเช็คชื่อจากไฟล์ 1 ครั้ง (คาบเดียว · คลาสออนไซต์): วิธี / ชื่อไฟล์ + SHA-256 / คอลัมน์ที่เลือก / เหตุผล / ผู้นำเข้า / จำนวนแต่ละผล · **ไม่เก็บตัวไฟล์** |
 | | `attendance_import_rows` | ทุกแถวที่อ่านจากไฟล์: ค่าดิบ, นักศึกษาที่จับคู่ได้, ผลที่ตั้งใจ, ทำอะไร (insert / replace / skip / conflict / unmatched), เขียนจริงไหม (`applied`) |
@@ -291,6 +297,16 @@ Attendance Rules ของ R2 ไม่ต้องมีตารางให�
 2. ถอน (B7): INSERT `consent_records` (withdrawn) → DELETE `face_embeddings` → INSERT `data_deletion_jobs` ที่ `completed_at = now()` → (หลัง commit) แจ้ง AI Service `DELETE /students/{id}/embeddings` ผลอยู่ใน `aiNotified`
 3. พ้นสภาพ / สิ้นสุดระบบ: INSERT `data_deletion_jobs` ที่ `due_at = +30 วัน` → job รายวันลบ
 4. ประวัติเช็คชื่อก่อนถอนไม่ลบ (ไม่ใช่ข้อมูลใบหน้า)
+
+**แม่แบบ (`sections`) vs คาบจริง (`class_sessions`)** — ฟีเจอร์ "คาบเรียน" (คลาสออนไซต์)
+
+- `sections` = แม่แบบตารางเรียน (วัน / เวลา / ห้อง / ช่วงเช็คชื่อ) · `regenerateSessions` สร้างคาบจริงจากแม่แบบตั้งแต่ตอนนี้ถึงสิ้นภาค เมื่อบันทึกรายวิชา
+- แก้คาบรายคาบ → `is_overridden = true` แล้ว regenerate **ไม่ลบและไม่แก้คาบนั้น**:
+  - เลื่อนวัน / เวลา / ห้อง: `original_date` = วันที่ตามแม่แบบ (ใส่ครั้งแรกที่เปลี่ยนวัน เลื่อนซ้ำไม่ทับ) → regenerate ไม่สร้างคาบใหม่ในวันเดิม
+  - ยกเลิก: `session_status = cancelled` + `cancel_reason` · ไม่ลบผลเช็คชื่อ · คืนคาบได้ (→ `scheduled`) ถ้ายังเป็นอนาคต · คาบที่ยกเลิกจากการลบรายวิชา `cancel_reason` เป็น NULL ได้
+  - คาบเพิ่ม: `is_extra = true` (บังคับ `is_overridden` ด้วย CHECK) · `makeup_for_session_id` = คาบที่ชดเชย (NULL = คาบพิเศษ) · คาบที่มีคาบชดเชยอ้างถึง regenerate ก็ไม่ลบ
+- regenerate ยังไม่สร้างคาบในวันที่มีคาบอยู่แล้ว (UNIQUE `(section_id, session_date)` นับทุกสถานะรวม cancelled) และเรียง `session_no` ใหม่ตามวันที่ทั้งกลุ่ม (รวมคาบเพิ่ม / คาบที่ยกเลิก)
+- สถิติ / view / job ไม่นับคาบ `cancelled` อยู่แล้ว (`STARTED` ใน `DashboardRepository`, `v_room_status`, `v_student_section_attendance` นับเฉพาะ completed, `advanceSessionStatuses`, `insertSystemAbsents`)
 
 **ลบวิชา** — soft delete (`deleted_at`) เพราะผลเช็คชื่ออ้างถึงคาบของวิชานั้น
 

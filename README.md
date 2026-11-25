@@ -85,6 +85,12 @@ Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/uat/` แยก 
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-25 — คาบเรียน (จัดการรายคาบ): DB + data layer (D1)
+- **ทำอะไร:** `class_sessions` มีคอลัมน์สำหรับแก้รายคาบ (`is_overridden`, `original_date`, `makeup_for_session_id`, `is_extra`, `cancel_reason`) · สคริปต์อัปเดต DB เดิม `backend/db/06_class_session_management.sql` · `regenerateSessions` ไม่ลบ / สร้างซ้ำคาบที่แก้รายคาบแล้ว · `ClassSessionRepository` ใหม่สำหรับ D2 · เอกสาร DB อัปเดตแล้ว
+- **ไฟล์ที่เกี่ยวข้อง:** `backend/db/`, `backend/src/main/java/.../course/CourseRepository.java`, `backend/src/main/java/.../attendance/ClassSessionRepository.java`, `docs/database/database-design.md`
+- **เหตุผล:** ส่วนแรก (D1) ของฟีเจอร์ "คาบเรียน" (เลื่อน / ยกเลิก / คาบชดเชย) — ต่อด้วย D2 (BE) และ D3 (FE)
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ⚠️ **commit นี้แก้ `backend/db/` → CD บน uat จะหยุด** จนกว่าจะรัน `05` (ถ้ายังไม่ได้รัน) และ `06` บน uat แล้ว `ALLOW_DB_CHANGE=1 ~/bangmod-cd/bin/deploy.sh uat` (คำสั่งใน `backend/db/README.md`) · prod: รัน `05` + `06` ก่อน deploy prod ครั้งถัดไป · ยังไม่ push (รอ push พร้อม D2)
+
 ### 2026-11-25 — frontend: นำเข้าผลเช็คชื่อจากไฟล์ (C3)
 - **ทำอะไร:** ปุ่ม "นำเข้าผลเช็คชื่อ" ในหน้าห้องและรายงานคาบ → wizard 4 ขั้น (เลือกแบบ template / ไฟล์อื่น → เลือกคอลัมน์เอง ไม่เดาให้ → ดูผลก่อน `dryRun` พร้อมตาราง error รายแถว / ขัดแย้ง / จับคู่ไม่ได้ → ยืนยัน) · ประวัติการนำเข้า + รายละเอียดรายแถวในรายงานคาบ · ที่มา "นำเข้า (Teams)" ฯลฯ ในรายชื่อ
 - **ไฟล์ที่เกี่ยวข้อง:** `frontend/src/entities/attendance/**`, `frontend/src/features/session-report/**`, `frontend/src/features/room-monitor/**`, `frontend/src/shared/api/*`, `frontend/src/shared/components/{BaseDialog,BaseSelect}.vue`, `frontend/README.md`

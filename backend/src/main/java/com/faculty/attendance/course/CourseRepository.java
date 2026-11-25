@@ -162,7 +162,9 @@ public class CourseRepository {
      * D2: สร้างคาบใหม่ตามตารางเรียนปัจจุบัน ตั้งแต่ตอนนี้ถึงสิ้นภาค
      *  - ลบคาบที่ยังไม่เริ่ม (scheduled) และยังไม่มีข้อมูลอ้างอิง แล้วสร้างใหม่จากค่าใน sections
      *  - คาบที่เริ่มแล้ว / มีข้อมูลแล้ว ไม่แตะ (ผลเช็คชื่อย้อนหลังไม่เปลี่ยน)
-     *  - เรียง session_no ใหม่ตามวันที่
+     *  - คาบที่แก้รายคาบแล้ว (is_overridden: เลื่อน / ยกเลิก / คาบเพิ่ม) และคาบที่มีคาบชดเชยอ้างถึง ไม่แตะ
+     *  - ไม่สร้างคาบในวันที่มีคาบอยู่แล้ว หรือวันที่คาบเดิมถูกเลื่อนออกไป (original_date)
+     *  - เรียง session_no ใหม่ตามวันที่ (renumberSessions)
      * @return จำนวนคาบที่สร้าง
      */
     public int regenerateSessions(UUID sectionId) {
@@ -178,6 +180,8 @@ public class CourseRepository {
                   AND NOT EXISTS (SELECT 1 FROM attendance_records a WHERE a.session_id = cs.session_id)
                   AND NOT EXISTS (SELECT 1 FROM occupancy_snapshots o WHERE o.session_id = cs.session_id)
                   AND NOT EXISTS (SELECT 1 FROM notifications n WHERE n.session_id = cs.session_id)
+                  AND NOT cs.is_overridden                     -- แก้รายคาบแล้ว (เลื่อน / ยกเลิก / คาบเพิ่ม) ไม่แตะ
+                  AND NOT EXISTS (SELECT 1 FROM class_sessions m WHERE m.makeup_for_session_id = cs.session_id)
                 """.formatted(NOW_TH), sectionId);
         // หมายเหตุ: คาบที่ถูกเก็บไว้ (เวลาใหม่ย้อนไปก่อนตอนนี้) อาจเริ่มตามเวลาเดิมทีหลัง — แจ้งผู้ใช้ผ่าน
         // sessionsNotMatchingSection() → startedSessionsNotChanged
@@ -196,10 +200,20 @@ public class CourseRepository {
                   AND extract(isodow FROM d)::int IN (SELECT day_of_week FROM section_class_days
                                                       WHERE section_id = s.section_id)
                   AND (d::date + s.start_time) > %1$s
+                  -- วันนั้นมีคาบอยู่แล้ว หรือคาบของวันนั้นถูกเลื่อนไปวันอื่น (original_date) → ไม่สร้างซ้ำ
                   AND NOT EXISTS (SELECT 1 FROM class_sessions x
-                                  WHERE x.section_id = s.section_id AND x.session_date = d::date)
+                                  WHERE x.section_id = s.section_id
+                                    AND (x.session_date = d::date OR x.original_date = d::date))
                 """.formatted(NOW_TH), sectionId);
-        // เรียงเลขคาบใหม่ 2 รอบ (ช่วงตัวเลขไม่ทับกัน จึงไม่ชน UNIQUE (section_id, session_no) ระหว่างทาง)
+        renumberSessions(sectionId);
+        return created;
+    }
+
+    /**
+     * เรียง session_no ใหม่ตามวันที่ (รวมคาบเพิ่ม / คาบที่ยกเลิก) · 2 รอบ ช่วงตัวเลขไม่ทับกัน
+     * จึงไม่ชน UNIQUE (section_id, session_no) ระหว่างทาง · ใช้ร่วมกับ ClassSessionRepository.insertExtra
+     */
+    public void renumberSessions(UUID sectionId) {
         jdbc.update("""
                 UPDATE class_sessions cs SET session_no = 10000 + o.rn
                 FROM (SELECT session_id,
@@ -208,7 +222,6 @@ public class CourseRepository {
                 WHERE cs.session_id = o.session_id
                 """, sectionId);
         jdbc.update("UPDATE class_sessions SET session_no = session_no - 10000 WHERE section_id = ?", sectionId);
-        return created;
     }
 
     /** ค่าของ section ที่มีผลกับคาบ (ห้อง เวลา ช่วงเช็คชื่อ วันเรียน) ใช้เทียบก่อน / หลังแก้ */

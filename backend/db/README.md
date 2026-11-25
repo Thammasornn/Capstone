@@ -11,6 +11,7 @@
 | `03_demo_live_session.sql` | สร้างคาบ INT201-001 ที่ "กำลังเรียนอยู่ตอนนี้" ในห้อง 4303 (เริ่ม 5 นาทีที่แล้ว · ยังไม่มีใครเช็คชื่อ) ไว้ทดสอบกล้อง | local / UAT (ไม่บังคับ) |
 | `04_add_team_students.sql` | (สำหรับ DB ที่ seed ด้วย `02` รุ่นเก่า) เพิ่มบัญชีสมาชิกทีม 3 คนโดยไม่ล้างข้อมูล · กับ `02` ชุดใหม่ไม่ต้องใช้ (มีทีมอยู่แล้ว) | local / UAT (ไม่บังคับ · ห้าม Production) |
 | `05_attendance_import.sql` | อัปเดต DB ที่สร้างไว้ก่อน 2026-11-25: ตาราง `attendance_imports` / `attendance_import_rows` + `attendance_records.import_id` + `source = import` · ไม่ลบ / แก้ข้อมูล · รันซ้ำได้ (DB ที่สร้างด้วย `01` ใหม่ไม่ต้องรัน) | uat / prod (ที่มีข้อมูลอยู่แล้ว) |
+| `06_class_session_management.sql` | อัปเดต DB เดิม (หลัง `05`): คอลัมน์ "คาบเรียน" ใน `class_sessions` (`is_overridden`, `original_date`, `makeup_for_session_id`, `is_extra`, `cancel_reason`) + CHECK + index · ไม่ลบ / แก้ข้อมูล · รันซ้ำได้ (DB ที่สร้างด้วย `01` ใหม่ไม่ต้องรัน) | uat / prod (ที่มีข้อมูลอยู่แล้ว) |
 | `test/assertions.sql` | ตรวจ schema + ข้อมูล mock (CI ใช้) | local / CI |
 
 > ⚠️ `02_seed_mock.sql` เริ่มด้วย `TRUNCATE` ทุกตาราง — **ห้ามรันบน Production**
@@ -61,13 +62,15 @@ ALLOW_DB_CHANGE=1 ~/bangmod-cd/bin/deploy.sh uat   # CD หยุดเพรา
 
 `kubectl` บน VM ใช้ได้โดยไม่ต้อง sudo (`KUBECONFIG` ตาม `devops/README.md`) · `04` ตรวจก่อนว่ามีกลุ่มเรียน mock `INT201-001` — ไม่มี (เช่น Production) จะ error และไม่เพิ่มอะไร
 
-**อัปเดต uat สำหรับ `05_attendance_import.sql`** (นำเข้าผลเช็คชื่อจากไฟล์ · schema อย่างเดียว ไม่ลบข้อมูล · รันซ้ำได้) · รันบน VM ไม่ต้อง sudo:
+**อัปเดต uat สำหรับ `05_attendance_import.sql` + `06_class_session_management.sql`** (นำเข้าผลเช็คชื่อ / คาบเรียน · schema อย่างเดียว ไม่ลบข้อมูล · รันซ้ำได้ทั้งคู่ — ถ้ารัน `05` ไปแล้วก็รันซ้ำได้) · รันบน VM ไม่ต้อง sudo · ลำดับ **05 → 06 → `ALLOW_DB_CHANGE` ครั้งเดียว**:
 
 ```bash
 git -C ~/bangmod-cd/repo fetch -q origin   # clone ของ CD บน VM · ไม่แตะ working tree ของ CD
-rm -rf /tmp/db05 && mkdir -p /tmp/db05 && git -C ~/bangmod-cd/repo archive origin/Dev backend/db | tar -x -C /tmp/db05
-kubectl -n uat exec -i statefulset/postgres -- \
-  psql -U postgres -d bangmod_attendance -v ON_ERROR_STOP=1 < /tmp/db05/backend/db/05_attendance_import.sql
+rm -rf /tmp/dbup && mkdir -p /tmp/dbup && git -C ~/bangmod-cd/repo archive origin/Dev backend/db | tar -x -C /tmp/dbup
+for f in 05_attendance_import.sql 06_class_session_management.sql; do
+  kubectl -n uat exec -i statefulset/postgres -- \
+    psql -U postgres -d bangmod_attendance -v ON_ERROR_STOP=1 < /tmp/dbup/backend/db/$f || break
+done
 ALLOW_DB_CHANGE=1 ~/bangmod-cd/bin/deploy.sh uat   # CD หยุดเพราะ commit แก้ backend/db/
 ```
 
@@ -78,10 +81,12 @@ kubectl -n uat exec -i statefulset/postgres -- psql -U postgres -d bangmod_atten
 kubectl -n uat exec -i statefulset/postgres -- psql -U postgres -d bangmod_attendance -tAc \
   "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'"   # ต้องได้ 22
 kubectl -n uat exec -i statefulset/postgres -- psql -U postgres -d bangmod_attendance -tAc \
-  "SELECT conname, pg_get_constraintdef(oid) FROM pg_constraint WHERE conname IN ('attendance_records_source_check', 'attendance_records_import_check')"   # ต้องมี 2 แถว และ source มี 'import'
+  "SELECT conname, pg_get_constraintdef(oid) FROM pg_constraint WHERE conname IN ('attendance_records_source_check', 'attendance_records_import_check', 'class_sessions_makeup_not_self_check', 'class_sessions_extra_overridden_check')"   # ต้องมี 4 แถว และ source มี 'import'
+kubectl -n uat exec -i statefulset/postgres -- psql -U postgres -d bangmod_attendance -tAc \
+  "SELECT column_name FROM information_schema.columns WHERE table_name = 'class_sessions' AND column_name IN ('is_overridden', 'original_date', 'makeup_for_session_id', 'is_extra', 'cancel_reason')"   # ต้องได้ 5 แถว
 ```
 
-**prod: ยังไม่ต้องรันตอนนี้** — ต้องรัน `05` กับ prod (ผู้ใช้รันเอง) **ก่อน** deploy prod ครั้งถัดไปที่มี backend รุ่นนี้ ไม่งั้น `GET /class-sessions/{id}/attendance` จะ error (อ้าง `attendance_imports`) · `05` ไม่มีข้อมูล mock / ไม่ TRUNCATE ใช้กับ prod ได้
+**prod: ยังไม่ต้องรันตอนนี้** — ต้องรัน `05` แล้ว `06` กับ prod (ผู้ใช้รันเอง) **ก่อน** deploy prod ครั้งถัดไปที่มี backend รุ่นนี้ ไม่งั้น `GET /class-sessions/{id}/attendance` (อ้าง `attendance_imports`) และการบันทึกรายวิชา (`regenerateSessions` อ้าง `is_overridden` / `original_date`) จะ error · ทั้งสองไฟล์ไม่มีข้อมูล mock / ไม่ TRUNCATE ใช้กับ prod ได้
 
 ## บัญชี Mock (รหัสผ่านทุกบัญชี `Password@123`)
 
@@ -171,6 +176,12 @@ spring.jackson.time-zone=Asia/Bangkok
 - ถ้าจะใช้ Flyway: copy `01_schema.sql` เป็น `db/migration/V1__init_schema.sql` (ตัด `BEGIN;` / `COMMIT;` ออก) และวาง `02_seed_mock.sql` ไว้ใน location ที่เปิดเฉพาะ profile `local` / `uat`
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-25 — คาบเรียน (จัดการรายคาบ): schema (D1)
+- **ทำอะไร:** `class_sessions` เพิ่ม `is_overridden`, `original_date`, `makeup_for_session_id` (FK ตัวเอง + CHECK ไม่ชี้ตัวเอง), `is_extra` (CHECK `NOT is_extra OR is_overridden`), `cancel_reason` + index `(section_id, original_date) WHERE original_date IS NOT NULL` · เพิ่ม `06_class_session_management.sql` สำหรับ DB เดิม (รันซ้ำได้ ไม่ลบ / แก้ข้อมูล) · `assertions.sql` ตรวจคอลัมน์ใหม่ 5 ตัว และไม่มีคาบเพิ่มที่ไม่ได้ `is_overridden` (จำนวนตารางยัง 22) · README: ไฟล์ 06 + วิธีอัปเดต uat ลำดับ 05 → 06 → `ALLOW_DB_CHANGE` ครั้งเดียว
+- **ไฟล์ที่เกี่ยวข้อง:** `01_schema.sql`, `06_class_session_management.sql`, `test/assertions.sql`, `README.md`
+- **เหตุผล:** ฟีเจอร์ "คาบเรียน" (เลื่อน / ยกเลิก / คาบชดเชย) — ถ้าไม่มีคอลัมน์เหล่านี้ แก้รายวิชาทีหลังแล้ว `regenerateSessions` จะลบคาบที่แก้ไว้ และสร้างคาบซ้ำในวันเดิมของคาบที่ถูกเลื่อน
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ตรวจกับ PostgreSQL ชั่วคราว: DB จาก `01` / `02` / `03` ของ commit ก่อนหน้า → รัน `06` สองครั้งติดกันไม่ error · ข้อมูล `class_sessions` เดิมไม่เปลี่ยน (md5) · schema หลัง `06` ตรงกับ `01` ใหม่ (ต่างแค่ลำดับคอลัมน์) · CHECK ใหม่ทำงาน · `./dev.sh db --reset` + `./dev.sh db` ผ่าน · `./dev.sh test` ผ่าน · `./dev.sh smoke` 15/15 · **commit นี้แก้ `backend/db/` → CD บน uat จะหยุด** ต้องรัน `05` (ถ้ายังไม่ได้รัน) และ `06` บน uat แล้ว `ALLOW_DB_CHANGE=1 ~/bangmod-cd/bin/deploy.sh uat` · prod: รัน `05` + `06` ก่อน deploy prod ครั้งถัดไป
 
 ### 2026-11-25 — นำเข้าผลเช็คชื่อจากไฟล์: schema (C1)
 - **ทำอะไร:** ตารางใหม่ `attendance_imports` (1 แถวต่อการนำเข้า: mode / method / ชื่อไฟล์ + SHA-256 / mapping / เหตุผล / override / จำนวนแต่ละผล / ผู้นำเข้า · ไม่เก็บตัวไฟล์) และ `attendance_import_rows` (ทุกแถวในไฟล์ + action + `applied`) · `attendance_records.source` เพิ่ม `import` + คอลัมน์ `import_id` + CHECK `(source = 'import') = (import_id IS NOT NULL)` (ตั้งชื่อ constraint `attendance_records_source_check`, `attendance_records_import_check`) · เพิ่ม `05_attendance_import.sql` สำหรับ DB ที่มีข้อมูลอยู่แล้ว (รันซ้ำได้ ไม่ลบข้อมูล · หา CHECK เดิมของ source จาก `pg_constraint`) · `02` TRUNCATE ตารางใหม่ด้วย · `assertions.sql` 22 ตาราง · README: ไฟล์ 05 + วิธีอัปเดต uat

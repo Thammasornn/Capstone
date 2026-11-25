@@ -9,6 +9,11 @@ TODO: ย้ายเอกสารอื่นเข้ามา (API guide, P
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-25 — แบบฐานข้อมูล: คาบเรียน (จัดการรายคาบ)
+- **ทำอะไร:** `database/database-design.md` เพิ่มคอลัมน์ใหม่ของ `class_sessions` ใน ER (+ ความสัมพันธ์คาบชดเชย) และหัวข้อ "แม่แบบ (`sections`) vs คาบจริง (`class_sessions`)": regenerate ไม่แตะคาบที่ `is_overridden`, `original_date` กันสร้างซ้ำ, ยกเลิก / คืนคาบ, คาบเพิ่ม / ชดเชย, คาบที่ยกเลิกไม่นับในสถิติ
+- **ไฟล์ที่เกี่ยวข้อง:** `database/database-design.md`
+- **เหตุผล:** ให้ตรงกับ `backend/db/01_schema.sql` (D1)
+
 ### 2026-11-25 — แบบฐานข้อมูล: นำเข้าผลเช็คชื่อจากไฟล์
 - **ทำอะไร:** `database/database-design.md` เพิ่มตาราง `attendance_imports`, `attendance_import_rows` (ER diagram + ตารางกลุ่ม 4) · `attendance_records.import_id` + `source = import` · กติกา: ลำดับความสำคัญ manual > import > camera > system, แถว import ไม่มี `recorded_by` / `reason`, อาจารย์แก้ทับ → manual · หมายเหตุ PDPA (`raw_identifier` อาจเป็นอีเมลบุคคลภายนอก → staff เท่านั้น, นโยบายลบไว้ R2) · จำนวนตาราง 20 → 22
 - **ไฟล์ที่เกี่ยวข้อง:** `database/database-design.md`
