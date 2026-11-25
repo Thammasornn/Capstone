@@ -69,6 +69,31 @@ mvn spring-boot:run        # http://localhost:8081
 | `POST /rooms/{roomId}/sessions` `{sectionId}` — เริ่มคาบของกลุ่มเรียนนี้ในห้องนี้ "ตอนนี้" (เปิดเช็คชื่อทันที · ความยาว / ช่วงตรงเวลา / สายตามกลุ่มเรียน · 409 = ห้องมีคาบอื่นเวลาทับ / กลุ่มเรียนมีคาบที่กำลังเรียนหรือจบแล้ววันนี้ · audit `session.start_now` + event `session`) | ปุ่มเริ่มคาบ (Room Live) | admin, อาจารย์ผู้สอน |
 | `POST /class-sessions/{sessionId}/end` — จบคาบที่กำลังเรียน "ตอนนี้" (ช่วงเช็คชื่อที่ยังเปิดถูกตัด → คนที่ยังไม่มีผล = absent `system` · audit `session.end_now` + event `session`) | ปุ่มจบคาบ (Room Live) | admin, อาจารย์ผู้สอน |
 
+### ปรับเวลาคาบที่เริ่มแล้ว (คาบเดียว · ไม่แตะตารางเรียนของกลุ่มเรียน)
+
+สิทธิ์ admin / อาจารย์ผู้สอน (`requireSectionStaff`) · `reason` บังคับ (≤ 500 ตัวอักษร) · เวลาเป็น `"HH:mm"` · `dryRun: true` = ดูผลก่อน ไม่เขียน DB (Preview & Confirm)
+
+| เส้น | ใช้เมื่อ | body |
+|---|---|---|
+| `POST /class-sessions/{id}/reanchor` | อาจารย์เข้าสาย / เริ่มจริงช้ากว่าตาราง → เลื่อนเวลาเริ่ม + ช่วงเช็คชื่อทั้งชุดเท่ากัน (เวลาเลิกคงเดิม · ช่วงเช็คชื่อที่เกินเวลาเลิกถูกตัด) | `{actualStart, reason, dryRun, applyDowngrades}` |
+| `POST /class-sessions/{id}/extend` | เลิกช้า / ปรับเวลาจบ (≥ ตอนนี้ + 1 นาที, ≥ ปิดเช็คชื่อ · ห้องชนคาบอื่น = 409) | `{endTime, reason, dryRun}` |
+| `POST /class-sessions/{id}/check-in-window` | ขยาย / ปรับช่วงเช็คชื่อ (ฝนตก รถติด) · `check_in_opens` คงเดิม | `{onTimeUntil, lateUntil, checkInCloses, reason, dryRun, applyDowngrades}` |
+
+| สถานะคาบ | reanchor | extend | check-in-window |
+|---|---|---|---|
+| scheduled (ยังไม่ถึงเวลาเริ่ม) | 409 | 409 | 409 |
+| in_progress | ✅ (`actualStart` ≥ เริ่มเดิม − 60 นาที และ ≤ ตอนนี้) | ✅ | ✅ |
+| completed | ✅ ภายใน 7 วัน | 409 | ✅ ภายใน 7 วัน |
+| cancelled | 409 | 409 | 409 |
+
+- สถานะดูจากเวลาจริง (job อัปเดต `session_status` ช้าได้ ≤ 1 นาที): scheduled ที่ถึงเวลาเริ่มแล้ว = in_progress, in_progress ที่เลยเวลาเลิก = completed
+- ตรวจเวลาก่อนเขียน DB (400): start < end, start ≤ เปิด ≤ ตรงเวลา ≤ สาย ≤ ปิด ≤ end
+- คิดผลเช็คชื่อใหม่ (reanchor / check-in-window) แบบ "ไม่ลงโทษย้อนหลัง": `manual` ไม่เปลี่ยน · `camera` คิดใหม่จาก `check_in_time` (ดีขึ้น = upgrade ใช้เลย, แย่ลง = downgrade ใช้เมื่อ `applyDowngrades: true` เท่านั้น · หลัง `late_until` ใหม่ = คงเดิม) · `system` (absent) ถ้าคาบยังเรียนอยู่และปิดเช็คชื่อใหม่ยังไม่ถึง → ลบแถว (reopen) ให้กล้องเช็คชื่อได้อีก
+- ตอบ `{sessionId, dryRun, before, after, changes: [{studentId, studentCode, studentName, source, checkInTime, fromStatus, toStatus, kind: upgrade|downgrade|reopen, applied}], summary: {upgrades, downgrades, downgradesApplied, reopened, unchanged}}`
+- บันทึก (ไม่ใช่ dryRun): transaction เดียว ล็อก `class_sessions` + `attendance_records` (FOR UPDATE) · audit `session.reanchor` / `session.extend` / `session.check_in_window` (+ reason, summary) และ `attendance.recalculated` ต่อแถว · หลัง commit ส่ง event `session` + `check_in` ของแถวที่เปลี่ยน
+- **ข้อจำกัด:** คาบ completed — คนที่กล้องเห็นหลังปิดเช็คชื่อเดิมไม่ได้ถูกเก็บไว้ (`recordSighting` คืน `check_in_closed` โดยไม่บันทึก) จึงกู้ไม่ได้ ต้องใช้เช็คชื่อด้วยมือ (B8) หรือ import
+- `PUT /courses/{id}` ตอบ `startedSessionsNotChanged: [{sessionId, sessionDate, sectionCode, sessionStatus, startTime, endTime}]` = คาบตั้งแต่วันนี้ของกลุ่มที่แก้ตารางเรียน แต่ระบบไม่ได้แก้ตาม (เริ่มแล้ว / มีข้อมูลแล้ว / เวลาใหม่ย้อนไปก่อนตอนนี้) ให้ FE แจ้งผู้ใช้และปรับด้วยเส้นด้านบน · GET / POST = `[]`
+
 ### AI Service → backend (`X-Internal-Key`, ไม่เปิดออกนอก cluster)
 
 | เส้น | ใช้ทำอะไร |
@@ -87,6 +112,12 @@ mvn spring-boot:run        # http://localhost:8081
 > SSE และ event อยู่ในหน่วยความจำของ instance เดียว ถ้ารันหลาย replica ต้องเปลี่ยน `RoomEventHub` ไปใช้ pub/sub กลาง
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-25 — ปรับเวลาคาบที่เริ่มแล้ว (reanchor / extend / check-in-window)
+- **ทำอะไร:** เพิ่ม `SessionAdjustController` / `Service` / `Repository`: `POST /api/class-sessions/{id}/reanchor` (เริ่มจริงช้ากว่าตาราง เลื่อนช่วงเช็คชื่อตาม), `/extend` (ปรับเวลาจบ ตรวจห้องชน), `/check-in-window` (ปรับตรงเวลา / สาย / ปิดเช็คชื่อ) · บังคับ reason · `dryRun` · คิดผลเช็คชื่อใหม่แบบไม่ลงโทษย้อนหลัง (upgrade ใช้เลย, downgrade ต้อง `applyDowngrades`, absent ของระบบถูกเปิดใหม่ถ้าคาบยังเรียนอยู่) · audit ต่อคาบ + ต่อแถว · SSE `session` / `check_in` · แก้บั๊ก `CourseRepository.regenerateSessions`: คาบวันนี้ที่ยังไม่เริ่มแต่เวลาเริ่มใหม่ย้อนไปก่อนตอนนี้ถูกลบโดยไม่ถูกสร้างคืน (หายเงียบ) → ตอนนี้ลบเฉพาะเมื่อเวลาใหม่ยังอยู่ในอนาคต · `PUT /api/courses/{id}` เพิ่ม `startedSessionsNotChanged` (`CourseDetail` มี field นี้ทุกเส้น ค่าเป็น `[]` ใน GET / POST)
+- **ไฟล์ที่เกี่ยวข้อง:** `src/main/java/com/faculty/attendance/attendance/SessionAdjust*.java` (ใหม่), `course/CourseRepository.java`, `course/CourseService.java`, `course/CourseDtos.java`, `README.md`
+- **เหตุผล:** เดิมแก้เวลาคาบที่เริ่มแล้วไม่ได้ — `PUT /courses/{id}` แก้แค่ตารางเรียนของกลุ่ม คาบวันนี้ที่เริ่มแล้วคงเวลาเดิม แต่ API ตอบ 200 เงียบ ๆ
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ไม่แก้ schema · ทดสอบกับ backend จริง + Postgres ชั่วคราว (seed 02 + 03): นักศึกษา 403, ไม่มีเหตุผล / ลำดับเวลาผิด / รูปแบบผิด 400, scheduled 409, completed เกิน 7 วัน 409, extend คาบ completed 409, check-in-window dryRun ไม่เขียน DB, ของจริง: late→on_time + ลบ absent ของระบบ (reopen) + audit 3 แถว, downgrade ไม่ใช้จนกว่า `applyDowngrades: true`, reanchor คาบที่กำลังเรียน + คาบ completed เมื่อวาน (absent ของระบบคงเดิม), extend ชนคาบอื่นในห้อง 409, PUT รายวิชาที่เลื่อนเวลาเริ่มย้อนไปก่อนตอนนี้: คาบวันนี้คงอยู่ + อยู่ใน `startedSessionsNotChanged`, PUT ซ้ำไม่เปลี่ยน = `[]` · `./dev.sh test` และ `./dev.sh smoke` (15 ข้อ) ผ่าน · FE ยังไม่มีหน้าจอเรียกเส้นเหล่านี้ / ยังไม่แสดง `startedSessionsNotChanged`
 
 ### 2026-11-25 — ปรับ README ให้ตรงกับโค้ดปัจจุบัน
 - **ทำอะไร:** ย้าย `POST /rooms/{roomId}/sessions` และ `POST /class-sessions/{sessionId}/end` จากตาราง "AI Service → backend (`X-Internal-Key`)" ไปตาราง API หลัก (ผู้ใช้เรียกด้วย JWT · ตรวจสิทธิ์ `requireSectionStaff`)

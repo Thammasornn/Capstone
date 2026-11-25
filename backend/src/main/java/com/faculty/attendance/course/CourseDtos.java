@@ -29,7 +29,16 @@ public final class CourseDtos {
                                 LocalTime checkInOpens, LocalTime checkInCloses, int onTimeMinutes,
                                 LocalTime lateUntil, boolean cameraAttendanceEnabled) {}
 
-    public record CourseDetail(UUID courseId, String courseCode, String courseName, List<SectionDetail> sections) {}
+    /**
+     * startedSessionsNotChanged: เฉพาะ PUT — คาบตั้งแต่วันนี้ของกลุ่มที่แก้ตารางเรียน แต่ระบบไม่ได้แก้ตาม
+     * (เริ่มแล้ว / มีข้อมูลแล้ว / เวลาใหม่ย้อนไปก่อนตอนนี้) ให้ FE แจ้งผู้ใช้ · GET / POST = ว่าง
+     */
+    public record CourseDetail(UUID courseId, String courseCode, String courseName, List<SectionDetail> sections,
+                               List<SessionNotChanged> startedSessionsNotChanged) {}
+
+    /** คาบที่ไม่ได้เปลี่ยนตามตารางเรียนใหม่ · ปรับเวลาคาบเดียวได้ที่ /api/class-sessions/{id}/reanchor | extend | check-in-window */
+    public record SessionNotChanged(UUID sessionId, java.time.LocalDate sessionDate, String sectionCode,
+                                    String sessionStatus, LocalTime startTime, LocalTime endTime) {}
 
     /** B6 */
     public record CameraToggleRequest(Boolean enabled) {}

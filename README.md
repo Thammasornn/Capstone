@@ -85,6 +85,12 @@ Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/uat/` แยก 
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-25 — backend: ปรับเวลาคาบที่เริ่มแล้ว
+- **ทำอะไร:** เพิ่ม `POST /api/class-sessions/{id}/reanchor` · `/extend` · `/check-in-window` (บังคับเหตุผล, `dryRun` ดูผลก่อน, คิดผลเช็คชื่อใหม่แบบไม่ลงโทษย้อนหลัง) · แก้บั๊กแก้รายวิชาแล้วคาบวันนี้หายเงียบ · `PUT /api/courses/{id}` บอกคาบที่ไม่ได้เปลี่ยนตาม (`startedSessionsNotChanged`)
+- **ไฟล์ที่เกี่ยวข้อง:** `backend/src/main/java/com/faculty/attendance/attendance/SessionAdjust*.java`, `backend/src/main/java/com/faculty/attendance/course/*`, `backend/README.md`
+- **เหตุผล:** admin / อาจารย์แก้เวลาคาบที่เริ่มไปแล้วไม่ได้ (อาจารย์เข้าสาย เลิกช้า ฝนตก)
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ไม่แก้ DB (CD deploy uat ได้ปกติ) · FE ยังต้องทำหน้าจอเรียกเส้นเหล่านี้ · รายละเอียดใน `backend/README.md`
+
 ### 2026-11-25 — ปรับ README ทุกส่วนให้ตรงกับโค้ดปัจจุบัน
 - **ทำอะไร:** ตารางโครงสร้าง repo อัปเดตสถานะ frontend / ai-service / devops · บัญชีทดสอบบอกวิธีเริ่มคาบจากหน้าห้อง · วิธีรัน test เพิ่ม pytest ของ ai-service (ข้อ 5) · รวมหัวข้อ changelog 2026-11-25 ที่ซ้ำกัน · backend ย้ายเส้นเริ่ม / จบคาบไปตาราง API หลัก (ใช้ JWT ไม่ใช่ `X-Internal-Key`) · frontend / database-design เพิ่มเส้นเริ่ม / จบคาบในตารางหน้าจอ · devops แก้ `MEDIA_BASE_URL`, แผนภาพ, ข้อความที่บอกว่ายังไม่มีตัวจับคู่ realtime / กล้องใช้ไม่ได้บน HTTP
 - **ไฟล์ที่เกี่ยวข้อง:** `README.md`, `backend/README.md`, `frontend/README.md`, `frontend/tests/e2e/README.md`, `devops/README.md`, `docs/README.md`, `docs/database/database-design.md`

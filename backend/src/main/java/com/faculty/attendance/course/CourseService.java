@@ -114,16 +114,24 @@ public class CourseService {
         }
         bySemester.forEach((sem, list) -> prepared.addAll(prepare(list, courseId, sem, lecturerScope)));
 
-        tx.executeWithoutResult(t -> {
+        List<SessionNotChanged> notChanged = tx.execute(t -> {
+            List<SessionNotChanged> kept = new ArrayList<>();
             repo.updateCourse(courseId, code, name);
             for (Prepared p : prepared) {
-                saveSection(courseId, p.semesterId(), p);
+                // กลุ่มเดิมที่ตารางเรียนเปลี่ยน: คาบที่ระบบไม่ได้แก้ตาม (เริ่มแล้ว / มีข้อมูล) ต้องแจ้งผู้ใช้ ไม่เงียบ
+                String sigBefore = p.sectionId() == null ? null : repo.sectionSignature(p.sectionId());
+                UUID id = saveSection(courseId, p.semesterId(), p);
+                if (sigBefore != null && !sigBefore.equals(repo.sectionSignature(id))) {
+                    kept.addAll(repo.sessionsNotMatchingSection(id));
+                }
             }
             audit.log(u.userId(), "course.update", "course", courseId,
                     toJson(Map.of("course_code", before.courseCode(), "course_name", before.courseName())),
                     toJson(Map.of("course_code", code, "course_name", name, "sections", prepared.size())), ip);
+            return kept;
         });
-        return detail(courseId, lecturerScope);
+        CourseDetail d = detail(courseId, lecturerScope);
+        return new CourseDetail(d.courseId(), d.courseCode(), d.courseName(), d.sections(), notChanged);
     }
 
     /** Q5 soft delete · lecturer ลบได้เมื่อสอนทุกกลุ่มของวิชานั้น */
@@ -257,7 +265,7 @@ public class CourseService {
         return s.lecturerId();
     }
 
-    private void saveSection(UUID courseId, UUID semesterId, Prepared p) {
+    private UUID saveSection(UUID courseId, UUID semesterId, Prepared p) {
         UUID sectionId = p.sectionId();
         if (sectionId == null) {
             sectionId = repo.insertSection(courseId, semesterId, p.values());
@@ -267,6 +275,7 @@ public class CourseService {
         repo.replaceClassDays(sectionId, p.days());
         if (p.lecturerId() != null) repo.setPrimaryLecturer(sectionId, p.lecturerId());
         repo.regenerateSessions(sectionId);
+        return sectionId;
     }
 
     private static boolean overlaps(Integer[] a, Integer[] b) {
@@ -295,7 +304,8 @@ public class CourseService {
     private CourseDetail detail(UUID courseId, UUID lecturerId) {
         var c = repo.findCourse(courseId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "ไม่พบรายวิชา"));
-        return new CourseDetail(c.courseId(), c.courseCode(), c.courseName(), repo.sections(courseId, lecturerId));
+        return new CourseDetail(c.courseId(), c.courseCode(), c.courseName(), repo.sections(courseId, lecturerId),
+                List.of());
     }
 
     private String toJson(Object o) {

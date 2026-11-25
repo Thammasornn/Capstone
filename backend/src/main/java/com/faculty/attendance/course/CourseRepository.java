@@ -166,14 +166,21 @@ public class CourseRepository {
      * @return จำนวนคาบที่สร้าง
      */
     public int regenerateSessions(UUID sectionId) {
+        // ลบเฉพาะเมื่อทั้งเวลาเดิมและเวลาใหม่ (sections) ยังอยู่ในอนาคต — ถ้าเวลาใหม่ย้อนไปก่อนตอนนี้
+        // INSERT ด้านล่างจะไม่สร้างคาบวันนั้นคืน คาบวันนี้จึงต้องคงเวลาเดิมไว้แทนการหายไป
         jdbc.update("""
                 DELETE FROM class_sessions cs
-                WHERE cs.section_id = ? AND cs.session_status = 'scheduled'
-                  AND (cs.session_date + cs.start_time) > %s
+                USING sections s
+                WHERE s.section_id = cs.section_id
+                  AND cs.section_id = ? AND cs.session_status = 'scheduled'
+                  AND (cs.session_date + cs.start_time) > %1$s
+                  AND (cs.session_date + s.start_time) > %1$s
                   AND NOT EXISTS (SELECT 1 FROM attendance_records a WHERE a.session_id = cs.session_id)
                   AND NOT EXISTS (SELECT 1 FROM occupancy_snapshots o WHERE o.session_id = cs.session_id)
                   AND NOT EXISTS (SELECT 1 FROM notifications n WHERE n.session_id = cs.session_id)
                 """.formatted(NOW_TH), sectionId);
+        // หมายเหตุ: คาบที่ถูกเก็บไว้ (เวลาใหม่ย้อนไปก่อนตอนนี้) อาจเริ่มตามเวลาเดิมทีหลัง — แจ้งผู้ใช้ผ่าน
+        // sessionsNotMatchingSection() → startedSessionsNotChanged
         int created = jdbc.update("""
                 INSERT INTO class_sessions (section_id, session_no, session_date, room_id, start_time, end_time,
                                             check_in_opens, check_in_closes, on_time_until, late_until)
@@ -202,6 +209,41 @@ public class CourseRepository {
                 """, sectionId);
         jdbc.update("UPDATE class_sessions SET session_no = session_no - 10000 WHERE section_id = ?", sectionId);
         return created;
+    }
+
+    /** ค่าของ section ที่มีผลกับคาบ (ห้อง เวลา ช่วงเช็คชื่อ วันเรียน) ใช้เทียบก่อน / หลังแก้ */
+    public String sectionSignature(UUID sectionId) {
+        return jdbc.queryForList("""
+                SELECT concat_ws('|', s.room_id, s.start_time, s.end_time, s.check_in_opens, s.check_in_closes,
+                                 s.on_time_minutes, s.late_until,
+                                 (SELECT string_agg(day_of_week::text, ',' ORDER BY day_of_week)
+                                  FROM section_class_days d WHERE d.section_id = s.section_id))
+                FROM sections s WHERE s.section_id = ?
+                """, String.class, sectionId).stream().findFirst().orElse("");
+    }
+
+    /**
+     * คาบตั้งแต่วันนี้ที่ไม่ตรงกับตารางเรียนปัจจุบันของ section (ไม่นับ cancelled)
+     * = คาบที่ regenerateSessions ไม่ได้แก้ เพราะเริ่มแล้ว / มีข้อมูลแล้ว / เวลาใหม่ย้อนไปก่อนตอนนี้
+     */
+    public List<CourseDtos.SessionNotChanged> sessionsNotMatchingSection(UUID sectionId) {
+        return jdbc.query("""
+                SELECT cs.session_id, cs.session_date, s.section_code, cs.session_status, cs.start_time, cs.end_time
+                FROM class_sessions cs
+                JOIN sections s ON s.section_id = cs.section_id
+                WHERE cs.section_id = ? AND cs.session_status <> 'cancelled'
+                  AND cs.session_date >= (%s)::date
+                  AND (cs.room_id <> s.room_id OR cs.start_time <> s.start_time OR cs.end_time <> s.end_time
+                       OR cs.check_in_opens <> s.check_in_opens OR cs.check_in_closes <> s.check_in_closes
+                       OR cs.on_time_until <> s.check_in_opens + make_interval(mins => s.on_time_minutes)
+                       OR cs.late_until <> coalesce(s.late_until, s.check_in_closes)
+                       OR extract(isodow FROM cs.session_date)::int NOT IN
+                          (SELECT day_of_week FROM section_class_days d WHERE d.section_id = s.section_id))
+                ORDER BY cs.session_date, cs.start_time
+                """.formatted(NOW_TH), (rs, i) -> new CourseDtos.SessionNotChanged(
+                        rs.getObject("session_id", UUID.class), rs.getDate("session_date").toLocalDate(),
+                        rs.getString("section_code"), rs.getString("session_status"),
+                        rs.getTime("start_time").toLocalTime(), rs.getTime("end_time").toLocalTime()), sectionId);
     }
 
     /** Q5 soft delete + ยกเลิกคาบที่ยังไม่เริ่ม · คืน deleted_at */
