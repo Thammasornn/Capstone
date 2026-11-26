@@ -11,6 +11,7 @@
     - ตรวจเฉพาะตอนห้องมีคาบ · ส่งจำนวนใบหน้า (faces) ทุก FACES_INTERVAL วินาที
     - จับคู่ได้ = cosine >= MATCH_THRESHOLD และห่างคนที่ 2 >= MATCH_MARGIN · ต้องเห็นซ้ำ MIN_HITS ครั้งใน HIT_WINDOW วินาที
       แล้วส่ง sighting (คนเดิมไม่ส่งซ้ำภายใน SIGHTING_COOLDOWN วินาที) — กติกาเช็คชื่อทั้งหมดอยู่ที่ backend
+  วัดเวลาทุกขั้น (metrics.py) → GET /metrics และ log สรุปทุก METRICS_LOG_INTERVAL วินาที
 ไม่เก็บภาพ · log ไม่มี embedding / ชื่อ (มีแค่ 8 ตัวแรกของ student_id)
 """
 import json
@@ -27,6 +28,7 @@ from datetime import datetime, timedelta, timezone
 import numpy as np
 
 from gallery import GalleryStore, best_matches
+from metrics import Timings, one_line
 
 log = logging.getLogger("camera")
 TH = timezone(timedelta(hours=7))   # เวลาไทย (ไม่มี DST) — backend รับ seenAt เป็นเวลาไทยไม่มี offset
@@ -54,6 +56,7 @@ class Config:
     signal_timeout: float = float(os.getenv("SIGNAL_TIMEOUT", "10"))
     cameras_refresh: float = float(os.getenv("CAMERAS_REFRESH", "60"))
     gallery_refresh: float = float(os.getenv("GALLERY_REFRESH", "30"))
+    metrics_log_interval: float = float(os.getenv("METRICS_LOG_INTERVAL", "60"))   # 0 = ไม่ log สรุป
     tick: float = 5.0
 
 
@@ -115,6 +118,7 @@ class CameraWorker(threading.Thread):
         self.last_sent: dict[str, float] = {}
         self.sightings_sent = 0
         self.last_error: str | None = None
+        self.metrics = Timings(clock=clock)
 
     # ---------- อ่านภาพ ----------
     def run(self):
@@ -144,13 +148,16 @@ class CameraWorker(threading.Thread):
                 return
             now = self.clock()
             self.last_frame_at = now
+            self.metrics.count("frames_grabbed")
             if now < next_process:
                 continue
             next_process = now + self.cfg.frame_interval
+            t0 = time.perf_counter()
             ok, frame = cap.retrieve()
             if ok and frame is not None:
+                self.metrics.add("retrieve", (time.perf_counter() - t0) * 1000)
                 try:
-                    self.process(frame, now)
+                    self.process(frame, now, t0)
                 except Exception as e:  # ไม่ให้ thread ตาย · log แค่ข้อความ
                     self._error(f"ตรวจภาพไม่สำเร็จ: {e}")
 
@@ -160,22 +167,38 @@ class CameraWorker(threading.Thread):
         self.last_error = msg
 
     # ---------- ตรวจ + จับคู่ ----------
-    def process(self, frame: np.ndarray, now: float):
+    def process(self, frame: np.ndarray, now: float, started: float | None = None):
+        """started = perf_counter ตอนเริ่มดึงเฟรมนี้ (ใช้วัดเวลาเห็นครั้งแรก → ส่ง sighting)"""
+        started = time.perf_counter() if started is None else started
         g = self.gallery.get(self.room_id)
         if g is None or g.session_id is None:      # ไม่มีคาบ → ไม่ต้องตรวจ (ประหยัด CPU)
             return
-        faces = self.vision.detect(frame)
-        self._report_faces(len(faces), now)
-        if not g.active:
-            return
-        good = [f for f in faces if f[-1] >= self.cfg.min_conf and min(f[2], f[3]) >= self.cfg.min_face_px]
-        if not good:
-            return
-        feats = np.stack([self.vision.feature(frame, f) for f in good])
-        seen_at = now_th()
-        for sid, score in best_matches(feats, g, self.cfg.match_threshold, self.cfg.match_margin):
-            if sid is not None:
-                self._hit(sid, score, now, seen_at)
+        m = self.metrics
+        with m.timer("detect"):
+            faces = self.vision.detect(frame)
+        m.count("frames_processed")
+        m.count("faces_detected", len(faces))
+        try:
+            self._report_faces(len(faces), now)
+            if not g.active:
+                return
+            good = [f for f in faces if f[-1] >= self.cfg.min_conf and min(f[2], f[3]) >= self.cfg.min_face_px]
+            if not good:
+                return
+            rows = []
+            for f in good:
+                with m.timer("feature"):           # ต่อ 1 ใบหน้า (alignCrop + SFace)
+                    rows.append(self.vision.feature(frame, f))
+            m.count("faces_embedded", len(good))
+            with m.timer("match"):
+                matches = best_matches(np.stack(rows), g, self.cfg.match_threshold, self.cfg.match_margin)
+            m.count("faces_matched", sum(1 for sid, _ in matches if sid is not None))
+            seen_at = now_th()
+            for sid, score in matches:
+                if sid is not None:
+                    self._hit(sid, score, now, seen_at, started)
+        finally:
+            m.add("frame", (time.perf_counter() - started) * 1000)
 
     def _report_faces(self, detected: int, now: float):
         if now - self.last_faces_at < self.cfg.faces_interval:
@@ -186,7 +209,7 @@ class CameraWorker(threading.Thread):
         except BackendError as e:
             self._error(str(e))
 
-    def _hit(self, sid: str, score: float, now: float, seen_at: str):
+    def _hit(self, sid: str, score: float, now: float, seen_at: str, started: float | None = None):
         q = self.hits.setdefault(sid, deque())
         q.append((now, score, seen_at))
         while q and now - q[0][0] > self.cfg.hit_window:
@@ -194,13 +217,18 @@ class CameraWorker(threading.Thread):
         if len(q) < self.cfg.min_hits or now - self.last_sent.get(sid, -1e9) < self.cfg.sighting_cooldown:
             return
         first_seen = q[0][2]                      # เวลาที่เห็นครั้งแรกในช่วงนี้ (ใช้ตัดสินตรงเวลา / สาย)
+        first_at = q[0][0]
         best = max(s for _, s, _ in q)
         self.last_sent[sid] = now
         q.clear()
         try:
-            res = self.backend.post(f"/api/internal/rooms/{self.room_id}/sightings",
-                                    {"studentId": sid, "matchScore": round(best, 4), "seenAt": first_seen})
+            with self.metrics.timer("post_sighting"):
+                res = self.backend.post(f"/api/internal/rooms/{self.room_id}/sightings",
+                                        {"studentId": sid, "matchScore": round(best, 4), "seenAt": first_seen})
             self.sightings_sent += 1
+            # เห็นครั้งแรก (เฟรมแรกที่จับคู่ได้) → backend ตอบ sighting แล้ว
+            if started is not None:
+                self.metrics.add("sighting", (now - first_at) * 1000 + (time.perf_counter() - started) * 1000)
             log.info("%s: student %s… score %.3f → %s%s", self.code, sid[:8], best, res.get("result"),
                      f" ({res['reason']})" if res.get("reason") else f" ({res['status']})" if res.get("status") else "")
         except BackendError as e:
@@ -227,6 +255,8 @@ class Supervisor(threading.Thread):
         self.next_gallery = 0.0
         self.stop_event = threading.Event()
         self.last_error: str | None = None
+        self.next_metrics_log = clock() + cfg.metrics_log_interval
+        self.logged_frames: dict[str, int] = {}
 
     def run(self):
         log.info("เริ่มตัวอ่านกล้อง · backend %s · MediaMTX %s", self.cfg.backend_url, self.cfg.rtsp_base)
@@ -246,6 +276,21 @@ class Supervisor(threading.Thread):
             self.refresh_galleries()
         for w in list(self.workers.values()):
             self.heartbeat(w, now)
+        if self.cfg.metrics_log_interval > 0 and now >= self.next_metrics_log:
+            self.next_metrics_log = now + self.cfg.metrics_log_interval
+            self.log_metrics()
+
+    def log_metrics(self):
+        """log สรุปเวลา (เฉพาะกล้องที่มีเฟรมถูกตรวจเพิ่มตั้งแต่รอบก่อน · ค่าเป็นหน้าต่างล่าสุด ไม่ใช่เฉพาะรอบนี้)"""
+        for code, w in self.workers.items():
+            s = w.metrics.summary()
+            done = s["counts"].get("frames_processed", 0)
+            if done != self.logged_frames.get(code):
+                self.logged_frames[code] = done
+                log.info("%s metrics: %s", code, one_line(s))
+
+    def metrics(self) -> dict:
+        return {w.code: w.metrics.summary() for w in self.workers.values()}
 
     def refresh_cameras(self):
         try:

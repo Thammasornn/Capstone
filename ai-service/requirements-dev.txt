@@ -3,3 +3,6 @@ numpy
 cryptography
 opencv-python-headless
 pytest
+fastapi
+python-multipart
+httpx

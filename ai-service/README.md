@@ -56,6 +56,12 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-26 — วัดเวลาจริง (/metrics) + เครื่องมือวัดความแม่นยำ + anti-spoofing ตอนลงทะเบียน (Step 1)
+- **ทำอะไร:** `metrics.py` จับเวลาทุกขั้น (retrieve / detect / feature / match / frame / sighting = เห็นครั้งแรก → ส่งเสร็จ) p50/p95 → `GET /metrics` + log สรุปทุก `METRICS_LOG_INTERVAL` (60) วินาที · `/embedding` ตรวจ MiniFASNet V2+V1SE (`ANTISPOOF` on/log/off, `ANTISPOOF_MIN_REAL` 0.7 → 422 "ภาพอาจเป็นรูปถ่ายหรือภาพจากหน้าจอ") + ทุกรูปต้องเป็นคนเดียวกัน (`SAME_PERSON_MIN` 0.363 → 422) · response เพิ่ม `items[].liveness` (ตรวจแล้ว backend Jackson 3 เพิกเฉย field ใหม่) · ไม่มีไฟล์โมเดล = ปิด anti-spoofing เอง (WARN, pod ยังขึ้น) · `tools/eval_recognition.py` วัด TAR/FAR/accuracy/rank-1/APCER/BPCER + เวลาต่อใบหน้า พิมพ์ตาราง markdown
+- **ไฟล์ที่เกี่ยวข้อง:** `metrics.py`, `vision.py`, `main.py`, `camera_worker.py`, `tools/eval_recognition.py`, `tests/test_embedding.py`, `requirements-dev.txt`, `devops/models/fetch-models.sh`, `devops/k8s/base/ai-service.yaml`
+- **เหตุผล:** กรรมการต้องการตัวเลขความแม่นยำ / ความเร็วจริง · กันการลงทะเบียนด้วยรูปถ่ายหรือรูปคนอื่น
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** pytest 23 ข้อผ่าน · SHA-256 ของ MiniFASNet ตรวจกับไฟล์จริงแล้ว · cv2.dnn โหลดได้ (input 80×80, ~2–3 ms/หน้าบน Mac) · **ยังไม่ได้วัดความแม่นยำ anti-spoofing กับหน้าคนจริง** — ถ้าคนจริงโดนปฏิเสธบน uat ตั้ง `ANTISPOOF=log` · วิธีวัด: เก็บภาพนอก repo (ห้าม commit · PDPA) เป็น `enroll/<p01>/`, `probe/<p01>/` (ภาพจากกล้องห้อง 4303), `spoof/` แล้วรัน `python tools/eval_recognition.py --enroll … --probe … --spoof … --models /opt/bangmod/models --out report.md` · ยังไม่ได้เขียนคู่มือเก็บข้อมูลฉบับเต็ม / อัปเดต devops/README.md และ root README
+
 ### 2026-11-25 — `/cameras/status` ล้าง error หลังเปิดภาพได้
 - **ทำอะไร:** `CameraWorker` ตั้ง `last_error = None` เมื่อเปิด RTSP สำเร็จ · test reconnect ไม่พึ่งจังหวะเวลา + เพิ่ม test ว่า error ถูกล้างเมื่อเปิดภาพได้ (pytest 11 ข้อผ่าน)
 - **ไฟล์ที่เกี่ยวข้อง:** `camera_worker.py`, `tests/test_camera_worker.py`
