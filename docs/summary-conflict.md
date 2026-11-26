@@ -21,17 +21,18 @@ Main Chat (coordinator) จะส่งสรุปมาให้ sub-chat "sum
 ## บันทึก
 
 ### 2026-11-27 — เอา anti-spoofing (MiniFASNet) ออกทั้งหมด (`39d446b..3ee286f`)
-> จดอัตโนมัติจาก commit — รอรายงาน coordinator · push แล้ว: `origin/Dev` `8375493` → `3ee286f` (รวม `a113d09`–`f46e527` ของรายการก่อนหน้า)
+> จดอัตโนมัติจาก commit แล้วเติมจากรายงาน coordinator · push แล้ว: `origin/Dev` `8375493` → `3ee286f` (รวม `a113d09`–`f46e527` ของรายการก่อนหน้า) · ผู้ใช้สั่ง AI และ DevOps โดยตรง (ไม่ผ่าน coordinator) และ coordinator ไม่ได้เป็นคน push รอบนี้ · ไม่แตะ `backend/db/` → CD ไม่ block
 - **แก้อะไร:**
   - DevOps `2680423`: `k8s/base/ai-service.yaml` ลบ env `ANTISPOOF`, `ANTISPOOF_MIN_REAL`, `ANTISPOOF_MODEL_V2`, `ANTISPOOF_MODEL_V1SE` · `models/fetch-models.sh` ไม่ดาวน์โหลด MiniFASNet แล้ว (เหลือ YOLO + SFace) · README: ตารางโมเดลเหลือ 2 ไฟล์ ลำดับหลัง push ไม่อ้าง MiniFASNet
   - AI `3ee286f`: `vision.py` / `main.py` ลบ MiniFASNet ทั้งหมด (รวม log สถานะ anti-spoofing ตอน start จาก `39d446b`) · ลงทะเบียน = decode → YOLO face-pose → 1 ใบหน้า → ตรวจคุณภาพ → SFace → ตรวจว่าเป็นคนเดียวกัน · embedding เสีย (ว่าง / ไม่ใช่ 128 / 0 / NaN) → `EmbeddingError` → 422 · `items[].liveness` คงไว้แต่เป็น `null` เสมอ · `/metrics` และเครื่องมือ eval ตัดส่วน anti-spoofing (APCER / BPCER) ออก · ตัวอ่านกล้องไม่เปลี่ยน · pytest 29 ข้อผ่าน
 - **ปัญหา / conflict ที่เจอ:**
-  - ผู้ใช้สั่งเอา anti-spoofing ออกทั้งหมด (ไม่ใส่โมเดลอื่นแทน) หลังเพิ่งทำ `e16d4d0` และ `39d446b` → งานวัดความแม่นยำ anti-spoofing และการดู log "anti-spoofing พร้อม" ในรายการก่อน ๆ ไม่ต้องทำแล้ว
+  - ต้นเหตุ: ผู้ใช้แก้เกณฑ์ `ANTISPOOF_MIN_REAL` บน VM แล้วไม่มีผลกับ pod เพราะ CD ใช้ค่าจาก `ai-service.yaml` บน `origin/Dev` (= 0.7) เท่านั้น → ผู้ใช้สั่งเอา anti-spoofing ออกทั้งหมด (ไม่ใส่โมเดลอื่นแทน) หลังเพิ่งทำ `e16d4d0` และ `39d446b` → งานวัดความแม่นยำ anti-spoofing และการดู log "anti-spoofing พร้อม" ในรายการก่อน ๆ ไม่ต้องทำแล้ว
+  - ผลกระทบ: ความเสี่ยง "ใช้รูปถ่ายหลอกตอนลงทะเบียน" กลับมาบางส่วน — เหลือแค่ตรวจว่า 3–5 รูปตอนลงทะเบียนเป็นคนเดียวกัน (`SAME_PERSON_MIN` 0.363) ซึ่งกันได้แค่รูปปนหลายคน · response ยังมี `items[].liveness` = `null` เสมอ (backend ไม่อ่าน) · camera worker ไม่เปลี่ยน
   - ลำดับ deploy: manifest ใหม่ (`2680423`) ถ้าขึ้นก่อนโค้ด AI ใหม่ และไฟล์ MiniFASNet ยังอยู่บน VM → anti-spoofing ยังทำงาน (ค่าเริ่มต้น `ANTISPOOF=on`) · push ทั้งสองพร้อมกันแล้ว
 - **ยังค้าง / ต้องทำต่อ:**
-  - ยังไม่ได้ทดสอบ YOLO จริงและ docker build (เครื่องที่แก้ไม่มี ultralytics / docker) → CD build ตอน push · ตรวจ `kubectl -n uat logs deploy/ai-service` ว่า Uvicorn ขึ้นและไม่มี ERROR
-  - หลัง ai-service รุ่นใหม่ขึ้นแล้ว ผู้ใช้ลบไฟล์ `minifasnet_v2.onnx`, `minifasnet_v1se.onnx` ใน `/opt/bangmod/models` บน VM เอง
-  - ยังค้างจากรายการก่อน: ตรวจดิสก์ VM / แผนเคลียร์ · เรื่อง torch แบบ CPU
+  - CD / uat หลัง deploy ยังไม่มีใครตรวจ · ยังไม่ได้ทดสอบ YOLO จริงและ docker build (เครื่องที่แก้ไม่มี ultralytics / docker) → ตรวจ `kubectl -n uat logs deploy/ai-service` ว่า Uvicorn ขึ้นและไม่มี ERROR
+  - ไฟล์ `minifasnet_v2.onnx`, `minifasnet_v1se.onnx` ใน `/opt/bangmod/models` บน VM ไม่ถูกใช้แล้ว → ลบได้ถ้าต้องการพื้นที่ (ผู้ใช้ตัดสิน และลบเองหลัง ai-service รุ่นใหม่ขึ้น)
+  - ยังค้างจากรายการก่อน (ไม่เกี่ยวกับรอบนี้): ตรวจดิสก์ VM / แผนเคลียร์ · เรื่อง torch แบบ CPU · `devops/cd/deploy.sh`, `devops/cd/setup.sh` แก้ค้างใน working tree (งานกันดิสก์เต็มของ DevOps ที่หยุดกลางทาง — รอผู้ใช้ตัดสิน)
 
 ### 2026-11-27 — ai-service log anti-spoofing ตอน start + pod ai-service ถูก Evict เพราะดิสก์เต็ม (`372a2e4..39d446b`)
 > รายงาน coordinator · push แล้วใน `8375493..3ee286f` · log anti-spoofing ถูกเอาออกใน `3ee286f` (รายการบน)
