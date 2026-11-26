@@ -20,8 +20,21 @@ Main Chat (coordinator) จะส่งสรุปมาให้ sub-chat "sum
 
 ## บันทึก
 
+### 2026-11-27 — เอา anti-spoofing (MiniFASNet) ออกทั้งหมด (`39d446b..3ee286f`)
+> จดอัตโนมัติจาก commit — รอรายงาน coordinator · push แล้ว: `origin/Dev` `8375493` → `3ee286f` (รวม `a113d09`–`f46e527` ของรายการก่อนหน้า)
+- **แก้อะไร:**
+  - DevOps `2680423`: `k8s/base/ai-service.yaml` ลบ env `ANTISPOOF`, `ANTISPOOF_MIN_REAL`, `ANTISPOOF_MODEL_V2`, `ANTISPOOF_MODEL_V1SE` · `models/fetch-models.sh` ไม่ดาวน์โหลด MiniFASNet แล้ว (เหลือ YOLO + SFace) · README: ตารางโมเดลเหลือ 2 ไฟล์ ลำดับหลัง push ไม่อ้าง MiniFASNet
+  - AI `3ee286f`: `vision.py` / `main.py` ลบ MiniFASNet ทั้งหมด (รวม log สถานะ anti-spoofing ตอน start จาก `39d446b`) · ลงทะเบียน = decode → YOLO face-pose → 1 ใบหน้า → ตรวจคุณภาพ → SFace → ตรวจว่าเป็นคนเดียวกัน · embedding เสีย (ว่าง / ไม่ใช่ 128 / 0 / NaN) → `EmbeddingError` → 422 · `items[].liveness` คงไว้แต่เป็น `null` เสมอ · `/metrics` และเครื่องมือ eval ตัดส่วน anti-spoofing (APCER / BPCER) ออก · ตัวอ่านกล้องไม่เปลี่ยน · pytest 29 ข้อผ่าน
+- **ปัญหา / conflict ที่เจอ:**
+  - ผู้ใช้สั่งเอา anti-spoofing ออกทั้งหมด (ไม่ใส่โมเดลอื่นแทน) หลังเพิ่งทำ `e16d4d0` และ `39d446b` → งานวัดความแม่นยำ anti-spoofing และการดู log "anti-spoofing พร้อม" ในรายการก่อน ๆ ไม่ต้องทำแล้ว
+  - ลำดับ deploy: manifest ใหม่ (`2680423`) ถ้าขึ้นก่อนโค้ด AI ใหม่ และไฟล์ MiniFASNet ยังอยู่บน VM → anti-spoofing ยังทำงาน (ค่าเริ่มต้น `ANTISPOOF=on`) · push ทั้งสองพร้อมกันแล้ว
+- **ยังค้าง / ต้องทำต่อ:**
+  - ยังไม่ได้ทดสอบ YOLO จริงและ docker build (เครื่องที่แก้ไม่มี ultralytics / docker) → CD build ตอน push · ตรวจ `kubectl -n uat logs deploy/ai-service` ว่า Uvicorn ขึ้นและไม่มี ERROR
+  - หลัง ai-service รุ่นใหม่ขึ้นแล้ว ผู้ใช้ลบไฟล์ `minifasnet_v2.onnx`, `minifasnet_v1se.onnx` ใน `/opt/bangmod/models` บน VM เอง
+  - ยังค้างจากรายการก่อน: ตรวจดิสก์ VM / แผนเคลียร์ · เรื่อง torch แบบ CPU
+
 ### 2026-11-27 — ai-service log anti-spoofing ตอน start + pod ai-service ถูก Evict เพราะดิสก์เต็ม (`372a2e4..39d446b`)
-> รายงาน coordinator · ตอนจดยังไม่ push (`origin/Dev` = `8375493`)
+> รายงาน coordinator · push แล้วใน `8375493..3ee286f` · log anti-spoofing ถูกเอาออกใน `3ee286f` (รายการบน)
 - **แก้อะไร:**
   - AI `39d446b`: ai-service log สถานะ anti-spoofing ทุกครั้งตอน start (เดิม log INFO "anti-spoofing พร้อม" ไม่ออก เพราะ `logging.basicConfig` ถูกเรียกหลัง import `vision`) · pytest 24/24
 - **ปัญหา / conflict ที่เจอ:**
