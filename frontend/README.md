@@ -23,7 +23,7 @@ npm run dev        # http://localhost:5173 · /api ถูก proxy ไป Backen
 | `npm run lint` | oxlint + ESLint (รวมกฎห้าม import ข้ามชั้น) |
 | `npm run fix` | แก้ lint อัตโนมัติ |
 | `npm test` | Vitest (ใช้ MSW ของ API v1.0) |
-| `npm run build` | build Production (base `/prod/`, ไม่มีโค้ด mock) |
+| `npm run build` | build Production (base `/capstone26/cp26ms3/prod/` ผ่าน bscit, ไม่มีโค้ด mock) |
 | `npm run build:uat` | build UAT (base `/capstone26/cp26ms3/uat/`, NGINX บน VM `/uat/`, ไม่มีโค้ด mock) |
 
 ## Environment และการเชื่อม Backend
@@ -39,12 +39,12 @@ FE เรียก API แบบ **relative path เสมอ** (`<base>api/...`
 |---|---|---|---|
 | `.env.development` | `/` | `/api` | `off` (ใส่ `all` ใน `.local` เพื่อใช้ mock) |
 | `.env.uat` (+ `APP_PATH=/uat/`) | `/capstone26/cp26ms3/uat/` | `/capstone26/cp26ms3/uat/api` | `off` |
-| `.env.production` | `/prod/` | `/prod/api` | `off` |
+| `.env.production` (+ `APP_PATH=/prod/`) | `/capstone26/cp26ms3/prod/` | `/capstone26/cp26ms3/prod/api` | `off` |
 | `.env.test` | `/` | `http://localhost:8081/api` | `all` (Vitest) |
 
 ```bash
 docker build -t bangmod-frontend:prod .
-docker run -p 8080:80 -e BACKEND_URL=http://10.0.0.5:8081 bangmod-frontend:prod   # เปิด http://localhost:8080/prod/
+docker run -p 8080:80 -e BACKEND_URL=http://10.0.0.5:8081 bangmod-frontend:prod   # NGINX ฟังที่ /prod/ แต่ assets อ้าง /capstone26/cp26ms3/prod/ → เปิดตรงหน้าขาว ใช้ผ่าน bscit
 ```
 
 ## Mock (MSW)
@@ -76,6 +76,12 @@ docker run -p 8080:80 -e BACKEND_URL=http://10.0.0.5:8081 bangmod-frontend:prod 
 `app → features → entities → shared` — ฟีเจอร์ห้าม import ฟีเจอร์อื่น (ESLint ตรวจให้ที่ `shared/` และ `entities/`)
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-26 — frontend: prod ผ่าน bscit (F2)
+- **ทำอะไร:** `.env.production` เปลี่ยนแบบเดียวกับ `.env.uat`: `VITE_BASE=/capstone26/cp26ms3/prod/`, `APP_PATH=/prod/` (ใหม่ · NGINX location ใน container ต้องตรงกับ Ingress ของ prod), `VITE_API_BASE_URL=/capstone26/cp26ms3/prod/api` (ยังใช้อยู่: axios `baseURL` ใน `http.js`, SSE, MSW) · อัปเดตตาราง env / คำสั่ง docker ใน README และคอมเมนต์ใน `vite.config.js`, `src/app/router/index.js`
+- **ไฟล์ที่เกี่ยวข้อง:** `.env.production`, `vite.config.js`, `src/app/router/index.js`, `README.md`
+- **เหตุผล:** DevOps ให้ prod เข้าผ่าน bscit (ตัด `/capstone26/cp26ms3` ก่อนส่งมา VM) · base เดิม `/prod/` ทำให้หน้าเว็บผ่าน bscit ขาว และ `deploy.sh` หยุดเมื่อ `APP_PATH` ไม่ตรง Ingress
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** build prod แล้วตรวจ: `index.html` อ้าง assets ที่ `/capstone26/cp26ms3/prod/`, bundle ใช้ API `/capstone26/cp26ms3/prod/api`, `APP_PATH` ไม่เข้า bundle, ไม่มีรายชื่อ / อีเมล / รหัสผ่านบัญชีทดสอบใน bundle (เหลือแค่ id ของ element และ path `/test-accounts` ที่ไม่ถูกเรียกเพราะ `VITE_SHOW_TEST_ACCOUNTS=false`) · `./dev.sh test` ผ่าน · เปิด prod ตรงที่ VM จะหน้าขาวเหมือน uat (assets อ้าง path ของ bscit) · backend prod ต้องอนุญาต CORS / Origin ของ bscit เหมือน uat (ฝั่ง DevOps / BE)
 
 ### 2026-11-26 — frontend: กติกาเวลาสายแบบกึ่งอัตโนมัติ (F1)
 - **ทำอะไร:**

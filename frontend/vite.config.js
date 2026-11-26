@@ -6,7 +6,7 @@ import tailwindcss from '@tailwindcss/vite'
 import vueDevTools from 'vite-plugin-vue-devtools'
 
 // https://vite.dev/config/
-// base มาจาก VITE_BASE ใน .env.<mode>: dev = "/", uat = "/capstone26/cp26ms3/uat/", production = "/prod/"
+// base มาจาก VITE_BASE ใน .env.<mode>: dev = "/", uat = "/capstone26/cp26ms3/uat/", production = "/capstone26/cp26ms3/prod/" (ผ่าน bscit)
 export default defineConfig(({ mode, command }) => {
   // prefix '' = อ่านทุกตัวแปรใน .env (DEV_BACKEND_URL ใช้ฝั่ง Node เท่านั้น ไม่เข้า bundle)
   const env = loadEnv(mode, process.cwd(), '')
