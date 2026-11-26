@@ -39,6 +39,7 @@ FE เรียก API แบบ relative (`/prod/api`) แล้ว NGINX ใ�
 | `k8s/sql/prod-first-admin.sql` | prod: สร้าง admin คนแรก รหัสผ่านพิมพ์ตอนรัน (ไม่อยู่ใน git / history) · คำสั่งอยู่หัวไฟล์ |
 | `cd/deploy.sh` | **CD**: build → push เข้า registry ในเครื่อง → apply → ตรวจผล → rollback ถ้าพัง |
 | `cd/setup.sh` | ติดตั้ง CD บน VM ครั้งแรก (registry, clone แยก, cron) |
+| `pi/mediamtx.service` | systemd unit ของ MediaMTX บน Raspberry Pi (เปิดเองตอนบูต) · ติดตั้งตามหัวข้อ "MediaMTX บน Pi เป็น systemd" |
 | `cd/registries.yaml` | ให้ K3s ดึง image จาก `localhost:5000` (copy ไป `/etc/rancher/k3s/` ด้วย sudo) |
 
 ## CD: deploy อัตโนมัติ
@@ -94,7 +95,7 @@ cd ~/Capstone && git pull && ./devops/cd/setup.sh       # ไม่ต้อง 
 | K3s | v1.37.2+k3s1 · node `cp26ms3` · Traefik รับ port 80 |
 | user ที่ deploy | `adminstudent` · repo ที่ `~/Capstone` |
 | uat | https://bscit.sit.kmutt.ac.th/capstone26/cp26ms3/uat/ (browser) · http://cp26ms3.sit.kmutt.ac.th/uat/api/... (เรียก API ตรง) |
-| prod | http://cp26ms3.sit.kmutt.ac.th/prod/ (ยังไม่ deploy) |
+| prod | https://bscit.sit.kmutt.ac.th/capstone26/cp26ms3/prod/ (browser · ยังไม่ deploy) · http://cp26ms3.sit.kmutt.ac.th/prod/api/... (เรียก API ตรง) |
 
 ## forward จาก bscit (HTTPS ของคณะ)
 
@@ -103,11 +104,11 @@ NGINX ของคณะที่ `bscit.sit.kmutt.ac.th` (เราแก้เ
 | | เบราว์เซอร์ | มาถึง VM |
 |---|---|---|
 | uat | `https://bscit.sit.kmutt.ac.th/capstone26/cp26ms3/uat/` | `/uat/` |
-| prod (ยังไม่ deploy) | `https://bscit.sit.kmutt.ac.th/capstone26/cp26ms3/prod/` | `/prod/` |
+| prod (ยังไม่ deploy) | `https://bscit.sit.kmutt.ac.th/capstone26/cp26ms3/prod/` | `/prod/` (bscit ส่งต่อแล้ว — ตรวจ 2026-11-26: ได้ 503 `no available server` จาก Traefik ของ VM ไม่ใช่ 404 ของ bscit) |
 
 - `frontend/.env.<mode>`: `VITE_BASE` = path ที่เบราว์เซอร์เห็น, `APP_PATH` = path ที่มาถึง VM (ไม่ใส่ = เท่ากับ `VITE_BASE`) · `APP_PATH` ต้องตรงกับ path ของ Ingress ใน `k8s/overlays/<env>` (`deploy.sh` หยุดก่อน apply ถ้าไม่ตรง)
 - เปิด `http://cp26ms3.sit.kmutt.ac.th/uat/` ตรง ๆ ใน browser หน้าจะขาว (assets อ้าง `/capstone26/cp26ms3/uat/...`) — API ยังเรียกตรงได้ (`/uat/api/...`) และ CD ใช้ตรวจผล
-- prod: ตอน deploy ครั้งแรก ตั้ง `VITE_BASE=/capstone26/cp26ms3/prod/`, `VITE_API_BASE_URL=/capstone26/cp26ms3/prod/api`, `APP_PATH=/prod/` ใน `.env.production`
+- prod: overlay ตั้ง `CORS_ORIGINS` / `MEDIA_BASE_URL` ของ bscit แล้ว (2026-11-26) · `frontend/.env.production` ยังต้องตั้ง `VITE_BASE=/capstone26/cp26ms3/prod/`, `VITE_API_BASE_URL=/capstone26/cp26ms3/prod/api`, `APP_PATH=/prod/` (งานของ frontend) ก่อน `deploy.sh prod`
 - ภาพสด: `MEDIA_BASE_URL` = `<VITE_BASE>media` (ไม่ใส่โดเมน) → WHEP วิ่งผ่าน bscit → NGINX ของ frontend → MediaMTX จึงไม่โดนบล็อกเป็น mixed content · ตัวภาพ (UDP 8189) ยังวิ่งตรงไป IP ของ VM = ดูได้เฉพาะในคณะ / VPN
 - `CORS_ORIGINS` ของ overlay ต้องมี `https://bscit.sit.kmutt.ac.th` ไม่งั้น login / POST ทุกตัวผ่าน bscit ไม่ได้ (ดูตาราง "ปัญหาที่เจอตอน deploy")
 - อัปโหลดรูปใบหน้า (สูงสุด 25MB) และ SSE ผ่าน NGINX ของคณะ — ถ้าได้ 413 / SSE ขาด ต้องขอคณะปรับ `client_max_body_size` / `proxy_buffering off`
@@ -160,6 +161,66 @@ curl http://cp26ms3.sit.kmutt.ac.th/uat/api/auth/login -H 'Content-Type: applica
 ```
 
 อัปเดตเวอร์ชัน: ใช้ CD (หัวข้อ "CD: deploy อัตโนมัติ") · ถ้ายังไม่ได้ติดตั้ง CD: `./devops/k8s/build-images.sh` แล้ว `kubectl -n <ns> rollout restart deployment/backend deployment/frontend`
+
+## Deploy prod ครั้งแรก (ผ่าน CD · ผู้ใช้รันเองทุกขั้น)
+
+ทำ **หลัง uat เดโมเสถียรและผู้ใช้ยืนยันแล้วเท่านั้น** (CLAUDE.md ข้อ 4–5) · ทุกคำสั่งรันบน VM เป็น `adminstudent` · ไม่มีขั้นไหนใช้ sudo
+
+**0. ก่อนเริ่ม (ใน repo หลัก ไม่ใช่บน VM)**
+- `deploy.sh prod` ใช้ **`origin/main`** → ต้อง merge PR `Dev` → `main` ก่อน (ผู้ใช้สั่งเปิด PR เอง) และใน `main` ต้องมี
+  - overlay prod ที่ตั้ง `CORS_ORIGINS=https://bscit.sit.kmutt.ac.th` + `MEDIA_BASE_URL=/capstone26/cp26ms3/prod/media`
+  - `frontend/.env.production`: `VITE_BASE=/capstone26/cp26ms3/prod/`, `APP_PATH=/prod/`, `VITE_API_BASE_URL=/capstone26/cp26ms3/prod/api` (ไม่มี `APP_PATH` = `deploy.sh` หยุดเพราะ path ไม่ตรง Ingress `/prod`)
+- SQL ข้อมูลเริ่มต้นของ prod (`semesters`, `consent_versions` ที่ `is_current = true`) จาก DB — ผู้ใช้ตรวจก่อน
+
+**1. ตรวจเครื่อง (ส่งผลให้ Claude สรุป)**
+```bash
+kubectl get nodes -o wide
+docker info --format '{{.ServerVersion}}' && kubectl -n kube-system get pods | grep traefik
+df -h / ~ && du -sh ~/bangmod-cd/registry
+ls -l /opt/bangmod/models
+~/bangmod-cd/bin/deploy.sh status
+kubectl get ns && kubectl -n prod get all,ingress,pvc,secret 2>&1 | head -40   # bscit /prod/ ได้ 503 = อาจมี Ingress prod ค้างอยู่ → ดูก่อน ห้ามลบเอง
+```
+
+**2. ความลับของ prod (สร้างใหม่ ไม่ซ้ำ uat · ไม่แสดงค่า · ไม่เขียนทับไฟล์ที่มีอยู่)**
+```bash
+f=~/bangmod-cd/secrets/prod.env
+if [ -e "$f" ]; then echo "มี $f อยู่แล้ว — ไม่เขียนทับ"; else
+  ( umask 077; printf 'DB_PASSWORD=%s\nJWT_SECRET=%s\nFACE_EMBEDDING_KEY=%s\nINTERNAL_API_KEY=%s\n' \
+      "$(openssl rand -hex 24)" "$(openssl rand -base64 48 | tr -d '\n')" "$(openssl rand -base64 32)" "$(openssl rand -hex 32)" > "$f" )
+fi
+chmod 600 "$f" && ls -l "$f" && cut -d= -f1 "$f"                 # แสดงแค่ชื่อ key
+for k in DB_PASSWORD JWT_SECRET FACE_EMBEDDING_KEY INTERNAL_API_KEY; do   # ต้องไม่มีบรรทัด "ซ้ำ"
+  [ "$(grep "^$k=" "$f")" = "$(grep "^$k=" ~/bangmod-cd/secrets/uat.env)" ] && echo "$k ซ้ำกับ uat!"; done
+```
+⚠️ **สำรอง `prod.env` ไว้นอก VM ทันที** (password manager ของทีม) — `FACE_EMBEDDING_KEY` หายหรือเปลี่ยนหลังมีใบหน้า = ถอดรหัส embedding เดิมไม่ได้ · `DB_PASSWORD` ถูกใช้ตอนสร้าง DB ครั้งแรก เปลี่ยนทีหลังต้องเปลี่ยนใน PostgreSQL ด้วย
+
+**3. namespace + deploy (พิมพ์ `prod` ยืนยัน)**
+```bash
+kubectl apply -f ~/bangmod-cd/repo/devops/k8s/overlays/prod/namespace.yaml   # deploy.sh ต้องมี namespace ก่อน · สร้างแค่ namespace ไม่ใช่ apply -k
+~/bangmod-cd/bin/deploy.sh prod                                              # build จาก origin/main → apply → ตรวจ (ครั้งแรกไม่ rollback)
+```
+
+**4. schema (ไม่มี `--seed` · ห้าม 02 / 03 / 04 กับ prod)** — `01_schema.sql` ชุดปัจจุบันมีของ 05 / 06 อยู่แล้ว
+```bash
+R=~/bangmod-cd/repo; W=~/bangmod-cd/work/prod-init               # worktree ชั่วคราวของ main (ไม่แตะ ~/Capstone และ clone ของ CD)
+git -C $R fetch -q origin && git -C $R worktree add --detach $W origin/main \
+  && $W/devops/k8s/init-db.sh prod; git -C $R worktree remove --force $W
+```
+
+**5. ข้อมูลเริ่มต้น:** admin คนแรกตามหัวไฟล์ `k8s/sql/prod-first-admin.sql` (ผู้ใช้ตั้งรหัสเอง ≥ 12 ตัว) → SQL `semesters` / `consent_versions` จาก DB · ถ้าจะเดโมกล้องบน prod ต้องมีห้อง + กล้อง `stream_path = room-4303` ใน DB ของ prod ด้วย (MediaMTX ใช้ร่วมกัน · ai-service ของ uat และ prod อ่านกล้องเดียวกันได้ แต่ใช้ CPU 2 เท่า)
+
+**6. ตรวจผล (ข้อ 13–16)**
+```bash
+kubectl -n prod get pods
+kubectl -n prod logs deploy/backend --tail=300 | grep -E 'ERROR|โปรไฟล์ local|Started'   # ต้องมี Started · ไม่มี ERROR / "โปรไฟล์ local"
+O='Origin: https://bscit.sit.kmutt.ac.th'; B=https://bscit.sit.kmutt.ac.th/capstone26/cp26ms3/prod
+curl -s -o /dev/null -w 'web %{http_code}\n' $B/                                 # 200
+curl -s -o /dev/null -w 'me %{http_code}\n' -H "$O" $B/api/me                     # 401 (403 = CORS ผิด)
+curl -s -o /dev/null -w 'internal %{http_code}\n' -X POST $B/api/internal/x       # 404
+curl -s -o /dev/null -w 'test-accounts %{http_code}\n' $B/api/test-accounts       # ต้องไม่ใช่ 200 (prod ไม่เปิดบัญชีทดสอบ)
+```
+login admin ใน browser ที่ `https://bscit.sit.kmutt.ac.th/capstone26/cp26ms3/prod/` · ผ่านแล้วเตรียมแถว "ประวัติการ deploy" (ห้ามมีความลับ)
 
 ## ติดตั้งโมเดล AI (ครั้งเดียว · ใช้ร่วมกันทั้ง uat และ prod)
 
@@ -246,6 +307,47 @@ kubectl -n media logs deploy/mediamtx | grep -iE 'room-|error'   # ต้อง�
 - VM `mediamtx.yml`: `room-4303: source: "rtsps://vm:<รหัส>@<IP Tailscale ของ Pi>:8322/cam"` + `sourceFingerprint` = fingerprint ของ `server.crt` บน Pi
 - รหัสใน `authInternalUsers` ใช้ได้แค่ตัวอักษร / ตัวเลข / สัญลักษณ์บางตัว (`openssl rand -hex` ปลอดภัย) · ไฟล์สำรอง `mediamtx.yml.*` มีรหัส — อยู่ใน `.gitignore` แต่ควรลบหลังใช้
 
+**MediaMTX บน Pi เป็น systemd (เปิดเองตอนบูต · ใช้ sudo — ผู้ใช้รันเองบน Pi)** — ไฟล์ `pi/mediamtx.service` · binary + `mediamtx.yml` อยู่ที่ `~/mediamtx/`
+```bash
+scp devops/pi/mediamtx.service <user>@<IP ของ Pi>:/tmp/          # จากเครื่องที่มี repo
+# บน Pi: หยุดตัวที่รันด้วยมือก่อน (Ctrl+C ใน terminal นั้น หรือ pkill -x mediamtx)
+sed "s/__USER__/$USER/g" /tmp/mediamtx.service | sudo tee /etc/systemd/system/mediamtx.service >/dev/null
+sudo systemctl daemon-reload && sudo systemctl enable --now mediamtx && sudo systemctl enable tailscaled
+systemctl status mediamtx --no-pager && journalctl -u mediamtx -n 30 --no-pager   # ต้องเห็น "[RTSP] listener opened on :8322"
+sudo reboot   # แล้วตรวจ: systemctl is-active mediamtx tailscaled → active active
+```
+
+**เช็คลิสต์ก่อนเดโมกล้อง (ทาง Tailscale — ทางที่ใช้ได้แล้ว)** · ทำวันก่อนเดโมที่ห้องจริง และอีกครั้ง 30 นาทีก่อนเดโม
+1. Tailscale admin console → Machines → Pi และ VM → **Disable key expiry** (key หมดอายุ = หลุดวันเดโม)
+2. Pi เสียบไฟ + สายกล้อง → ต่อเน็ต (Wi-Fi ห้อง หรือ hotspot มือถือ) → `ping -c3 1.1.1.1`
+3. Pi: `tailscale status` เห็น VM `cp26ms3` · `tailscale ip -4` = IP ใน `source` ของ `room-4303` ใน `mediamtx.yml` บน VM
+4. Pi: `systemctl is-active mediamtx` = active · `ss -lntp | grep 8322` มี listener
+5. VM: `tailscale ping <IP 100.x ของ Pi>` ได้ pong · `nc -vz -w5 <IP 100.x ของ Pi> 8322` succeeded
+6. VM: `kubectl -n media logs deploy/mediamtx --since=10m | grep room-4303` เห็น `[RTSP source] ready` (ยังไม่ขึ้น: MediaMTX ลองต่อใหม่เอง · รอ 30 วินาที หรือ `kubectl -n media rollout restart deploy/mediamtx`)
+7. VM: `kubectl -n uat exec deploy/ai-service -- python -c "import urllib.request as u;print(u.urlopen('http://localhost:8080/cameras/status').read().decode())"` → `room-4303` เป็น live (ไม่ใช่ `no_signal`)
+8. เครื่องที่ใช้เปิดหน้าเว็บ **ต้องอยู่ในเครือข่ายคณะ / VPN** (ภาพ UDP 8189 ไปตรง `10.4.56.69`) → หน้าห้อง 4303 เห็นภาพ · ได้ WHEP แต่จอดำ = เครือข่ายของเครื่องที่ดูบล็อก UDP 8189 → เปลี่ยนเครือข่ายของเครื่องที่ดู (ไม่ใช่ของ Pi)
+9. กด "เริ่มคาบตอนนี้" → ยืนหน้ากล้อง → ขึ้นเช็คชื่อ
+
+ทางสำรอง: Wi-Fi ห้องใช้ไม่ได้ / บล็อก Tailscale → ให้ Pi ต่อ **hotspot มือถือ** (Tailscale ผ่าน NAT ได้เอง · IP 100.x ไม่เปลี่ยน ไม่ต้องแก้ `mediamtx.yml`) · 720p 15 fps ใช้เน็ตราว 2–3 Mbps · ตั้งชื่อ / รหัส hotspot ไว้ใน Pi ล่วงหน้า (`sudo nmcli dev wifi connect <SSID> password <รหัส>` ทำครั้งเดียว ครั้งต่อไปต่อเอง)
+
+**ต่อแบบ "วงเดียวกัน" (ไม่ผ่าน Tailscale) ไม่ติด — สาเหตุที่น่าจะเป็น**
+- VM อยู่ในวง server ของคณะ (`10.4.56.x`) แต่ Pi ต่อ Wi-Fi ของมหาลัย ซึ่งมักเป็นคนละ VLAN และมี client isolation / firewall กันการต่อ**เข้า**เครื่อง Wi-Fi → VM (MediaMTX เป็นฝั่ง**ดึง**) ต่อ `<IP Wi-Fi ของ Pi>:8322` ไม่ถึง · แก้เองไม่ได้ ต้องขอฝ่าย IT
+- Wi-Fi มหาลัยมักต้อง login (captive portal / WPA2-Enterprise) → Pi ไม่มีจอ login ไม่ได้ = ไม่มีเน็ตเลย
+- IP Wi-Fi ของ Pi ได้จาก DHCP เปลี่ยนทุกครั้ง → `source` ใน `mediamtx.yml` เก่า · และถ้า IP อยู่ใน `10.42.x.x` / `10.43.x.x` จะชนกับ pod / service ของ K3s
+- ใช้ชื่อ (`raspberrypi.local`) ใน `source` → pod resolve mDNS ไม่ได้ ต้องใช้ IP
+- ถ้าที่ไม่ติดคือ "เบราว์เซอร์ดูภาพ" ไม่ใช่ Pi → UDP 8189 จาก Wi-Fi ไป VM ถูกบล็อก (WHEP 201 แต่จอดำ)
+
+คำสั่งหาว่าติดที่ไหน:
+```bash
+# Pi
+hostname -I; ip route; tailscale status; ss -lntup | grep -E '8322|8554|8889'; systemctl status mediamtx --no-pager
+# VM (แทน <PI_LAN> ด้วย IP Wi-Fi ของ Pi)
+ip route get <PI_LAN>                         # ต้องออก eth / ens ของ VM ไม่ใช่ cni0 / flannel (ชน K3s)
+ping -c3 <PI_LAN>; nc -vz -w5 <PI_LAN> 8322   # timeout = เครือข่ายกั้น (VLAN / isolation) · refused = ถึง Pi แต่ MediaMTX ไม่ฟัง
+kubectl run nettest --rm -it --restart=Never --image=busybox:1.36 -- nc -vz -w 5 <PI_LAN> 8322   # จาก pod (host ผ่านแต่ pod ไม่ผ่าน = ชน subnet K3s)
+```
+สรุป: วันเดโม **ใช้ Tailscale** (ทำงานแล้ว ไม่ขึ้นกับว่าอยู่วงไหน) · วงเดียวกันเป็นงานหลังเดโม
+
 **ตัวอ่านกล้องของ ai-service** (`CAMERA_WORKER=true` ใน `k8s/base/ai-service.yaml`): อ่าน `rtsp://mediamtx.media.svc.cluster.local:8554/<stream_path>` ของทุกกล้องใน DB → เช็คชื่อผ่าน `/api/internal/**` + heartbeat (ป้าย "กล้องออนไลน์" เป็นสถานะจริงแล้ว: กล้องที่ไม่มี path ใน MediaMTX = `no_signal`) · ต้องมี `FACE_EMBEDDING_KEY` ใน `secret.env` (ค่าเดียวกับ backend) · ดูสถานะ:
 ```bash
 kubectl -n uat exec deploy/ai-service -- python -c "import urllib.request as u;print(u.urlopen('http://localhost:8080/cameras/status').read().decode())"
@@ -282,6 +384,12 @@ kubectl -n uat logs deploy/ai-service | grep -E 'camera|gallery'
 - HTTPS ตรงที่ VM (`https://cp26ms3.sit.kmutt.ac.th/capstone26/cp26ms3/<ns>/` · ใบจาก SITCertAuthCA) เตรียมไว้แล้วแต่ยังไม่เปิด — ขั้นตอนอยู่ในคอมเมนต์ของ `k8s/base/ingress.yaml` · ใช้ได้เฉพาะในคณะ / VPN และเครื่องที่ไม่ได้ติดตั้ง SITCertAuthCA จะขึ้นเตือน
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-26 — เตรียม prod ผ่าน bscit + MediaMTX บน Pi เป็น systemd + เช็คลิสต์กล้องวันเดโม
+- **ทำอะไร:** overlay prod: `CORS_ORIGINS=https://bscit.sit.kmutt.ac.th` (เอา localhost ออก) + `MEDIA_BASE_URL=/capstone26/cp26ms3/prod/media` + คอมเมนต์ CORS ที่ค้าง · เพิ่ม `pi/mediamtx.service` · README: หัวข้อ "Deploy prod ครั้งแรก (ผ่าน CD)", "MediaMTX บน Pi เป็น systemd", "เช็คลิสต์ก่อนเดโมกล้อง", สาเหตุที่ต่อแบบวงเดียวกันไม่ติด + คำสั่งตรวจ
+- **ไฟล์ที่เกี่ยวข้อง:** `k8s/overlays/prod/kustomization.yaml`, `pi/mediamtx.service`, `README.md`
+- **เหตุผล:** เดโม 30 พ.ย. บน VM คณะ ต้องขึ้น prod ได้จริง · กล้องต้องเปิดเองหลังบูต
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ตรวจ YAML ด้วย PyYAML เท่านั้น (เครื่องที่แก้ไม่มี kubectl / kustomize) · `frontend/.env.production` ยังเป็น `VITE_BASE=/prod/` ต้องแก้ (งาน frontend) ก่อน `deploy.sh prod` · `deploy.sh prod` ใช้ `origin/main` → ต้อง merge `Dev` → `main` ก่อน · bscit `/capstone26/cp26ms3/prod/` ได้ 503 `no available server` (Traefik) = อาจมี Ingress prod ค้างใน cluster ต้องดูบน VM · unit systemd ยังไม่ได้ทดสอบบน Pi จริง
 
 ### 2026-11-25 — ปรับ README ให้ตรงกับโค้ดปัจจุบัน
 - **ทำอะไร:** แผนภาพเพิ่ม `<base>media/*` → MediaMTX และ Pi → MediaMTX → ai-service · Deploy ครั้งแรกข้อ 2: `MEDIA_BASE_URL` เป็น `<VITE_BASE>media` (ไม่ใช่ `:8889`) · ทดสอบลงทะเบียนใบหน้าใช้บัญชีทีม + เปิดผ่าน bscit (HTTPS) ปุ่มเปิดกล้องใช้ได้ · หมายเหตุโมเดล: ตัวอ่านกล้อง realtime ทำแล้ว

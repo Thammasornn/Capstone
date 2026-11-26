@@ -1,0 +1,22 @@
+# MediaMTX บน Raspberry Pi (กล้องห้อง 4303) — เปิดเองตอนบูต และเปิดใหม่ถ้าหยุด
+# อ่านกล้อง (source: rpiCamera) แล้วเปิด RTSPS :8322 ให้ VM ดึงผ่าน Tailscale
+# ติดตั้ง (บน Pi · ใช้ sudo — คนรันเอง): ดู devops/README.md หัวข้อ "MediaMTX บน Pi เป็น systemd"
+#   __USER__ ถูกแทนด้วย user ของ Pi ตอนติดตั้ง (sed) · binary + config อยู่ที่ /home/<user>/mediamtx/
+[Unit]
+Description=MediaMTX (Raspberry Pi camera -> RTSPS for the VM)
+# รอเน็ต + Tailscale ก่อน (VM ดึงผ่าน IP 100.x ของ Tailscale) · ไม่มี tailscaled ก็ยังเริ่มได้
+Wants=network-online.target tailscaled.service
+After=network-online.target tailscaled.service
+
+[Service]
+Type=simple
+User=__USER__
+# libcamera ต้องอยู่ group video (user ปกติของ Raspberry Pi OS อยู่แล้ว)
+SupplementaryGroups=video
+WorkingDirectory=/home/__USER__/mediamtx
+ExecStart=/home/__USER__/mediamtx/mediamtx /home/__USER__/mediamtx/mediamtx.yml
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
