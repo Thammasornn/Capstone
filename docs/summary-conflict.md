@@ -20,8 +20,8 @@ Main Chat (coordinator) จะส่งสรุปมาให้ sub-chat "sum
 
 ## บันทึก
 
-### 2026-11-26 — E2 / F1–F3 จัดการนักศึกษาในกลุ่ม, seed เดโม, AI anti-spoofing, เตรียม prod (`e7db958..79240fc`)
-> จดจาก commit message และ changelog ใน README (ยังไม่มีรายงานจาก coordinator) · ตอนจดยังไม่ push (`origin/Dev` = `cd04b8b`)
+### 2026-11-26 — E2 / F1–F3 จัดการนักศึกษาในกลุ่ม, seed เดโม, AI anti-spoofing, เตรียม prod (`cd04b8b..8375493`)
+> push แล้ว (15 commit) · ก่อน push `./dev.sh test` ผ่านทั้งชุด รวม ai-service pytest 23 ข้อ · `main` ไม่มี commit ที่ `Dev` ขาด
 - **แก้อะไร:**
   - BE `7239079` (E2): API เพิ่ม / ถอน / นำเข้านักศึกษาในกลุ่มเรียน (`/api/sections/{id}/enrollments`, import csv/txt/xlsx + `dryRun`, template) · action `insert` / `reactivate` / `create` / `skip` / `unmatched` · สร้างบัญชีนักศึกษาใหม่ได้เมื่อตั้ง `NEW_STUDENT_PASSWORD` (local / uat เท่านั้น) · audit ทุกการเพิ่ม / ถอน / นำเข้า
   - FE `dc727ec` (F1): ตัวเลือก "สาย 10 / 15 / 30 นาที" + กำหนดเองในฟอร์มรายวิชาและฟอร์มคาบ (ค่าเริ่มต้น 15)
@@ -32,8 +32,13 @@ Main Chat (coordinator) จะส่งสรุปมาให้ sub-chat "sum
   - DevOps `4f0c21e`: overlay prod หลัง bscit (`CORS_ORIGINS`, `MEDIA_BASE_URL`, แก้คอมเมนต์ CORS ที่ค้างจากรอบ docs sync), MediaMTX บน Pi เป็น systemd, checklist กล้องเดโม
   - DevOps `7d1468b`: `NEW_STUDENT_PASSWORD` อ่านจาก secret ของ uat ไม่ตั้งใน prod
   - DevOps `f739ba9`, `79240fc`: SQL prod ครั้งแรก (ภาคเรียน, `consent_versions`, ห้อง 4301–4305) · เพิ่มอาจารย์ · นำเข้านักศึกษาจาก CSV (มี dry run, ปฏิเสธ DB mock)
-  - docs `35908d1`, `3c92bbe`: README root (seed เดโม, E2, F1, metrics) · โมเดล MiniFASNet + ลำดับอัปเดต uat หลัง push นี้
+  - docs `35908d1`, `3c92bbe`: README root (seed เดโม, E2, F1, metrics, หัวข้อบัญชีทดสอบ) · โมเดล MiniFASNet + ลำดับอัปเดต uat หลัง push นี้
+  - docs `e7db958`, `8375493`: เริ่มไฟล์บันทึกนี้ + รายการนี้
 - **ปัญหา / conflict ที่เจอ:**
+  - **git index ใช้ร่วมกันหลาย session:** DevOps `git add` 3 ไฟล์ทิ้งไว้ (`devops/README.md`, `devops/k8s/overlays/prod/kustomization.yaml`, `devops/pi/mediamtx.service`) → ไปติดใน commit ของ FE (F1) และต่อมาของ BE (E2 `f219ccb`) · FE และ BE `reset --soft` เฉพาะ commit ของตัวเอง (ยังไม่ push) แล้ว commit ใหม่ → DevOps commit ไฟล์ของตัวเองเป็น `4f0c21e` · ไม่มีอะไรหาย · **กฎใหม่: commit ด้วย pathspec ในคำสั่งเดียว (`git commit -m ... -- <ไฟล์>`) ห้าม `git add -A` / `git add .` / `git commit -a`**
+  - `./dev.sh test` ล้มที่ frontend format ชั่วคราว เพราะไฟล์ F3 ที่ยังไม่ commit อยู่ใน working tree (ไม่ใช่ความผิดของ commit ที่รัน) · smoke B2 ล้มชั่วคราวช่วงที่ seed ของ DB ยังไม่ commit → หายหลัง commit ครบ
+  - sub-chat FE / AI / DB ชน usage limit 5 ชั่วโมงกลางงาน → coordinator สั่งให้ทำต่อหลัง limit reset
+  - prod ไม่มีทางสร้างบัญชีอาจารย์ / นักศึกษา → ผู้ใช้เลือกใช้ SQL (`79240fc`) · ข้อจำกัด: ไม่มีบังคับเปลี่ยนรหัสผ่านครั้งแรก และไม่มีหน้าเปลี่ยนรหัสผ่าน
   - `2eef1ff` แก้ `backend/db/` → push แล้ว **CD จะหยุด (blocked)** จนกว่าผู้ใช้ทำตามลำดับใน `devops/README.md` แล้วสั่ง `ALLOW_DB_CHANGE=1 deploy.sh uat`
   - เปิด bscit `/prod/` ได้ 503 `no available server` จาก Traefik ของ VM (ไม่ใช่ 404 ของ bscit) → อาจมี Ingress prod ค้าง ต้องตรวจก่อน ห้ามลบเอง
   - DevOps เตรียม prod แล้วพบว่า `frontend/.env.production` ยังเป็น `VITE_BASE=/prod/` → ส่งต่อให้ FE แก้ใน F2 (`e153f32`)
@@ -41,12 +46,13 @@ Main Chat (coordinator) จะส่งสรุปมาให้ sub-chat "sum
   - reset DB ตาม seed ใหม่ลบใบหน้าเดิม → ทีมต้องลงทะเบียนใบหน้าใหม่ก่อนเดโมกล้อง
 - **ยังค้าง / ต้องทำต่อ:**
   - uat: รัน SQL ตามลำดับใน `devops/README.md` + `ALLOW_DB_CHANGE=1 deploy.sh uat` · ตั้ง `NEW_STUDENT_PASSWORD` ใน secret ของ uat
-  - prod ยังไม่ deploy: ตรวจ 503 ก่อน แล้วผู้ใช้รัน `deploy.sh prod` เอง + SQL ครั้งแรก
+  - prod ยังไม่ deploy: merge PR `Dev` → `main` ก่อน (รอผู้ใช้สั่ง) · ตรวจ 503 · แล้วผู้ใช้รัน `deploy.sh prod` เอง + SQL ครั้งแรก
+  - วันภาคเรียน 2569/1 ใน `prod-first-setup.sql` (2026-08-03 → 2026-12-18) เป็นค่าประมาณ ต้องตรวจกับปฏิทิน มจธ.
   - ข้อความ consent v1 ยังเป็นร่าง (ยังไม่ผ่าน DPO) ใช้กับเดโมเท่านั้น
   - ชื่อของ `66130500288` / `66130500099` ยังเป็น placeholder รอยืนยัน
   - ค่า "ขาดหลัง" 30 / 45 / 60 นาที FE เสนอเอง รอยืนยันกับระเบียบจริง
   - ยังไม่ได้วัดความแม่นยำ anti-spoofing กับหน้าจริง · ยังไม่ได้ build image AI จริง · ยังไม่ได้รัน kustomize / ทดสอบบน VM
-  - หัวข้อ "บัญชีทดสอบ" ใน README root ยังเป็นข้อมูลชุดเก่า (ส่งข้อเสนอให้ docs แล้ว)
+  - F3 ยังไม่ได้ทดสอบด้วยบัญชี lecturer และไฟล์ `.xlsx` จริง
 
 ### 2026-11-25 — ข้อความ 409 "มีคาบอยู่แล้ว" บอกวันที่จริง (`296bb1d..cd04b8b`)
 - **แก้อะไร:**
