@@ -118,6 +118,13 @@ export const routes = [
         meta: { title: 'คาบเรียน', roles: COURSE_EDITORS },
       },
       {
+        path: 'courses/:courseId/sections/:sectionId/students',
+        name: 'section-students',
+        component: () => import('@/features/section-roster/pages/SectionRosterPage.vue'),
+        props: true,
+        meta: { title: 'รายชื่อนักศึกษา', roles: COURSE_EDITORS },
+      },
+      {
         path: 'courses',
         component: CourseHubLayout,
         children: [

@@ -200,6 +200,12 @@ async function doRestore() {
           <p class="mt-1 text-xs text-muted">
             แก้เฉพาะคาบที่เลือก ตารางเรียนของรายวิชาไม่เปลี่ยน ·
             <RouterLink
+              :to="{ name: 'section-students', params: { courseId, sectionId } }"
+              class="font-semibold text-primary hover:underline"
+              >รายชื่อนักศึกษา</RouterLink
+            >
+            ·
+            <RouterLink
               :to="{ name: 'course-edit', params: { courseId } }"
               class="font-semibold text-primary hover:underline"
               >แก้ตารางเรียนของรายวิชา</RouterLink

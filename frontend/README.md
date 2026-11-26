@@ -65,6 +65,7 @@ docker run -p 8080:80 -e BACKEND_URL=http://10.0.0.5:8081 bangmod-frontend:prod 
 | จัดการรายวิชา | `/courses/manage` | 5.3, B6 (สวิตช์กล้อง), B5 DELETE |
 | เพิ่ม / แก้ไขรายวิชา | `/courses/new`, `/courses/:id/edit` | B5, `GET /rooms/options`, `GET /lecturers` |
 | คาบเรียน (คาบจริงรายคาบของกลุ่มเรียน) | `/courses/:courseId/sections/:sectionId/sessions` | D2: `GET /sections/{id}/sessions`, `PATCH /class-sessions/{id}`, `POST .../cancel`, `POST .../restore`, `POST /sections/{id}/sessions`, `GET /rooms/options`                                                                                                                  |
+| รายชื่อนักศึกษาในกลุ่มเรียน | `/courses/:courseId/sections/:sectionId/students` | E2: `GET /sections/{id}/enrollments`, `POST .../enrollments` (dryRun), `POST .../{studentId}/drop`, `GET .../import-template`, `POST .../import` |
 | รายงานรายคาบ | `/reports/sessions/:sessionId` | 5.7–5.8, B8, แก้เวลาคาบ ≤ 7 วัน (`reanchor` / `check-in-window`), นำเข้าผลเช็คชื่อ (`import-template`, `import/inspect`, `import`, `imports`) |
 | หน้าแรกนักศึกษา / วิชาของฉัน | `/student`, `/student/courses` | 5.3 + 5.9 ของทุกวิชา |
 | ประวัติการเข้าเรียน | `/student/attendance` | 5.9 |
@@ -76,6 +77,17 @@ docker run -p 8080:80 -e BACKEND_URL=http://10.0.0.5:8081 bangmod-frontend:prod 
 `app → features → entities → shared` — ฟีเจอร์ห้าม import ฟีเจอร์อื่น (ESLint ตรวจให้ที่ `shared/` และ `entities/`)
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-26 — frontend: หน้ารายชื่อนักศึกษาในกลุ่มเรียน — เพิ่มเอง / นำเข้าไฟล์ / ถอน (F3)
+- **ทำอะไร:**
+  - feature ใหม่ `features/section-roster/`: หน้า `SectionRosterPage` (route `section-students`, roles = `COURSE_EDITORS`) เข้าจากปุ่ม "นักศึกษา" ต่อกลุ่มเรียนใน `CourseTable` และลิงก์ในหน้าคาบเรียน (D3) · ตัวกรอง ลงทะเบียนอยู่ (ค่าเริ่มต้น) / ถอนแล้ว / ทั้งหมด + ค้นหารหัส / ชื่อ / อีเมล · ป้ายใบหน้า (ลงทะเบียนแล้ว / ยัง), ความยินยอม (`granted` / `withdrawn` / ยังไม่ยินยอม), บัญชีถูกปิด · จอใหญ่เป็นตาราง มือถือเป็น card · บอกผู้ใช้ว่าคนที่เพิ่มใหม่ลงขาดอัตโนมัติเฉพาะคาบที่เริ่มหลังเพิ่ม
+  - `AddStudentsDialog`: เพิ่มเองหลายคน (รหัสหรืออีเมล · ชื่อ-นามสกุลแสดงเมื่อ `canCreateAccounts`) + "วางหลายคน" (บรรทัดละคน / คั่นด้วย ,) → ตรวจฝั่ง FE (รหัส 11 หลัก, อีเมลขึ้นต้นด้วยรหัสและตรงกับรหัส, ชื่อ + นามสกุลคู่กัน) → "ตรวจสอบ" (`dryRun: true`) → "ยืนยันเพิ่ม N คน" (`dryRun: false`) · ปุ่ม "เพิ่มกลับ" ของคนที่ถอนแล้วเปิด dialog พร้อมรหัส
+  - `ImportStudentsWizard` (pattern เดียวกับ C3): ดาวน์โหลด template .xlsx / .csv → เลือกไฟล์ (.csv / .txt / .xlsx ≤ 2 MB) → ตรวจสอบ (`dryRun: true`) → ยืนยัน · 400 + `errors[]` แสดงเป็นตาราง (`RowErrorsTable`)
+  - `AddResultPreview` (ใช้ร่วม): ตัวเลขสรุป + แท็บ จะเพิ่ม (insert / reactivate / create) · อยู่ในกลุ่มแล้ว · เพิ่มไม่ได้ (เหตุผล not_found / duplicate / account_inactive / email_taken เป็นภาษาไทย · not_found บอกต่างกันตาม `canCreateAccounts`)
+  - `DropStudentDialog`: ถอน + เหตุผล (ไม่บังคับ) → toast บอกจำนวนผลเช็คชื่อที่เก็บไว้ (`keptAttendanceCount`)
+- **ไฟล์ที่เกี่ยวข้อง:** `src/features/section-roster/**` (ใหม่: `api.js`, `pages/SectionRosterPage.vue`, `components/{AddStudentsDialog,ImportStudentsWizard,AddResultPreview,RowErrorsTable,DropStudentDialog}.vue`), `src/app/router/routes.js`, `src/features/course-management/components/CourseTable.vue`, `src/features/course-management/pages/SectionSessionsPage.vue`
+- **เหตุผล:** อาจารย์ที่ปรึกษาขอให้เพิ่มนักศึกษาเข้ากลุ่มเรียนได้ทั้งป้อนเองและนำเข้าไฟล์ (ต่อจาก BE E2)
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ทดสอบกับ backend จริง (E2) + Postgres ชั่วคราว (seed ใหม่ 5 วิชา): ตรวจฝั่ง FE 3 แบบ, dryRun ได้ครบ insert / create / skip / not_found / duplicate แล้วบันทึก, ถอน (เก็บผลเช็คชื่อ 5 คาบ) → เพิ่มกลับ = reactivate, ไฟล์ผิด → ตารางข้อผิดพลาด 2 แถว, ไฟล์ถูก → นำเข้า 3 คน (สร้างบัญชี 1), template xlsx / csv ได้ชื่อไฟล์ `students_INT201-001.*` (ตรวจด้วย curl · ไม่ได้กดดาวน์โหลดในเบราว์เซอร์), วางหลายคน, โหมดไม่สร้างบัญชี (แบบ prod) ซ่อนช่องชื่อและบอกให้ผู้ดูแลระบบสร้างบัญชี, มือถือ 375px ไม่ล้น · ยังไม่ได้ทดสอบ: บัญชี lecturer, ไฟล์ .xlsx จริง
 
 ### 2026-11-26 — frontend: prod ผ่าน bscit (F2)
 - **ทำอะไร:** `.env.production` เปลี่ยนแบบเดียวกับ `.env.uat`: `VITE_BASE=/capstone26/cp26ms3/prod/`, `APP_PATH=/prod/` (ใหม่ · NGINX location ใน container ต้องตรงกับ Ingress ของ prod), `VITE_API_BASE_URL=/capstone26/cp26ms3/prod/api` (ยังใช้อยู่: axios `baseURL` ใน `http.js`, SSE, MSW) · อัปเดตตาราง env / คำสั่ง docker ใน README และคอมเมนต์ใน `vite.config.js`, `src/app/router/index.js`
