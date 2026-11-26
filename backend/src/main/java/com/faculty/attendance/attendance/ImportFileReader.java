@@ -45,6 +45,11 @@ public final class ImportFileReader {
     public record ParsedFile(String fileName, String sha256, List<String> headers, List<DataRow> rows) {}
 
     public static ParsedFile read(MultipartFile file) {
+        return read(file, false);
+    }
+
+    /** allowTxt = รับ .txt เป็น CSV (UTF-8 คั่นด้วย comma เหมือนกัน) · ใช้กับนำเข้ารายชื่อนักศึกษา */
+    public static ParsedFile read(MultipartFile file, boolean allowTxt) {
         if (file == null || file.isEmpty()) throw ImportValidationException.file("กรุณาเลือกไฟล์");
         if (file.getSize() > MAX_BYTES) throw ImportValidationException.file("ไฟล์ใหญ่เกิน 2 MB");
         String name = file.getOriginalFilename() == null ? "" : file.getOriginalFilename().trim();
@@ -56,12 +61,13 @@ public final class ImportFileReader {
             throw ImportValidationException.file("อ่านไฟล์ไม่ได้");
         }
         List<List<String>> table;
-        if (lower.endsWith(".csv")) {
+        if (lower.endsWith(".csv") || (allowTxt && lower.endsWith(".txt"))) {
             table = csv(bytes);
         } else if (lower.endsWith(".xlsx")) {
             table = xlsx(bytes);
         } else {
-            throw ImportValidationException.file("รองรับเฉพาะไฟล์ .csv (UTF-8) หรือ .xlsx");
+            throw ImportValidationException.file(allowTxt ? "รองรับเฉพาะไฟล์ .csv / .txt (UTF-8 คั่นด้วย comma) หรือ .xlsx"
+                    : "รองรับเฉพาะไฟล์ .csv (UTF-8) หรือ .xlsx");
         }
         return toParsed(name, sha256(bytes), table);
     }

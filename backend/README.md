@@ -39,6 +39,7 @@ Spring Boot 4 · Java · PostgreSQL ([`db/`](db/)) · แบบฐานข้�
 | `CORS_ORIGINS` | โดเมนของ FE คั่นด้วย `,` | `http://localhost:5173` | เหมือนกัน |
 | `FLYWAY_ENABLED` | ให้ Flyway ดูแล schema (ปกติใช้ `db/*.sql`) | `false` | เหมือนกัน |
 | `FORWARD_HEADERS_STRATEGY` | เชื่อ `X-Forwarded-For` จาก proxy ภายใน | `native` | เหมือนกัน |
+| `NEW_STUDENT_PASSWORD` | รหัสผ่านของบัญชีนักศึกษาที่สร้างใหม่ตอนเพิ่มเข้ากลุ่มเรียน (ไม่มีบัญชี + ส่งชื่อ-นามสกุลมา) · ว่าง = ไม่สร้างบัญชี · **ห้ามตั้งใน prod** | ว่าง (ไม่สร้าง) | `Password@123` |
 | `TEST_ACCOUNTS_ENABLED` | เปิด `GET /api/test-accounts` (ไม่ต้อง login) ให้หน้า Login แสดงบัญชีใน DB · **ห้ามเปิดใน prod** | `false` (= 404) | `true` |
 
 สร้างฐานข้อมูลด้วย `./dev.sh db` ที่ root (หรือตาม [`db/README.md`](db/README.md): `00` → `01` → `02`) แล้ว:
@@ -68,6 +69,32 @@ mvn spring-boot:run        # http://localhost:8081
 | `PUT /class-sessions/{sessionId}/attendance/{studentId}` (`status`, `reason` บังคับ, `checkInTime`) | B8 | admin, อาจารย์ผู้สอน |
 | `POST /rooms/{roomId}/sessions` `{sectionId}` — เริ่มคาบของกลุ่มเรียนนี้ในห้องนี้ "ตอนนี้" (เปิดเช็คชื่อทันที · ความยาว / ช่วงตรงเวลา / สายตามกลุ่มเรียน · 409 = ห้องมีคาบอื่นเวลาทับ / กลุ่มเรียนมีคาบที่กำลังเรียนหรือจบแล้ววันนี้ · audit `session.start_now` + event `session`) | ปุ่มเริ่มคาบ (Room Live) | admin, อาจารย์ผู้สอน |
 | `POST /class-sessions/{sessionId}/end` — จบคาบที่กำลังเรียน "ตอนนี้" (ช่วงเช็คชื่อที่ยังเปิดถูกตัด → คนที่ยังไม่มีผล = absent `system` · audit `session.end_now` + event `session`) | ปุ่มจบคาบ (Room Live) | admin, อาจารย์ผู้สอน |
+
+### นักศึกษาในกลุ่มเรียน (enrollments · ป้อนเอง + นำเข้าไฟล์)
+
+ทุกเส้นใต้ `/sections/{sectionId}/enrollments` · สิทธิ์ admin / อาจารย์ผู้สอนกลุ่มนั้น (นักศึกษา 403) · ไม่พบกลุ่ม 404 · `reason` ไม่บังคับ (≤ 500 · เก็บใน audit) · ใช้ข้อมูลทดสอบเท่านั้น (PDPA)
+
+| เส้น | request | response |
+|---|---|---|
+| `GET` `?status=active\|dropped` (ไม่ส่ง = ทั้งหมด) | — | `{sectionId, courseCode, sectionCode, canCreateAccounts, activeCount, items: [{studentId, studentCode, title, firstName, lastName, fullName, email, accountActive, status, enrolledAt, droppedAt, faceRegistered, consentStatus}]}` |
+| `POST` | `{students: [{studentCode?, email?, title?, firstName?, lastName?}], reason?, dryRun?}` (≤ 500 คน · `dryRun` ค่าเริ่มต้น `false`) | `AddResponse` |
+| `POST /{studentId}/drop` | `{reason?}` | `{studentId, studentCode, status: "dropped", droppedAt, keptAttendanceCount}` · ไม่อยู่ในกลุ่ม 404 · ถอนแล้ว 409 |
+| `GET /import-template?format=xlsx\|csv` | — | ไฟล์ `students_<courseCode>-<sectionCode>.<ext>` หัวตาราง `student_code, title, first_name, last_name, email` (XLSX มีชีต "วิธีกรอก" · CSV มี BOM) |
+| `POST /import` (multipart) | `file` (.csv / .txt UTF-8 คั่นด้วย comma หรือ .xlsx ชีตแรก · ≤ 2 MB · ≤ 500 แถว), `dryRun` (ค่าเริ่มต้น `true`), `reason?` | `AddResponse` (`rowNo` = เลขแถวในไฟล์) |
+
+`AddResponse = {dryRun, sectionId, canCreateAccounts, rows: [{rowNo, identifier, studentId, studentCode, studentName, email, action, reason, applied}], summary: {total, insert, reactivate, create, skip, unmatched, applied}}`
+
+| action | เมื่อไร |
+|---|---|
+| `insert` | มีบัญชีนักศึกษา ยังไม่อยู่ในกลุ่ม |
+| `reactivate` | เคยถูกถอน (dropped) → active อีกครั้ง |
+| `create` | ยังไม่มีบัญชี + ส่ง `firstName` / `lastName` + ตั้ง `NEW_STUDENT_PASSWORD` แล้ว → สร้างบัญชี (`users` + `student_profiles`, email = ที่ส่งมา หรือ `<รหัส>@st.sit.kmutt.ac.th`, รหัสผ่าน = `NEW_STUDENT_PASSWORD`) แล้วเพิ่มเข้ากลุ่ม |
+| `skip` | อยู่ในกลุ่มแล้ว (`reason: already_enrolled`) |
+| `unmatched` | `not_found` (ไม่มีบัญชี และไม่ได้ส่งชื่อ / ระบบไม่เปิดให้สร้าง) · `duplicate` (ซ้ำในคำขอ ใช้รายการแรก) · `account_inactive` · `email_taken` (อีเมลนี้มีผู้ใช้อื่นแล้ว) |
+
+- **400 ข้อมูลผิด (ไม่บันทึกอะไร):** รูปแบบเดียวกับนำเข้าผลเช็คชื่อ `{..., message, errors: [{rowNo, column, value, message}]}` — ต้องมี `studentCode` หรือ `email` · `studentCode` 11 หลัก · `email` = `<รหัส 11 หลัก>@...` และตรงกับ `studentCode` · ชื่อ-นามสกุลต้องมาคู่กัน · หัวตารางไฟล์: ชื่อตาม template (ไม่สนตัวพิมพ์ เรียงลำดับใดก็ได้) ต้องมี `student_code` หรือ `email` · คอลัมน์อื่น = 400
+- `applied` = บันทึกจริงแล้ว (dryRun = `false` ทุกแถว) · บันทึก: transaction เดียว ล็อกกลุ่มเรียน คำนวณใหม่ · audit `enrollment.add` / `enrollment.reactivate` / `enrollment.drop` ต่อคน (`entity_id` = studentId) · `student.create` ต่อบัญชีที่สร้าง · `enrollment.import` (ชื่อไฟล์ + SHA-256) ต่อการนำเข้า · ไม่เก็บตัวไฟล์
+- **`enrolled_at` = now()** (เพิ่มใหม่ / reactivate): ระบบลงขาดอัตโนมัติ (`insertSystemAbsents`) นับเฉพาะคาบที่เริ่มหลังเพิ่มเข้ากลุ่ม คาบที่ผ่านมาแล้วไม่ถูกลงขาดย้อนหลัง (ใช้ B8 ถ้าต้องการ) · ถอน = soft (`dropped` + `dropped_at`) ผลเช็คชื่อเก็บไว้ · gallery ของกล้องใช้เฉพาะ enrollment active อยู่แล้ว
 
 ### คาบเรียน (คาบจริงรายคาบ · คาบที่ยังไม่เริ่ม / ยกเลิก / ชดเชย)
 
@@ -176,6 +203,12 @@ mvn spring-boot:run        # http://localhost:8081
 > SSE และ event อยู่ในหน่วยความจำของ instance เดียว ถ้ารันหลาย replica ต้องเปลี่ยน `RoomEventHub` ไปใช้ pub/sub กลาง
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-26 — API นักศึกษาในกลุ่มเรียน: ป้อนเอง + นำเข้าไฟล์ (E2)
+- **ทำอะไร:** เพิ่ม package `enrollment` (`EnrollmentController` / `Service` / `Repository`): `GET /api/sections/{id}/enrollments` รายชื่อ (+ สถานะใบหน้า / ความยินยอม), `POST` เพิ่มทีละคน / หลายคนด้วยรหัสหรือ email (dryRun ได้), `POST .../{studentId}/drop` ถอนแบบ soft, `GET .../import-template` และ `POST .../import` (CSV / TXT / XLSX ใช้ `ImportFileReader` ของ C2 · dryRun ค่าเริ่มต้น) · action `insert` / `reactivate` / `create` / `skip` / `unmatched` · audit ทุกการเพิ่ม / ถอน / สร้างบัญชี · `ImportFileReader.read(file, allowTxt)` รับ `.txt` เป็น CSV · config ใหม่ `app.enrollment.new-student-password` (`NEW_STUDENT_PASSWORD` · โปรไฟล์ local = `Password@123`)
+- **ไฟล์ที่เกี่ยวข้อง:** `src/main/java/com/faculty/attendance/enrollment/*.java` (ใหม่), `attendance/ImportFileReader.java`, `src/main/resources/application.yml`, `src/main/resources/application-local.yml`, `README.md`
+- **เหตุผล:** อาจารย์ที่ปรึกษาขอให้ entry data ได้ 2 วิธี (ป้อนเอง + import จากไฟล์ text / CSV) · เดิมเพิ่มนักศึกษาเข้ากลุ่มได้แค่ด้วย SQL
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ไม่แก้ schema · ตัดสินเรื่องนักศึกษาที่ยังไม่มีบัญชี: สร้างบัญชีให้เมื่อส่งชื่อ-นามสกุลและตั้ง `NEW_STUDENT_PASSWORD` (demo ง่ายสุด: เพิ่มแล้ว login + ลงทะเบียนใบหน้าได้ทันที) ไม่งั้นเป็น `unmatched not_found` · **uat ต้องตั้ง `NEW_STUDENT_PASSWORD` (งาน DevOps) ถึงจะสร้างบัญชีได้ · prod ห้ามตั้ง** · ทดสอบกับ backend จริง + Postgres ชั่วคราว (seed 02 + 03): list, นักศึกษา 403, ข้อมูลผิด 3 รายการ → 400 ครบ, dryRun ไม่เขียน, ของจริง: skip / create (login ด้วยบัญชีใหม่ได้) / not_found / duplicate, insert เข้ากลุ่มอื่น, drop (เก็บผลเช็คชื่อ 5 แถว) → drop ซ้ำ 409 → เพิ่มอีกครั้ง = reactivate (`enrolled_at` ใหม่), ไม่อยู่ในกลุ่ม 404, template XLSX / CSV, นำเข้า `.txt` (dryRun + บันทึก), หัวตารางผิด / รหัสผิด → 400, audit ครบ · `./dev.sh test` ผ่าน · `./dev.sh smoke` 15/15 กับ seed ที่ commit แล้ว (seed ที่ DB ยังไม่ commit ทำให้ B2 stream ไม่ผ่าน — ไม่เกี่ยวกับงานนี้)
 
 ### 2026-11-25 — ข้อความ 409 "มีคาบอยู่แล้ว" บอกวันที่จริง
 - **ทำอะไร:** `ClassSessionService` (PATCH เลื่อนคาบ, เพิ่มคาบ / คาบชดเชยใน cancel, restore) เปลี่ยนข้อความจาก "วันนี้กลุ่มเรียนนี้มีคาบอยู่แล้ว ..." เป็น "วันที่ 2026-12-02 กลุ่มเรียนนี้มีคาบอยู่แล้ว (1 กลุ่มเรียนมีได้ 1 คาบต่อวัน)" (รูปแบบ yyyy-MM-dd เหมือนข้อความภาคเรียน) · ปุ่มเริ่มคาบตอนนี้ (`SessionControlService`) คง "วันนี้" ไว้เพราะเป็นวันนี้จริง

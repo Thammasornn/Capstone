@@ -16,6 +16,9 @@ app:
     secret: ${JWT_SECRET:local-only-jwt-secret-do-not-use-on-any-server-0123456789}
   face:
     embedding-key: ${FACE_EMBEDDING_KEY:tRv4JpHroo070kKtVEXa4ZSpXMBSgNa0GYxnZKhPp0Y=}
+  enrollment:
+    # บัญชีนักศึกษาที่สร้างจากหน้าเพิ่มนักศึกษาใช้รหัสผ่านเดียวกับข้อมูล mock
+    new-student-password: ${NEW_STUDENT_PASSWORD:Password@123}
   test-accounts:
     # หน้า Login แสดงบัญชีจาก DB ในเครื่อง (frontend .env.development: VITE_SHOW_TEST_ACCOUNTS=true)
     enabled: ${TEST_ACCOUNTS_ENABLED:true}

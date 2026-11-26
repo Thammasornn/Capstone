@@ -85,6 +85,12 @@ Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/uat/` แยก 
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-26 — backend: เพิ่ม / ถอนนักศึกษาในกลุ่มเรียน (E2)
+- **ทำอะไร:** API รายชื่อนักศึกษาในกลุ่ม, เพิ่มเอง (รหัส / email · สร้างบัญชีให้ได้ใน local / uat), ถอน (soft), นำเข้าไฟล์ CSV / TXT / XLSX พร้อม template และ dryRun
+- **ไฟล์ที่เกี่ยวข้อง:** `backend/src/main/java/com/faculty/attendance/enrollment/*`, `backend/src/main/resources/application*.yml`, `backend/README.md`
+- **เหตุผล:** ป้อนข้อมูลได้ 2 วิธี (ป้อนเอง + นำเข้าไฟล์) ตามที่อาจารย์ที่ปรึกษาขอ
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ไม่แก้ DB · uat ต้องตั้ง env `NEW_STUDENT_PASSWORD` ถึงจะสร้างบัญชีใหม่ได้ (ห้ามตั้งใน prod) · FE ยังไม่ได้ทำหน้าจอ
+
 ### 2026-11-25 — frontend: หน้า "คาบเรียน" (D3)
 - **ทำอะไร:** หน้าใหม่ "คาบเรียน" ต่อกลุ่มเรียน (`/courses/:courseId/sections/:sectionId/sessions`) — รายการคาบจริง + ตัวกรอง + ป้าย (เลื่อนจาก / ชดเชยคาบ / คาบพิเศษ / ยกเลิก) + ปุ่มตาม `allowedActions`: แก้ / เลื่อน, ยกเลิก (+ สร้างคาบชดเชยใน dialog เดียว), คืนคาบ, เพิ่มคาบชดเชย / คาบพิเศษ, ลิงก์ไปปรับเวลาที่หน้าห้อง / รายงานคาบ · หน้าแก้ไขรายวิชาบอกขอบเขตของการแก้ตาราง + แสดง `overriddenSessionsKept` · หน้าห้องแสดง "คาบนี้ถูกยกเลิก" เมื่อคาบถูกยกเลิกระหว่างเรียน (SSE) · เมนูจัดการคาบไม่ล้นจอ
 - **ไฟล์ที่เกี่ยวข้อง:** `frontend/src/features/course-management/**`, `frontend/src/features/room-monitor/pages/RoomLivePage.vue`, `frontend/src/entities/attendance/components/SessionAdjustMenu.vue`, `frontend/src/app/router/routes.js`, `frontend/README.md`

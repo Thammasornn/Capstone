@@ -45,6 +45,10 @@ app:
     expires-minutes: 480
   face:
     embedding-key: ${FACE_EMBEDDING_KEY:}   # บังคับตั้ง: base64 ของ 32 ไบต์ (openssl rand -base64 32) ใช้เข้ารหัส face_embeddings · โปรไฟล์ local มีค่าทดสอบให้
+  enrollment:
+    # รหัสผ่านของบัญชีนักศึกษาที่สร้างใหม่ตอนเพิ่มเข้ากลุ่มเรียน (ไม่มีบัญชี + ส่งชื่อ-นามสกุลมา)
+    # ว่าง = ไม่สร้างบัญชี (คนที่ไม่มีบัญชี = unmatched not_found) · local / uat เท่านั้น ห้ามตั้งใน prod
+    new-student-password: ${NEW_STUDENT_PASSWORD:}
   test-accounts:
     # true = เปิด GET /api/test-accounts (ไม่ต้อง login) ให้หน้า Login แสดงบัญชีใน DB · local / uat เท่านั้น ห้ามเปิดใน prod
     enabled: ${TEST_ACCOUNTS_ENABLED:false}
