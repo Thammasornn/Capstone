@@ -25,13 +25,13 @@ Main Chat (coordinator) จะส่งสรุปมาให้ sub-chat "sum
 - **แก้อะไร:** ไม่มีงานโค้ด · ผลตรวจ uat:
   - ✅ หน้าเว็บได้ 200 และเป็น bundle ใหม่ (มี F3 `SectionRosterPage`, ข้อความ preset ของ F1)
   - ✅ `/api/me` พร้อม Origin bscit = 401 · `/api/internal/cameras` = 404
-  - ❌ `/api/test-accounts` ได้ **5 บัญชี** (ชุดเดิม ไม่มี `66130500288` / `66130500099`) → DB uat ยังไม่ได้ reset เป็น seed ใหม่ (`2eef1ff`)
+  - ✅ `/api/test-accounts` ได้ **19 บัญชี** (admin 1, lecturer 1, student 17 = ทีม 3 + `66130500099` + `66130500288` + `66139900001`–`012`) — ตรวจซ้ำหลังผู้ใช้ reset DB uat ใหม่ (รอบแรกได้ 5 บัญชีชุดเดิม ❌)
 - **ปัญหา / conflict ที่เจอ:**
-  - frontend ขึ้นรุ่นใหม่แล้ว แต่ข้อมูลใน DB ยังเป็นชุดเก่า · สาเหตุที่น่าจะเป็น: ยังไม่ได้ reset หรือ reset จาก archive รุ่นเก่าเพราะไม่ได้ `git fetch` ก่อน
-  - backend รุ่นใหม่, anti-spoofing และ `NEW_STUDENT_PASSWORD` ยืนยันจากภายนอกไม่ได้ ต้องตรวจบน VM
+  - ตรวจรอบแรก frontend ขึ้นรุ่นใหม่แล้ว แต่ DB ยังเป็นข้อมูลชุดเก่า (5 บัญชี) · สาเหตุ: ยังไม่ได้ reset DB เป็น seed ใหม่ (`2eef1ff`) → ผู้ใช้ reset แล้ว ตรวจซ้ำผ่าน
+  - ยืนยันจากภายนอกไม่ได้: image tag ของ backend / ai-service, `NEW_STUDENT_PASSWORD`, anti-spoofing, โมเดลครบ 4 ไฟล์, `deploy.sh status` → ต้องตรวจบน VM
 - **ยังค้าง / ต้องทำต่อ:**
-  - ผู้ใช้ตรวจบน VM: `deploy.sh status`, จำนวน users, image tag, ตั้ง `NEW_STUDENT_PASSWORD` แล้วหรือยัง, log anti-spoofing, โมเดลครบ 4 ไฟล์
-  - ถ้า users = 5 → `git fetch` แล้ว reset DB uat ใหม่ + `ALLOW_DB_CHANGE=1 deploy.sh uat`
+  - ผู้ใช้ตรวจบน VM: `deploy.sh status`, image tag, ตั้ง `NEW_STUDENT_PASSWORD` แล้วหรือยัง, log anti-spoofing, โมเดลครบ 4 ไฟล์
+  - ลงทะเบียนใบหน้าทีมใหม่ (reset ลบใบหน้าเดิม) → ทดสอบกล้องห้อง 4303 → เก็บตัวเลขความแม่นยำ / ความเร็ว
 
 ### 2026-11-26 — E2 / F1–F3 จัดการนักศึกษาในกลุ่ม, seed เดโม, AI anti-spoofing, เตรียม prod (`cd04b8b..8375493`)
 > push แล้ว (15 commit) · ก่อน push `./dev.sh test` ผ่านทั้งชุด รวม ai-service pytest 23 ข้อ · `main` ไม่มี commit ที่ `Dev` ขาด
