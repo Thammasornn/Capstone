@@ -20,6 +20,19 @@ Main Chat (coordinator) จะส่งสรุปมาให้ sub-chat "sum
 
 ## บันทึก
 
+### 2026-11-27 — ai-service log anti-spoofing ตอน start + pod ai-service ถูก Evict เพราะดิสก์เต็ม (`372a2e4..39d446b`)
+> รายงาน coordinator · ตอนจดยังไม่ push (`origin/Dev` = `8375493`)
+- **แก้อะไร:**
+  - AI `39d446b`: ai-service log สถานะ anti-spoofing ทุกครั้งตอน start (เดิม log INFO "anti-spoofing พร้อม" ไม่ออก เพราะ `logging.basicConfig` ถูกเรียกหลัง import `vision`) · pytest 24/24
+- **ปัญหา / conflict ที่เจอ:**
+  - ผู้ใช้ตรวจ uat เจอ pod ai-service ค้างสถานะ Error 2 ตัว — ถูก Evict เพราะ ephemeral-storage ของ node เหลือ 0 (25 พ.ย. 03:49) → ดิสก์ VM เคยเต็ม
+  - สาเหตุที่สงสัย: registry ของ CD เก็บ image ai-service ทุก commit (torch แบบ CUDA ใหญ่หลาย GB) + docker build cache · coordinator ส่ง DevOps ทำคำสั่งตรวจแบบอ่านอย่างเดียว + แผนเคลียร์ + วิธีกันไม่ให้เกิดซ้ำ
+  - รายการ "ตรวจ uat หลัง deploy 8375493" ที่ให้ดู log "anti-spoofing พร้อม" ตรวจไม่ได้จนกว่าจะ deploy `39d446b`
+- **ยังค้าง / ต้องทำต่อ:**
+  - ผู้ใช้รันคำสั่งตรวจดิสก์บน VM แล้วเลือกแผนเคลียร์ (ห้ามลบเองโดยไม่ถาม)
+  - ตัดสินใจเรื่องเปลี่ยน torch เป็นแบบ CPU ใน Dockerfile ของ ai-service (AI เสนอ)
+  - หลัง push / deploy `39d446b`: ตรวจ log anti-spoofing ของ ai-service บน uat
+
 ### 2026-11-27 — ตรวจ uat หลัง deploy 8375493 (`8375493..8375493`)
 > ไม่มี commit โค้ดใหม่ (มีแค่ `a113d09` แก้รายการ 2026-11-26 รอ push) · DevOps ตรวจจากภายนอกผ่าน bscit โดยไม่ login หลังผู้ใช้ทำขั้นบน VM
 - **แก้อะไร:** ไม่มีงานโค้ด · ผลตรวจ uat:
