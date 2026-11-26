@@ -162,6 +162,46 @@ curl http://cp26ms3.sit.kmutt.ac.th/uat/api/auth/login -H 'Content-Type: applica
 
 อัปเดตเวอร์ชัน: ใช้ CD (หัวข้อ "CD: deploy อัตโนมัติ") · ถ้ายังไม่ได้ติดตั้ง CD: `./devops/k8s/build-images.sh` แล้ว `kubectl -n <ns> rollout restart deployment/backend deployment/frontend`
 
+## ลำดับหลัง push ชุด E2 + anti-spoofing + seed เดโม ขึ้น `Dev` (uat · ผู้ใช้รันเองบน VM ทีละขั้น · ไม่ต้อง sudo)
+
+ชุดนี้: `7239079` (BE E2 `NEW_STUDENT_PASSWORD`), `e16d4d0` (AI anti-spoofing + โมเดลใหม่), `2eef1ff` (seed เดโม 5 วิชา — แก้ `backend/db/` → **CD หยุด (blocked)** จนกว่าจะทำข้อ d) · ทำตามลำดับ ข้อไหนไม่ผ่านให้หยุดแล้วส่ง output มา
+
+**a) `NEW_STUDENT_PASSWORD` ลง `secrets/uat.env`** — คำสั่งในหัวข้อ "ข้อควรรู้" (ไม่แสดงค่า · ไม่เขียนทับ) · หยุดก่อนบรรทัด `deploy.sh uat` (ทำในข้อ d ทีเดียว)
+
+**b) ดาวน์โหลดโมเดล MiniFASNet** (ไฟล์เดิมที่ hash ตรงจะข้าม)
+```bash
+git -C ~/bangmod-cd/repo fetch -q origin && git -C ~/bangmod-cd/repo log --oneline -1 origin/Dev   # ต้องเป็น commit ล่าสุดที่ push
+rm -rf /tmp/models-up && mkdir -p /tmp/models-up \
+  && git -C ~/bangmod-cd/repo archive origin/Dev devops/models/fetch-models.sh | tar -x -C /tmp/models-up \
+  && bash /tmp/models-up/devops/models/fetch-models.sh
+ls -l /opt/bangmod/models          # ต้องมี 4 ไฟล์: yolov8n-face-pose.pt, face_recognition_sface_2021dec.onnx, minifasnet_v2.onnx, minifasnet_v1se.onnx
+```
+
+**c) reset DB uat เป็น seed เดโมชุดใหม่** — ทำตาม `backend/db/README.md` หัวข้อ "reset uat ให้เป็นข้อมูลชุดนี้" (สำรอง `pg_dump` → ล้าง schema → `init-db.sh uat --seed`) · ⚠️ ลบข้อมูล uat ทั้งหมด **รวมใบหน้าที่ลงทะเบียนไว้** · เก็บชื่อไฟล์สำรอง (`$F`) ไว้ · ข้ามบรรทัด `rollout restart` / `deploy.sh` ในหัวข้อนั้นได้ (ทำในข้อ d)
+
+**d) deploy** (backend + ai-service รุ่นใหม่ · ใช้ secret ข้อ a · ai-service โหลดโมเดลข้อ b)
+```bash
+ALLOW_DB_CHANGE=1 ~/bangmod-cd/bin/deploy.sh uat
+~/bangmod-cd/bin/deploy.sh status          # ok ที่ commit ล่าสุดของ Dev
+```
+
+**e) ตรวจผล**
+```bash
+kubectl -n uat get pods                                                                  # ทุกตัว Running
+kubectl -n uat logs deploy/backend --tail=300 | grep -E 'ERROR|โปรไฟล์ local|Started'    # Started · ไม่มี ERROR / "โปรไฟล์ local"
+kubectl -n uat exec deploy/backend -- sh -c 'test -n "$NEW_STUDENT_PASSWORD" && echo set || echo missing'   # set
+kubectl -n uat logs deploy/ai-service | grep -E 'anti-spoofing|Uvicorn'                 # "anti-spoofing พร้อม (… โหมด on)"
+kubectl -n uat exec deploy/ai-service -- python -c "import urllib.request as u;print(u.urlopen('http://localhost:8080/cameras/status').read().decode())"   # room-4303 live เมื่อ Pi ต่ออยู่
+O='Origin: https://bscit.sit.kmutt.ac.th'; B=https://bscit.sit.kmutt.ac.th/capstone26/cp26ms3/uat
+curl -s -o /dev/null -w 'web %{http_code}\n' $B/                              # 200
+curl -s -o /dev/null -w 'me %{http_code}\n' -H "$O" $B/api/me                  # 401
+curl -s -o /dev/null -w 'internal %{http_code}\n' -X POST $B/api/internal/x    # 404
+curl -s -H "$O" $B/api/test-accounts | grep -o '"email"' | wc -l               # จำนวนบัญชีตาม seed ใหม่ (backend/db/README.md)
+```
+แล้วใน browser (`https://bscit.sit.kmutt.ac.th/capstone26/cp26ms3/uat/`): login admin / อาจารย์ / ทีม → **ลงทะเบียนใบหน้าทีมใหม่** (ข้อ c ลบของเดิม) → หน้าห้อง 4303 เห็นภาพ → เริ่มคาบ → ยืนหน้ากล้องแล้วขึ้นเช็คชื่อ
+- ลงทะเบียนแล้วถูกปฏิเสธบ่อย (log ai-service `embedding: ปฏิเสธภาพ (liveness …)`) กับใบหน้าจริง: ชั่วคราว `kubectl -n uat set env deploy/ai-service ANTISPOOF=log` (ค่าจะกลับเป็น `on` ตอน CD deploy ครั้งถัดไป — ถ้าจะใช้ถาวรให้ AI แก้ `ai-service.yaml`)
+- ย้อน DB: `pg_restore` จากไฟล์ข้อ c ตาม `backend/db/README.md`
+
 ## Deploy prod ครั้งแรก (ผ่าน CD · ผู้ใช้รันเองทุกขั้น)
 
 ทำ **หลัง uat เดโมเสถียรและผู้ใช้ยืนยันแล้วเท่านั้น** (CLAUDE.md ข้อ 4–5) · ทุกคำสั่งรันบน VM เป็น `adminstudent` · ไม่มีขั้นไหนใช้ sudo
@@ -230,6 +270,10 @@ login admin ใน browser ที่ `https://bscit.sit.kmutt.ac.th/capstone26/c
 |---|---|---|---|
 | `yolov8n-face-pose.pt` (6.1 MB) | YOLOv8n **PoseModel** 1 class (ใบหน้า) + **5 จุด** (ตา 2, จมูก, มุมปาก 2) · เทรนด้วย ultralytics 8.0.66 บน WIDER FACE | [derronqi/yolov8-face](https://github.com/derronqi/yolov8-face) (ไฟล์ yolov8n ใน Google Drive) · **GPL-3.0** | `d545bf1a…e626ca` |
 | `face_recognition_sface_2021dec.onnx` (36.9 MB) | SFace → embedding 128 มิติ | [OpenCV Zoo](https://github.com/opencv/opencv_zoo/tree/main/models/face_recognition_sface) · Apache-2.0 | `0ba9fbfa…c34e79` |
+| `minifasnet_v2.onnx` (1.7 MB) | MiniFASNet V2 · anti-spoofing ตอนลงทะเบียนใบหน้า (ใช้คู่กับ V1SE) | Silent-Face-Anti-Spoofing (minivision-ai) แปลง ONNX โดย uniface · [yakhyo/uniface-weights](https://huggingface.co/yakhyo/uniface-weights) (pin commit `cbe2dcc`) · Apache-2.0 | `b32929ad…463907` |
+| `minifasnet_v1se.onnx` (1.7 MB) | MiniFASNet V1SE · anti-spoofing (คู่กับ V2) | เหมือนแถวบน | `ebab7f90…2b3676` |
+
+anti-spoofing (env ใน `k8s/base/ai-service.yaml`): `ANTISPOOF` = `on` (ปฏิเสธภาพที่คะแนน liveness < `ANTISPOOF_MIN_REAL` = `0.7`) / `log` (คืนคะแนนแต่ไม่ปฏิเสธ) / `off` · **ไม่มี 2 ไฟล์ MiniFASNet = ai-service ยังขึ้น แต่ปิด anti-spoofing เอง** (log WARN `anti-spoofing ปิดเอง: ไม่พบโมเดล`) · พร้อมใช้ = log `anti-spoofing พร้อม (MiniFASNet V2 + V1SE · โหมด on)`
 
 hash เต็มอยู่ใน `models/fetch-models.sh` · ตรวจแล้วว่าเป็น PoseModel ที่ `kpt_shape` = 5 จุด (อ่านจาก metadata ในไฟล์)
 **ใช้ YOLO face แบบ detection อย่างเดียวไม่ได้** (เช่น `lindevs/yolov8-face` เป็น `DetectionModel` ไม่มีจุดบนหน้า) — `ai-service` จะ error "YOLO model ไม่มี keypoints" เพราะ SFace ต้องใช้ 5 จุดจัดหน้า (alignCrop)
@@ -394,6 +438,12 @@ kubectl -n uat logs deploy/ai-service | grep -E 'camera|gallery'
 - HTTPS ตรงที่ VM (`https://cp26ms3.sit.kmutt.ac.th/capstone26/cp26ms3/<ns>/` · ใบจาก SITCertAuthCA) เตรียมไว้แล้วแต่ยังไม่เปิด — ขั้นตอนอยู่ในคอมเมนต์ของ `k8s/base/ingress.yaml` · ใช้ได้เฉพาะในคณะ / VPN และเครื่องที่ไม่ได้ติดตั้ง SITCertAuthCA จะขึ้นเตือน
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-26 — ตารางโมเดล MiniFASNet + ลำดับอัปเดต uat หลัง push ชุด E2 / anti-spoofing / seed เดโม
+- **ทำอะไร:** ตารางโมเดลเพิ่ม `minifasnet_v2.onnx`, `minifasnet_v1se.onnx` (ที่มา / สัญญาอนุญาต / SHA-256 จาก `models/fetch-models.sh`) + คำอธิบาย env `ANTISPOOF` (on / log / off), `ANTISPOOF_MIN_REAL` 0.7 จาก `k8s/base/ai-service.yaml` · หัวข้อใหม่ "ลำดับหลัง push ชุด E2 + anti-spoofing + seed เดโม": a) `NEW_STUDENT_PASSWORD` b) โมเดลด้วย `git archive` → `fetch-models.sh` c) reset DB uat ตาม `backend/db/README.md` d) `ALLOW_DB_CHANGE=1 deploy.sh uat` e) ตรวจผล
+- **ไฟล์ที่เกี่ยวข้อง:** `README.md`
+- **เหตุผล:** commit `7239079`, `e16d4d0`, `2eef1ff` ต้องทำบน VM ก่อน uat ใช้ได้ครบ (`2eef1ff` แก้ `backend/db/` → CD หยุด)
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ข้อความ log ที่ใช้ตรวจอ่านจาก `ai-service/vision.py` / `main.py` · ยังไม่ได้รันบน VM · reset DB ลบใบหน้าเดิม ต้องลงทะเบียนทีมใหม่ก่อนเดโมกล้อง
 
 ### 2026-11-26 — `NEW_STUDENT_PASSWORD` จาก secret (uat เท่านั้น)
 - **ทำอะไร:** backend อ่าน `NEW_STUDENT_PASSWORD` จาก `app-secret` แบบ `optional: true` · `secret.env.example` ของ uat มีบรรทัดตัวอย่าง (ไม่มีค่า) · prod example เขียนว่าห้ามใส่ · `deploy.sh prod` หยุดถ้า `secrets/prod.env` มีค่านี้ · คำสั่งเพิ่ม key บน VM ใน "ข้อควรรู้"
