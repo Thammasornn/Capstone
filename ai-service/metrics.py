@@ -2,7 +2,7 @@
 วัดเวลาจริงของแต่ละขั้น (ms) เก็บเป็นหน้าต่างเลื่อน แล้วสรุป p50 / p95 / mean / max
   - ตัวอ่านกล้อง: retrieve (แปลงเฟรม), detect (YOLO), feature (SFace ต่อใบหน้า), match (cosine), frame (รวมทั้งเฟรม),
     sighting (เห็นครั้งแรก → POST sighting เสร็จ), post_sighting (เวลารอ backend)
-  - POST /embedding: decode, detect, liveness, feature ต่อภาพ
+  - POST /embedding: decode, detect, feature ต่อภาพ
 เปิดดูได้ที่ GET /metrics (ใน cluster เท่านั้น · ai-service ไม่มี Ingress) · ไม่มีชื่อ / embedding / ภาพ
 """
 import threading

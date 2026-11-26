@@ -1,11 +1,11 @@
 # ai-service
 
-FastAPI · YOLOv8 face-pose + SFace + MiniFASNet (anti-spoofing) · ลงทะเบียนใบหน้า + อ่านกล้อง realtime
+FastAPI · YOLOv8 face-pose + SFace · ลงทะเบียนใบหน้า + อ่านกล้อง realtime (ไม่มีการตรวจภาพหลอก / anti-spoofing)
 
 | ไฟล์ | ทำอะไร |
 |---|---|
 | [`main.py`](main.py) | API (FastAPI) + เปิดตัวอ่านกล้องตอน start |
-| [`vision.py`](vision.py) | โมเดล YOLO face-pose + SFace (ใช้ร่วมกัน · เรียกทีละงาน) + MiniFASNet `liveness()` |
+| [`vision.py`](vision.py) | โมเดล YOLO face-pose + SFace (ใช้ร่วมกัน · เรียกทีละงาน) · embedding เสีย (ว่าง / ไม่ใช่ 128 / 0 / NaN) = `EmbeddingError` |
 | [`gallery.py`](gallery.py) | ถอดรหัส embedding จาก backend (AES-GCM) + จับคู่ cosine แยกตามห้อง |
 | [`camera_worker.py`](camera_worker.py) | อ่าน RTSP จาก MediaMTX → จับคู่ → ส่ง heartbeat / faces / sightings ไป backend |
 | [`metrics.py`](metrics.py) | จับเวลาแต่ละขั้น (p50 / p95) → `GET /metrics` + log สรุป |
@@ -15,9 +15,9 @@ FastAPI · YOLOv8 face-pose + SFace + MiniFASNet (anti-spoofing) · ลงทะ
 | เส้น | ใช้ทำอะไร |
 |---|---|
 | `GET /health` | ตรวจว่าพร้อม |
-| `POST /embedding` (multipart `files`) | ตรวจภาพ (คุณภาพ → anti-spoofing → ทุกรูปเป็นคนเดียวกัน) + คืน embedding 128 มิติ และ `liveness` (0–1 หรือ `null`) ต่อภาพ · ภาพไม่ผ่าน = 422 `{detail}` |
+| `POST /embedding` (multipart `files`) | ตรวจภาพ (1 ใบหน้า → คุณภาพ → SFace → ทุกรูปเป็นคนเดียวกัน) + คืน `{model, model_version, items: [{embedding (128), quality, liveness: null}]}` · `liveness` เป็น `null` เสมอ (ไม่ได้ตรวจภาพหลอก · คงช่องไว้ให้รูปแบบเดิม · backend อ่านแค่ `embedding`, `quality`) · ภาพไม่ผ่าน = 422 `{detail}` |
 | `DELETE /students/{student_id}/embeddings` | backend เรียกหลังนักศึกษาถอนความยินยอม (B7) → ลบ embedding ของคนนั้นออกจากหน่วยความจำ (ทุกห้อง) · ต้องแนบ `X-Internal-Key` |
-| `GET /metrics` | เวลาจริงต่อขั้น (`n` / `mean` / `p50` / `p95` / `max` ms) ของ `/embedding` และแต่ละกล้อง + สถานะ anti-spoofing · ใน cluster เท่านั้น (ไม่มี Ingress) |
+| `GET /metrics` | เวลาจริงต่อขั้น (`n` / `mean` / `p50` / `p95` / `max` ms) ของ `/embedding` และแต่ละกล้อง · ใน cluster เท่านั้น (ไม่มี Ingress) |
 | `GET /cameras/status` | สถานะตัวอ่านกล้อง: สัญญาณ, อายุเฟรมล่าสุด, มีคาบไหม, จำนวนคนใน gallery, จำนวนใบหน้า, sightings ที่ส่ง, error ล่าสุด (ไม่มีชื่อ / embedding) |
 
 ## ตั้งค่า
@@ -27,9 +27,6 @@ FastAPI · YOLOv8 face-pose + SFace + MiniFASNet (anti-spoofing) · ลงทะ
 | `INTERNAL_API_KEY` | ต้องตรงกับ `INTERNAL_API_KEY` ของ backend · ไม่ตั้ง = ปฏิเสธ `DELETE /students/...` ทุกครั้ง |
 | `YOLO_FACE_MODEL`, `SFACE_MODEL` | path ของโมเดล |
 | `MIN_CONF` (0.8), `MIN_FACE_PX` (112), `MIN_BLUR` (60) | เกณฑ์คุณภาพภาพตอนลงทะเบียน |
-| `ANTISPOOF` (`on`) | `on` = ปฏิเสธภาพที่คะแนนต่ำกว่า `ANTISPOOF_MIN_REAL` · `log` = คืนคะแนนแต่ไม่ปฏิเสธ · `off` = ไม่ใช้ · ไม่มีไฟล์โมเดล = ปิดเอง (log WARN, pod ยังขึ้น) |
-| `ANTISPOOF_MIN_REAL` (0.7) | โอกาสเป็นใบหน้าจริงขั้นต่ำ (เฉลี่ย MiniFASNet 2 ตัว) |
-| `ANTISPOOF_MODEL_V2`, `ANTISPOOF_MODEL_V1SE` | `/models/minifasnet_v2.onnx`, `/models/minifasnet_v1se.onnx` |
 | `SAME_PERSON_MIN` (0.363) | cosine ขั้นต่ำระหว่างทุกคู่รูปที่ส่งมาลงทะเบียน (ต่ำกว่า = ไม่ใช่คนเดียวกัน → 422) |
 | `CAMERA_WORKER` | `true` = เปิดตัวอ่านกล้อง (K3s เปิดไว้) · ค่าเริ่มต้น `false` (รันในเครื่องไม่ต้องมี MediaMTX) |
 | `FACE_EMBEDDING_KEY` | ค่าเดียวกับ backend · ใช้ถอดรหัส embedding · ไม่มี = ไม่เปิดตัวอ่านกล้อง |
@@ -72,7 +69,7 @@ kubectl -n uat logs deploy/ai-service --since=1h | grep metrics      # สรุ
 | `….ms.sighting` | เห็นหน้าครั้งแรก → backend ตอบ sighting แล้ว (รวมรอเห็นซ้ำ `MIN_HITS` ครั้ง ≈ `FRAME_INTERVAL` วินาที) |
 | `….ratePerSec.frames_processed` / `frames_grabbed` | เฟรมที่ตรวจ / เฟรมที่สตรีมส่งมา ต่อวินาที |
 | `….counts.faces_detected` / `faces_matched` | จำนวนใบหน้าที่เจอ / จับคู่ได้ทั้งหมด |
-| `registration.ms.decode/detect/liveness/feature` | ต่อ 1 ภาพของ `POST /embedding` · `counts.rejected_spoof`, `rejected_not_same_person` |
+| `registration.ms.decode/detect/feature` | ต่อ 1 ภาพของ `POST /embedding` · `counts.registrations`, `images`, `rejected_not_same_person` |
 
 เวลาต่อ 1 ใบหน้า (ตอบกรรมการ) ≈ `detect.p50 ÷ (faces_detected ÷ frames_processed)` + `feature.p50` · ค่าเก็บ 2000 ค่าล่าสุดตั้งแต่ pod start (restart = เริ่มใหม่)
 
@@ -87,7 +84,6 @@ kubectl -n uat logs deploy/ai-service --since=1h | grep metrics      # สรุ
 | `enroll/pXX/` | คนที่ "ลงทะเบียน" ≥ 8 คน | ถ่ายแบบหน้าเว็บ (หน้าตรง / หันซ้าย / หันขวา) ด้วยมือถือหรือเว็บแคม ระยะ ~40 ซม. แสงในห้องปกติ | 3–5 รูป / คน |
 | `probe/pXX/` | คนเดียวกับ enroll | ภาพจากกล้อง Pi ห้อง 4303 · **ทีละคน** (คนอื่นออกนอกภาพ → ติดป้ายง่าย ไม่ต้องครอป) · ตำแหน่ง: แถวหน้า / กลาง / หลัง · แสง: ไฟปกติ / ไฟปิดครึ่งหรือม่านเปิดย้อนแสง · ท่า: มองกล้อง / ก้มจดหรือมองจอ / หันข้าง ~30° · (แว่น / แมสก์ เป็นชุดแยกถ้ามี) | 5 เฟรม / ตำแหน่ง / แสง / คน (≈ 30–60 / คน) |
 | `probe/xXX/` | "คนแปลกหน้า" ≥ 2 คน (ไม่อยู่ใน enroll) | เหมือน probe | ≈ 30 / คน |
-| `spoof/<ชนิด>/` | ภาพของคนใน enroll | รูปพิมพ์ A4 สี / รูปบนมือถือ / รูปบนแท็บเล็ตหรือ notebook / วิดีโอบนมือถือ · ถ่ายด้วยมือถือแบบตอนลงทะเบียน (ระยะ ~40 ซม.) **และ** ยกหน้ากล้อง Pi (แถวหน้า) | ≥ 10 / ชนิด |
 
 ดึงเฟรมจากกล้อง Pi (ระหว่างมีภาพเข้า MediaMTX · `streamPath` ดูจาก `/cameras/status`) — บันทึกใน pod แล้ว copy ออก:
 
@@ -117,10 +113,10 @@ kubectl -n uat cp "$POD:/tmp/frames" ~/eval/frames && kubectl -n uat exec "$POD"
 POD=$(kubectl -n uat get pod -l app=ai-service -o jsonpath='{.items[0].metadata.name}')
 kubectl -n uat cp ~/eval "$POD:/tmp/eval"
 kubectl -n uat exec "$POD" -- python tools/eval_recognition.py --models /models \
-  --enroll /tmp/eval/enroll --probe /tmp/eval/probe --spoof /tmp/eval/spoof --out /tmp/eval/report.md
+  --enroll /tmp/eval/enroll --probe /tmp/eval/probe --out /tmp/eval/report.md
 kubectl -n uat cp "$POD:/tmp/eval/report.md" ~/eval/report.md && kubectl -n uat exec "$POD" -- rm -rf /tmp/eval
 ```
-ในเครื่องตัวเอง (ต้องมีโมเดล: `MODELS_DIR=~/models ./devops/models/fetch-models.sh`): `pip install -r requirements.txt` แล้ว `python tools/eval_recognition.py --models ~/models --enroll … --probe … --spoof …` · ตัวเลือก `--thresholds`, `--margin`, `--min-face-px`, `--liveness-thresholds`
+ในเครื่องตัวเอง (ต้องมีโมเดล: `MODELS_DIR=~/models ./devops/models/fetch-models.sh`): `pip install -r requirements.txt` แล้ว `python tools/eval_recognition.py --models ~/models --enroll … --probe …` · ตัวเลือก `--thresholds`, `--margin`, `--min-face-px`, `--min-conf`
 
 ### 3. ผลที่ได้ (รูปแบบตาราง · ตัวเลขมาจากการรันจริงเท่านั้น)
 
@@ -128,10 +124,7 @@ kubectl -n uat cp "$POD:/tmp/eval/report.md" ~/eval/report.md && kubectl -n uat 
 |---|---|
 | ข้อมูลที่ใช้วัด | จำนวนคน / ภาพ · อัตราตรวจพบใบหน้า · Rank-1 |
 | ผลตาม threshold: `threshold \| TAR \| FAR \| ระบบ: ถูกคน \| ผิดคน \| ไม่จับคู่ \| คนแปลกหน้าถูกจับคู่ \| Accuracy` | "แม่นแค่ไหน" (เช่น ถูกคน 45/50 = 90%) · เลือก `MATCH_THRESHOLD` |
-| Anti-spoofing: `ANTISPOOF_MIN_REAL \| BPCER \| APCER` | คนจริงถูกปฏิเสธ / ภาพหลอกผ่าน · เลือก `ANTISPOOF_MIN_REAL` |
-| ความเร็ว: YOLO ต่อภาพ / SFace ต่อหน้า / anti-spoofing ต่อหน้า / รวมต่อ 1 หน้า (mean · p50 · p95 ms) | "กี่วินาทีต่อหนึ่งใบหน้า" (ร่วมกับ `/metrics` ตอนใช้งานจริง) |
-
-ถ้าคนจริงถูกปฏิเสธบ่อยตอนลงทะเบียน (BPCER สูง) → ลด `ANTISPOOF_MIN_REAL` หรือชั่วคราวตั้ง `ANTISPOOF=log` ใน `devops/k8s/base/ai-service.yaml`
+| ความเร็ว: YOLO ต่อภาพ / SFace ต่อหน้า / รวมต่อ 1 หน้า (mean · p50 · p95 ms) | "กี่วินาทีต่อหนึ่งใบหน้า" (ร่วมกับ `/metrics` ตอนใช้งานจริง) |
 
 ## ทดสอบ (ไม่ต้องมีโมเดล)
 
@@ -142,6 +135,12 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 ```
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-27 — เอา MiniFASNet (anti-spoofing / liveness) ออกจาก ai-service
+- **ทำอะไร:** `vision.py` ลบ MiniFASNet V2 + V1SE ทั้งหมด (`ANTISPOOF*` env, `_load_antispoof`, `cv2.dnn` net, `SPOOF_LOCK`, `spoof_crop()`, `liveness()`, `ANTISPOOF_READY/ENFORCE`) · เหลือ YOLO face-pose (`detect`) + SFace (`feature` L2 normalize) เหมือนเดิม · `feature` ตรวจ embedding เสีย (ว่าง / ไม่ใช่ 128 / norm 0 / NaN) → `EmbeddingError` แทนการหารด้วย 0 · `main.py` ลบ `ANTISPOOF_MIN_REAL`, `check_liveness`, log สถานะ anti-spoofing ตอน start, `antispoof` ใน `/metrics` · `/embedding` = decode → YOLO → 1 ใบหน้า → คุณภาพ → SFace (`EmbeddingError` → 422 "สร้างข้อมูลใบหน้าไม่ได้") → ทุกรูปเป็นคนเดียวกัน (`SAME_PERSON_MIN` 0.363 เดิม) · response คง `items[].liveness` เป็น `null` เสมอ (ไม่มีคะแนนปลอม · backend `FaceDtos.EmbeddingItem` อ่านแค่ `embedding`, `quality`) · `tools/eval_recognition.py` ลบ `--spoof`, `--liveness-thresholds`, ตาราง APCER/BPCER และเวลา anti-spoofing (การวัด TAR/FAR/rank-1/ความเร็วคงเดิม) · tests: ลบ test MiniFASNet 5 ข้อ เพิ่ม regression: import `vision.py` โดยไม่มีไฟล์ MiniFASNet และไม่เรียก `cv2.dnn`, `detect` (รูปแบบแถว / ไม่มีหน้า / ไม่มี keypoints / ไม่ใช่ 5 จุด), `feature` (L2 · embedding เสีย 4 แบบ), รูปแบบ response + `liveness: null`, จำนวนใบหน้า / ไฟล์เสีย, `check_quality` ตัวจริง (conf / เล็ก / นอกกรอบ / เบลอ), คนละคน, `/metrics` · ตัวอ่านกล้องไม่ได้แก้
+- **ไฟล์ที่เกี่ยวข้อง:** `ai-service/vision.py`, `ai-service/main.py`, `ai-service/metrics.py` (docstring), `ai-service/tools/eval_recognition.py`, `ai-service/tests/test_embedding.py`, `ai-service/README.md`
+- **เหตุผล:** ผู้ใช้สั่งเอา anti-spoofing ออกทั้งหมด (ไม่ใส่โมเดลอื่นแทน) · ฝั่ง deploy (env `ANTISPOOF*` ใน `ai-service.yaml`, MiniFASNet ใน `fetch-models.sh`, devops/README) DevOps เอาออกแล้วใน `2680423`
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** pytest 29 ข้อผ่าน · `py_compile` + pyflakes ผ่าน · import `vision.py` กับ SFace ของจริง (ไม่มีไฟล์ MiniFASNet) ได้ embedding 128 มิติ norm 1 · **ยังไม่ได้ทดสอบ YOLO จริงและ docker build** (เครื่องที่แก้ไม่มี ultralytics / docker) — CD จะ build ตอน push ขึ้น `Dev` · `requirements.txt` / `Dockerfile` ไม่ต้องแก้ (MiniFASNet ใช้ `cv2.dnn` ที่มากับ opencv อยู่แล้ว · โมเดลไม่อยู่ใน image) · หลัง deploy: log ไม่มีบรรทัด `anti-spoofing` แล้ว และ `/metrics` ไม่มี `antispoof` · ไฟล์ `minifasnet_*.onnx` บน VM ลบเองได้: `rm /opt/bangmod/models/minifasnet_v2.onnx /opt/bangmod/models/minifasnet_v1se.onnx` · ระบบกันรูปถ่าย / หน้าจอไม่ได้แล้ว (ต้องพึ่งมาตรการอื่น เช่น อาจารย์คุมตอนลงทะเบียน)
 
 ### 2026-11-27 — log สถานะ anti-spoofing ตอน start ให้เห็นทุกครั้ง
 - **ทำอะไร:** `main.py` ตั้ง `logging.basicConfig` ก่อน `import vision` + log `anti-spoofing: พร้อม · …` / `anti-spoofing: ปิด …` ตอน start · เพิ่ม test (pytest 24 ข้อผ่าน)

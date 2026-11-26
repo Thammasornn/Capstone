@@ -6,10 +6,9 @@
 โครงโฟลเดอร์ (ชื่อโฟลเดอร์ = รหัสคน เช่น p01 · ห้ามใช้ชื่อจริง):
   enroll/<คน>/*.jpg     ภาพลงทะเบียน (3–5 รูปต่อคน แบบเดียวกับหน้าเว็บ)
   probe/<คน>/*.jpg      ภาพทดสอบจากกล้องห้อง (คนที่ไม่มีใน enroll = คนแปลกหน้า ใช้วัดการจับคู่ผิด)
-  spoof/**/*.jpg        (ไม่บังคับ) ภาพหลอก: รูปพิมพ์ / มือถือ / จอ → วัด anti-spoofing
 ภาพ probe ที่มีหลายใบหน้า ใช้ใบหน้าที่ใหญ่ที่สุด (ครอปให้เหลือคนเดียวจะแม่นกว่า)
 
-  python tools/eval_recognition.py --enroll ~/eval/enroll --probe ~/eval/probe [--spoof ~/eval/spoof] \
+  python tools/eval_recognition.py --enroll ~/eval/enroll --probe ~/eval/probe \
       --models /opt/bangmod/models --out ~/eval/report.md
 """
 import argparse
@@ -35,10 +34,6 @@ def list_people(root: Path) -> dict[str, list[Path]]:
     return out
 
 
-def list_images(root: Path) -> list[Path]:
-    return sorted(p for p in root.rglob("*") if p.suffix.lower() in IMAGE_EXT)
-
-
 def largest(faces):
     return max(faces, key=lambda f: float(f[2]) * float(f[3])) if faces else None
 
@@ -50,7 +45,7 @@ class Runner:
         import cv2
         self.vision = vision
         self.read = read or (lambda p: cv2.imread(str(p), cv2.IMREAD_COLOR))
-        self.ms: dict[str, list[float]] = {"detect": [], "feature": [], "liveness": []}
+        self.ms: dict[str, list[float]] = {"detect": [], "feature": []}
 
     def _t(self, name, fn, *a):
         t = time.perf_counter()
@@ -58,21 +53,18 @@ class Runner:
         self.ms[name].append((time.perf_counter() - t) * 1000)
         return r
 
-    def face(self, path: Path, min_face_px: int = 0, min_conf: float = 0.0, with_liveness: bool = False):
-        """คืน (embedding | None, liveness | None, เหตุผลที่ใช้ไม่ได้ | None)"""
+    def face(self, path: Path, min_face_px: int = 0, min_conf: float = 0.0):
+        """คืน (embedding | None, เหตุผลที่ใช้ไม่ได้ | None)"""
         img = self.read(path)
         if img is None:
-            return None, None, "read"
+            return None, "read"
         faces = self._t("detect", self.vision.detect, img)
         f = largest(faces)
         if f is None:
-            return None, None, "no_face"
+            return None, "no_face"
         if f[-1] < min_conf or min(f[2], f[3]) < min_face_px:
-            return None, None, "too_small"
-        live = None
-        if with_liveness and getattr(self.vision, "ANTISPOOF_READY", False):
-            live = self._t("liveness", self.vision.liveness, img, f)
-        return self._t("feature", self.vision.feature, img, f), live, None
+            return None, "too_small"
+        return self._t("feature", self.vision.feature, img, f), None
 
 
 def stat(a) -> str:
@@ -87,23 +79,20 @@ def pct(n, d) -> str:
 
 
 def evaluate(runner: Runner, enroll: dict[str, list[Path]], probe: dict[str, list[Path]],
-             spoof: list[Path], thresholds: list[float], margin: float, min_face_px: int, min_conf: float,
-             live_thresholds: list[float]) -> str:
+             thresholds: list[float], margin: float, min_face_px: int, min_conf: float) -> str:
     from gallery import RoomGallery, best_matches
 
     lines = []
     # ---- ลงทะเบียน ----
-    owners, rows, real_live, enroll_fail = [], [], [], 0
+    owners, rows, enroll_fail = [], [], 0
     for person, imgs in enroll.items():
         for p in imgs:
-            emb, live, why = runner.face(p, with_liveness=True)
+            emb, _ = runner.face(p)
             if emb is None:
                 enroll_fail += 1
                 continue
             owners.append(person)
             rows.append(emb)
-            if live is not None:
-                real_live.append(live)
     if not rows:
         raise SystemExit("ไม่มีภาพลงทะเบียนที่ใช้ได้")
     gallery = RoomGallery("eval", True, owners, np.stack(rows).astype(np.float32))
@@ -116,13 +105,11 @@ def evaluate(runner: Runner, enroll: dict[str, list[Path]], probe: dict[str, lis
     for person, imgs in probe.items():
         for p in imgs:
             total_probe += 1
-            emb, live, why = runner.face(p, min_face_px, min_conf, with_liveness=True)
+            emb, why = runner.face(p, min_face_px, min_conf)
             if emb is None:
                 miss[why] += 1
                 continue
             probes.append((person, emb))
-            if live is not None:
-                real_live.append(live)
     if not probes:
         raise SystemExit("ไม่มีภาพทดสอบที่ตรวจพบใบหน้า")
     feats = np.stack([e for _, e in probes]).astype(np.float32)
@@ -167,24 +154,6 @@ def evaluate(runner: Runner, enroll: dict[str, list[Path]], probe: dict[str, lis
                      f"{pct(fa_unknown, n_unknown)} | {pct(acc, len(truth))} |")
     lines.append("")
 
-    # ---- anti-spoofing ----
-    spoof_live = []
-    for p in spoof:
-        _, live, why = runner.face(p, with_liveness=True)
-        if live is not None:
-            spoof_live.append(live)
-    if spoof and real_live:
-        r, s = np.asarray(real_live), np.asarray(spoof_live)
-        lines += ["## Anti-spoofing (MiniFASNet)", "",
-                  f"ภาพจริง {r.size} ภาพ (enroll + probe) · ภาพหลอก {s.size}/{len(spoof)} ภาพที่ตรวจพบใบหน้า · "
-                  "BPCER = คนจริงถูกปฏิเสธ · APCER = ภาพหลอกผ่าน", "",
-                  "| ANTISPOOF_MIN_REAL | BPCER | APCER |", "|---|---|---|"]
-        for th in live_thresholds:
-            lines.append(f"| {th:.2f} | {pct(int((r < th).sum()), r.size)} | {pct(int((s >= th).sum()), s.size)} |")
-        lines.append("")
-    elif spoof:
-        lines += ["## Anti-spoofing", "", "ไม่ได้วัด: ไม่มีโมเดล MiniFASNet (ANTISPOOF_READY = False)", ""]
-
     # ---- ความเร็ว ----
     ms = runner.ms
     per_face = [d + f for d, f in zip(ms["detect"], ms["feature"])]
@@ -192,7 +161,6 @@ def evaluate(runner: Runner, enroll: dict[str, list[Path]], probe: dict[str, lis
               "| ขั้น | n | mean | p50 | p95 |", "|---|---|---|---|---|",
               f"| YOLO หาใบหน้า (ต่อภาพ) | {len(ms['detect'])} | {stat(ms['detect'])} |",
               f"| SFace embedding (ต่อใบหน้า) | {len(ms['feature'])} | {stat(ms['feature'])} |",
-              f"| Anti-spoofing (ต่อใบหน้า) | {len(ms['liveness'])} | {stat(ms['liveness'])} |",
               f"| รวม หา + จดจำ 1 ใบหน้า | {len(per_face)} | {stat(per_face)} |", ""]
     return "\n".join(lines)
 
@@ -205,40 +173,33 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--enroll", required=True, type=Path)
     ap.add_argument("--probe", required=True, type=Path)
-    ap.add_argument("--spoof", type=Path)
     ap.add_argument("--models", default=os.getenv("MODELS_DIR", "/models"))
     ap.add_argument("--thresholds", default="0.30,0.363,0.40,0.45,0.50,0.55")
     ap.add_argument("--margin", type=float, default=float(os.getenv("MATCH_MARGIN", "0.05")))
     ap.add_argument("--min-face-px", type=int, default=int(os.getenv("CAMERA_MIN_FACE_PX", "40")))
     ap.add_argument("--min-conf", type=float, default=float(os.getenv("CAMERA_MIN_CONF", "0.6")))
-    ap.add_argument("--liveness-thresholds", default="0.5,0.6,0.7,0.8,0.9")
     ap.add_argument("--out", type=Path, help="เขียนผลเป็นไฟล์ markdown ด้วย")
     a = ap.parse_args(argv)
 
     m = a.models
     os.environ.setdefault("YOLO_FACE_MODEL", f"{m}/yolov8n-face-pose.pt")
     os.environ.setdefault("SFACE_MODEL", f"{m}/face_recognition_sface_2021dec.onnx")
-    os.environ.setdefault("ANTISPOOF_MODEL_V2", f"{m}/minifasnet_v2.onnx")
-    os.environ.setdefault("ANTISPOOF_MODEL_V1SE", f"{m}/minifasnet_v1se.onnx")
     os.environ.setdefault("YOLO_CONFIG_DIR", "/tmp/ultralytics")
     import platform
 
     import vision  # โหลดโมเดลจริง (ช้าครั้งแรก)
 
     enroll, probe = list_people(a.enroll), list_people(a.probe)
-    spoof = list_images(a.spoof) if a.spoof else []
     runner = Runner(vision)
     first = next(iter(enroll.values()))[0]
-    runner.face(first, with_liveness=True)               # อุ่นเครื่อง (ครั้งแรกช้ากว่าปกติ) ไม่นับเวลา
+    runner.face(first)                                   # อุ่นเครื่อง (ครั้งแรกช้ากว่าปกติ) ไม่นับเวลา
     runner.ms = {k: [] for k in runner.ms}
 
     report = "\n".join([
         "# ผลวัดการจดจำใบหน้า (Bangmod Smart Attendance)", "",
         f"วันที่ {time.strftime('%Y-%m-%d %H:%M')} · เครื่อง {platform.machine()} {platform.processor() or ''} · "
-        f"CPU {os.cpu_count()} core · YOLOv8n-face-pose + SFace 2021dec + MiniFASNet "
-        f"({'พร้อม' if vision.ANTISPOOF_READY else 'ไม่มี'})", "",
-        evaluate(runner, enroll, probe, spoof, floats(a.thresholds), a.margin, a.min_face_px, a.min_conf,
-                 floats(a.liveness_thresholds)),
+        f"CPU {os.cpu_count()} core · YOLOv8n-face-pose + SFace 2021dec", "",
+        evaluate(runner, enroll, probe, floats(a.thresholds), a.margin, a.min_face_px, a.min_conf),
     ])
     print(report)
     if a.out:

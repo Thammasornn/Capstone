@@ -1,14 +1,13 @@
 """
 AI Service
-  - POST /embedding: รับภาพ -> YOLOv8 (face + 5 landmarks) -> ตรวจคุณภาพ -> anti-spoofing (MiniFASNet)
-    -> SFace embedding 128 มิติ -> ตรวจว่าทุกรูปเป็นคนเดียวกัน (ลงทะเบียนใบหน้า)
+  - POST /embedding: รับภาพ -> YOLOv8 (face + 5 landmarks) -> ตรวจคุณภาพ
+    -> SFace embedding 128 มิติ -> ตรวจว่าทุกรูปเป็นคนเดียวกัน (ลงทะเบียนใบหน้า · ไม่มีการตรวจภาพหลอก)
   - GET /metrics: เวลาจริงของแต่ละขั้น (p50 / p95) ทั้ง /embedding และตัวอ่านกล้อง
   - ตัวอ่านกล้อง (camera_worker.py): อ่าน RTSP จาก MediaMTX -> จับคู่ใบหน้า -> ส่งผลไป backend /api/internal/**
     เปิดด้วย CAMERA_WORKER=true (ต้องมี FACE_EMBEDDING_KEY, INTERNAL_API_KEY, BACKEND_URL, MEDIAMTX_RTSP_URL)
 Model ที่ต้องเตรียม (mount เข้า /models):
   - yolov8 face-pose weights (.pt) ที่ output keypoints 5 จุด (ตา x2, จมูก, มุมปาก x2)
   - face_recognition_sface_2021dec.onnx  (OpenCV Zoo)
-  - minifasnet_v2.onnx, minifasnet_v1se.onnx  (anti-spoofing · ไม่มี = ปิด anti-spoofing เอง)
 """
 import logging
 import os
@@ -18,7 +17,7 @@ import cv2
 import numpy as np
 from fastapi import FastAPI, Header, HTTPException, Response, UploadFile
 
-# ตั้ง log ก่อน import vision — ไม่งั้น log INFO ตอนโหลดโมเดล (เช่น "anti-spoofing พร้อม") หายไป
+# ตั้ง log ก่อน import vision — ไม่งั้น log INFO ที่เกิดตอน import (โหลดโมเดล) หายไป
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s [%(name)s] %(message)s")
 log = logging.getLogger("ai-service")
 
@@ -30,7 +29,6 @@ from metrics import Timings  # noqa: E402
 MIN_CONF = float(os.getenv("MIN_CONF", "0.8"))
 MIN_FACE_PX = int(os.getenv("MIN_FACE_PX", "112"))
 MIN_BLUR = float(os.getenv("MIN_BLUR", "60"))   # variance of Laplacian
-ANTISPOOF_MIN_REAL = float(os.getenv("ANTISPOOF_MIN_REAL", "0.7"))   # โอกาสเป็นใบหน้าจริงขั้นต่ำ (0–1)
 SAME_PERSON_MIN = float(os.getenv("SAME_PERSON_MIN", "0.363"))       # cosine ขั้นต่ำระหว่างทุกคู่รูป (ค่า SFace)
 
 INTERNAL_KEY = os.getenv("INTERNAL_API_KEY", "")   # ต้องตรงกับ backend: app.internal.api-key
@@ -46,9 +44,6 @@ register_metrics = Timings()
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     global gallery, supervisor
-    log.info("anti-spoofing: %s", "พร้อม · " + ("ปฏิเสธภาพที่คะแนน < %.2f" % ANTISPOOF_MIN_REAL
-                                               if vision.ANTISPOOF_ENFORCE else "โหมด log (ไม่ปฏิเสธ)")
-             if vision.ANTISPOOF_READY else "ปิด (ไม่มีโมเดล หรือ ANTISPOOF=off) — ลงทะเบียนไม่ตรวจภาพหลอก")
     if CAMERA_WORKER:
         if not EMBEDDING_KEY or not INTERNAL_KEY:
             log.error("CAMERA_WORKER=true แต่ไม่มี FACE_EMBEDDING_KEY / INTERNAL_API_KEY — ไม่เปิดตัวอ่านกล้อง")
@@ -89,8 +84,6 @@ def _require_internal_key(given: str | None):
 def metrics():
     """เวลาจริงต่อขั้น (ms: n / mean / p50 / p95 / max) · ใน cluster เท่านั้น · ไม่มีข้อมูลส่วนตัว"""
     return {
-        "antispoof": {"ready": vision.ANTISPOOF_READY, "enforce": vision.ANTISPOOF_ENFORCE,
-                      "minReal": ANTISPOOF_MIN_REAL},
         "registration": register_metrics.summary(),
         "cameras": supervisor.metrics() if supervisor else {},
     }
@@ -127,18 +120,6 @@ def check_quality(img: np.ndarray, face: np.ndarray, name: str):
         raise HTTPException(422, f"{name}: ภาพเบลอ")
 
 
-def check_liveness(img: np.ndarray, face: np.ndarray, name: str) -> float | None:
-    """MiniFASNet: คะแนนต่ำกว่า ANTISPOOF_MIN_REAL = น่าจะเป็นรูปพิมพ์ / ภาพจากหน้าจอ → 422 (โหมด on)"""
-    with register_metrics.timer("liveness"):
-        score = vision.liveness(img, face)
-    if score is not None and vision.ANTISPOOF_ENFORCE and score < ANTISPOOF_MIN_REAL:
-        register_metrics.count("rejected_spoof")
-        log.info("embedding: ปฏิเสธภาพ (liveness %.3f < %.2f)", score, ANTISPOOF_MIN_REAL)
-        raise HTTPException(422, f"{name}: ภาพอาจเป็นรูปถ่ายหรือภาพจากหน้าจอ "
-                                 "ถ่ายจากกล้องโดยตรงในที่แสงพอ แล้วลองใหม่")
-    return score
-
-
 def check_same_person(feats: list[np.ndarray], names: list[str]) -> float | None:
     """ทุกคู่รูปต้องมี cosine >= SAME_PERSON_MIN · ไม่ผ่าน → 422 ชี้รูปที่เข้ากับรูปอื่นน้อยที่สุด"""
     if len(feats) < 2:
@@ -159,7 +140,7 @@ def check_same_person(feats: list[np.ndarray], names: list[str]) -> float | None
 
 @app.post("/embedding")
 async def embedding(files: list[UploadFile]):
-    items, feats, names, scores = [], [], [], []
+    items, feats, names = [], [], []
     for i, f in enumerate(files):
         name = f.filename or f"image {i + 1}"
         with register_metrics.timer("decode"):
@@ -177,19 +158,20 @@ async def embedding(files: list[UploadFile]):
 
         face = faces[0]
         check_quality(img, face, name)
-        live = check_liveness(img, face, name)
 
         with register_metrics.timer("feature"):
-            feat = vision.feature(img, face)
+            try:
+                feat = vision.feature(img, face)
+            except vision.EmbeddingError:
+                raise HTTPException(422, f"{name}: สร้างข้อมูลใบหน้าไม่ได้ ถ่ายใหม่ให้เห็นหน้าชัด ๆ") from None
         feats.append(feat)
         names.append(name)
-        scores.append(live)
-        items.append({"embedding": feat.tolist(), "quality": round(float(face[-1]), 4),
-                      "liveness": None if live is None else round(live, 4)})
+        # liveness = null เสมอ: ไม่มีการตรวจภาพหลอก (คงช่องไว้ให้ response รูปแบบเดิม · backend ไม่ได้อ่าน)
+        items.append({"embedding": feat.tolist(), "quality": round(float(face[-1]), 4), "liveness": None})
 
     same = check_same_person(feats, names)
     register_metrics.count("registrations")
     register_metrics.count("images", len(items))
-    log.info("embedding: %d ภาพผ่าน · liveness %s · cosine ต่ำสุดระหว่างรูป %s", len(items),
-             " ".join("-" if s is None else f"{s:.3f}" for s in scores), "-" if same is None else f"{same:.3f}")
+    log.info("embedding: %d ภาพผ่าน · cosine ต่ำสุดระหว่างรูป %s", len(items),
+             "-" if same is None else f"{same:.3f}")
     return {"model": "SFace", "model_version": "2021dec", "items": items}
