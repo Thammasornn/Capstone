@@ -77,6 +77,17 @@ docker run -p 8080:80 -e BACKEND_URL=http://10.0.0.5:8081 bangmod-frontend:prod 
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-26 — frontend: กติกาเวลาสายแบบกึ่งอัตโนมัติ (F1)
+- **ทำอะไร:**
+  - ปุ่มเลือก "สาย 10 / 15 / 30 นาที" + "กำหนดเอง" (`LatePresetPicker`) ในฟอร์มรายวิชา (`CheckInWindowPicker`) และฟอร์มคาบเรียน (`SessionForm` — เลื่อน / เพิ่ม / ชดเชยคาบ) · ค่าเริ่มต้นของกลุ่มเรียนใหม่ = สาย 15 นาที
+  - สูตร (`entities/attendance/check-in-presets.js` · นับจากเวลาเริ่มเรียน S ไม่เกินเวลาเลิก E): เปิดเช็คชื่อ = S · ตรงเวลาถึง = S + สาย (10 / 15 / 30) · สายถึง = ปิดเช็คชื่อ = S + ขาดหลัง (30 / 45 / 60) · ฟอร์มรายวิชาส่ง `onTimeMinutes` = นาทีสาย และ `lateUntil` ว่าง (สายได้จนปิดเช็คชื่อ) · ฟอร์มคาบส่งครบ 4 เวลา · ไม่เปลี่ยน API
+  - ค่า preset อยู่ที่ `LATE_PRESETS` / `DEFAULT_LATE_PRESET` ที่เดียว (แก้เมื่อได้ระเบียบมหาวิทยาลัยจริง)
+  - อยู่ในโหมด preset แล้วเปลี่ยนเวลาเริ่ม / เลิกเรียน → คำนวณใหม่ · แก้ช่องเช็คชื่อช่องใดเอง → "กำหนดเอง" (ไม่คำนวณทับ) · โหลดฟอร์มแล้วตรวจว่าค่าเดิมตรง preset ไหน (`detectLatePreset`) ไม่ตรง = กำหนดเอง
+  - unit test `tests/unit/check-in-presets.test.js` (สูตรทุก preset, ตัดไม่เกินเวลาเลิก, ลำดับเวลาผ่านกติกา backend, ตรวจ preset จากค่าเดิม) · `course-form.test.js` ปรับตามค่าเริ่มต้นใหม่ (ปิดเช็คชื่อ 09:45 แทน 09:30)
+- **ไฟล์ที่เกี่ยวข้อง:** `src/entities/attendance/check-in-presets.js` (ใหม่), `src/entities/attendance/components/LatePresetPicker.vue` (ใหม่), `src/features/course-management/components/{CheckInWindowPicker,SessionForm}.vue`, `src/features/course-management/composables/useCourseForm.js`, `src/features/course-management/pages/CourseFormPage.vue`, `tests/unit/check-in-presets.test.js` (ใหม่), `tests/unit/course-form.test.js`
+- **เหตุผล:** อาจารย์ที่ปรึกษาขอให้ลดการคีย์ข้อมูล ใช้ระเบียบมหาวิทยาลัยเป็นค่าตั้งต้น ไม่ต้องตั้งเวลาทีละช่อง
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ค่า "ขาดหลัง" 30 / 45 / 60 นาทีเป็นค่าที่เสนอเอง — รอยืนยันกับระเบียบจริง · ทดสอบกับ backend จริง + Postgres ชั่วคราว: กลุ่มใหม่ได้ค่าเริ่มต้นสาย 15, เปลี่ยนเวลาเริ่มแล้วคำนวณใหม่, สลับ preset, แก้นาทีเอง → กำหนดเอง และเปลี่ยนเวลาเริ่มแล้วไม่ทับ, บันทึกรายวิชาเดิมด้วยสาย 15 ผ่าน (PUT) แล้วโหลดใหม่ตรวจเป็นสาย 15, เลื่อนคาบด้วยสาย 30 ผ่าน (PATCH), dialog บนมือถือ 375px ไม่ล้น
+
 ### 2026-11-25 — frontend: หน้า "คาบเรียน" — เลื่อน / ยกเลิก / ชดเชยคาบรายคาบ (D3)
 - **ทำอะไร:**
   - หน้าใหม่ `SectionSessionsPage` (route `section-sessions`, roles = `COURSE_EDITORS`) เข้าจากปุ่ม "คาบเรียน" ต่อกลุ่มเรียนใน `CourseTable` และจากหน้าแก้ไขรายวิชา · หัวหน้า: รหัสวิชา-กลุ่ม, ตารางปกติ (วัน / เวลา / ห้อง / ช่วงเช็คชื่อ) + ปุ่ม "เพิ่มคาบชดเชย / คาบพิเศษ" · ตัวกรอง กำลังจะถึง (ค่าเริ่มต้น) / ผ่านไปแล้ว (ล่าสุดก่อน) / ยกเลิก / ทั้งหมด · จอใหญ่เป็นตาราง มือถือเป็น card

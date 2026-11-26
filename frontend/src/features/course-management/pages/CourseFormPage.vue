@@ -292,6 +292,10 @@ function notChangedText(s) {
             v-model:opens="section.checkInOpens"
             v-model:closes="section.checkInCloses"
             v-model:on-time-minutes="section.onTimeMinutes"
+            v-model:late-until="section.lateUntil"
+            v-model:preset="section.latePreset"
+            :start-time="section.startTime"
+            :end-time="section.endTime"
             :error="errors[`s${i}.checkIn`]"
           />
         </div>

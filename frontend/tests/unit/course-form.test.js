@@ -27,8 +27,8 @@ describe('ฟอร์มรายวิชา (B5) — กติกาเดี
     form.sections[0].checkInOpens = '08:30:00'
     expect(validateCourse(form)['s0.checkIn']).toMatch('ในเวลาเรียน')
     form.sections[0].checkInOpens = '09:00:00'
-    form.sections[0].onTimeMinutes = 45
-    expect(validateCourse(form)['s0.checkIn']).toMatch('0–30')
+    form.sections[0].onTimeMinutes = 60
+    expect(validateCourse(form)['s0.checkIn']).toMatch('0–45')
   })
 
   it('admin ต้องเลือกผู้สอนให้กลุ่มใหม่', () => {

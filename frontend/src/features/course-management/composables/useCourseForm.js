@@ -1,11 +1,20 @@
 import { computed, reactive, ref } from 'vue'
 import { durationMinutes, timeToMinutes } from '@/shared/utils/datetime'
+import {
+  DEFAULT_LATE_PRESET,
+  computeCheckInWindow,
+  detectLatePreset,
+} from '@/entities/attendance/check-in-presets'
 import { createCourse, getCourse, updateCourse } from '../api'
 
 const COURSE_CODE = /^[A-Z]{3}[0-9]{3}$/
 
-/** กลุ่มเรียนใหม่ (ค่าเริ่มต้นที่พบบ่อย: 3 ชั่วโมง เช็คชื่อ 30 นาทีแรก) */
+/**
+ * กลุ่มเรียนใหม่ (ค่าเริ่มต้นที่พบบ่อย: 3 ชั่วโมง) · ช่วงเช็คชื่อตามกติกาเวลาสายค่าเริ่มต้น (F1: สาย 15 นาที)
+ * latePreset ใช้ในฟอร์มเท่านั้น ไม่ส่งไป backend
+ */
 export function emptySection() {
+  const w = computeCheckInWindow('09:00:00', '12:00:00', DEFAULT_LATE_PRESET, { seconds: true })
   return {
     sectionId: null,
     sectionCode: '',
@@ -14,9 +23,11 @@ export function emptySection() {
     classDays: [],
     startTime: '09:00:00',
     endTime: '12:00:00',
-    checkInOpens: '09:00:00',
-    checkInCloses: '09:30:00',
-    onTimeMinutes: 15,
+    checkInOpens: w.checkInOpens,
+    checkInCloses: w.checkInCloses,
+    onTimeMinutes: w.onTimeMinutes,
+    lateUntil: null,
+    latePreset: DEFAULT_LATE_PRESET,
     cameraAttendanceEnabled: true,
   }
 }
@@ -124,6 +135,7 @@ export function useCourseForm(courseId, options) {
         ...s,
         lecturerId: null, // ไม่ส่ง = ไม่เปลี่ยนผู้สอน
         currentLecturerName: s.lecturerName,
+        latePreset: detectLatePreset(s),
       }))
     } catch (e) {
       loadError.value = e
@@ -142,6 +154,8 @@ export function useCourseForm(courseId, options) {
             endTime: last.endTime,
             checkInOpens: last.checkInOpens,
             checkInCloses: last.checkInCloses,
+            onTimeMinutes: last.onTimeMinutes,
+            latePreset: last.latePreset,
           }
         : {}),
       sectionCode: String(form.sections.length + 1).padStart(3, '0'),
