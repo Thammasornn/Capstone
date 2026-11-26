@@ -42,6 +42,10 @@ spec:
               valueFrom: { secretKeyRef: { name: app-secret, key: FACE_EMBEDDING_KEY } }
             - name: INTERNAL_API_KEY
               valueFrom: { secretKeyRef: { name: app-secret, key: INTERNAL_API_KEY } }
+            # E2: รหัสผ่านเริ่มต้นของบัญชีนักศึกษาที่ backend สร้างตอนเพิ่มเข้ากลุ่ม · uat เท่านั้น
+            # optional: ไม่มี key ใน secret.env = ไม่ตั้ง env → สร้างบัญชีใหม่ไม่ได้ (prod ต้องเป็นแบบนี้ · deploy.sh prod หยุดถ้ามี key)
+            - name: NEW_STUDENT_PASSWORD
+              valueFrom: { secretKeyRef: { name: app-secret, key: NEW_STUDENT_PASSWORD, optional: true } }
           ports:
             - containerPort: 8081
           readinessProbe:

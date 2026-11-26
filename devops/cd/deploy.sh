@@ -102,6 +102,10 @@ kubectl get ns "$ENV_NAME" >/dev/null 2>&1 || { finish failed "ไม่มี n
 curl -fsS "http://$REGISTRY/v2/" >/dev/null || { finish failed "registry ไม่ตอบ"; fail "registry $REGISTRY ไม่ตอบ — ดู devops/cd/setup.sh"; }
 SECRETS="$CD_HOME/secrets/$ENV_NAME.env"
 [ -f "$SECRETS" ] || { finish failed "ไม่มี $SECRETS"; fail "ไม่มี $SECRETS"; }
+# prod ห้ามมีรหัสผ่านเริ่มต้นของบัญชีนักศึกษา (E2 · uat เท่านั้น) — ไม่แสดงค่า
+if [ "$ENV_NAME" = prod ] && grep -q '^NEW_STUDENT_PASSWORD=.' "$SECRETS"; then
+  finish failed "prod มี NEW_STUDENT_PASSWORD ใน secrets"; fail "ลบบรรทัด NEW_STUDENT_PASSWORD ออกจาก $SECRETS ก่อน (prod ห้ามตั้ง)"
+fi
 
 # commit ที่แก้ schema / ข้อมูล → ต้องมีคนตัดสิน (DB ย้อนกลับไม่ได้)
 if [ -n "$LAST_OK" ] && ! git -C "$REPO" diff --quiet "$LAST_OK" "$TARGET" -- backend/db/; then

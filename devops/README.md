@@ -378,12 +378,28 @@ kubectl -n uat logs deploy/ai-service | grep -E 'camera|gallery'
 
 - **prod ไม่มีข้อมูลเริ่มต้น** (ไม่มี seed) ต้องเพิ่มเองก่อนใช้: บัญชี admin (`users`), ภาคเรียน (`semesters`), ข้อความยินยอม (`consent_versions` ที่ `is_current = true`) · admin คนแรก: `k8s/sql/prod-first-admin.sql` · prod ไม่มีบัญชีทดสอบ — ผู้ใช้พิมพ์อีเมล / รหัสผ่านเอง ห้ามใช้ `Password@123`
 - `FACE_EMBEDDING_KEY` ห้ามเปลี่ยนหลังมีข้อมูลใบหน้า (ถอดรหัส embedding เดิมไม่ได้) · **สำรอง `secret.env` ของแต่ละ namespace ไว้นอก VM** (เช่น password manager ของทีม) ห้ามใส่ใน git หรือ README
+- `NEW_STUDENT_PASSWORD` (E2 · รหัสผ่านเริ่มต้นของบัญชีนักศึกษาที่ backend สร้างตอนเพิ่มเข้ากลุ่ม): **uat เท่านั้น** อ่านจาก `secret.env` (optional — ไม่มี key = สร้างบัญชีใหม่ไม่ได้) · prod ห้ามตั้ง (`deploy.sh prod` หยุดถ้ามี) · เพิ่มใน uat บน VM (ไม่แสดงค่า · ไม่เขียนทับ):
+  ```bash
+  f=~/bangmod-cd/secrets/uat.env
+  if grep -q '^NEW_STUDENT_PASSWORD=' "$f"; then echo "มีอยู่แล้ว — ไม่แก้"; else
+    read -rsp 'NEW_STUDENT_PASSWORD (uat): ' P; echo
+    [ -n "$(tail -c1 "$f")" ] && echo >> "$f"; [ -n "$P" ] && printf 'NEW_STUDENT_PASSWORD=%s\n' "$P" >> "$f"; unset P
+  fi; chmod 600 "$f"; grep -c '^NEW_STUDENT_PASSWORD=.' "$f"          # ต้องได้ 1
+  ~/bangmod-cd/bin/deploy.sh uat                                       # Secret ใน cluster สร้างตอน apply → rollout restart อย่างเดียวไม่ได้ค่าใหม่
+  kubectl -n uat exec deploy/backend -- sh -c 'test -n "$NEW_STUDENT_PASSWORD" && echo set || echo missing'
+  ```
 - backend ต้องมี replica เดียว (SSE อยู่ในหน่วยความจำ) · Deployment ตั้ง `strategy: Recreate` ไว้แล้ว
 - MediaMTX อยู่ใน `k8s/mediamtx/` แยกจาก overlays (namespace `media` · apply เอง ไม่อยู่ใน CD) · ภาพสด (B2) ใช้ `MEDIA_BASE_URL` = `<VITE_BASE>media` ผ่าน NGINX ของ frontend (hostPort 8889 ไว้ตรวจจากนอก cluster)
 - HTTPS ที่ผู้ใช้เห็นมาจาก bscit (ใบ GlobalSign ของคณะ) · Traefik บน VM รับ HTTP จาก bscit — กล้องในเบราว์เซอร์ (หน้าลงทะเบียนใบหน้า) ต้องใช้ HTTPS ยกเว้น localhost
 - HTTPS ตรงที่ VM (`https://cp26ms3.sit.kmutt.ac.th/capstone26/cp26ms3/<ns>/` · ใบจาก SITCertAuthCA) เตรียมไว้แล้วแต่ยังไม่เปิด — ขั้นตอนอยู่ในคอมเมนต์ของ `k8s/base/ingress.yaml` · ใช้ได้เฉพาะในคณะ / VPN และเครื่องที่ไม่ได้ติดตั้ง SITCertAuthCA จะขึ้นเตือน
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-26 — `NEW_STUDENT_PASSWORD` จาก secret (uat เท่านั้น)
+- **ทำอะไร:** backend อ่าน `NEW_STUDENT_PASSWORD` จาก `app-secret` แบบ `optional: true` · `secret.env.example` ของ uat มีบรรทัดตัวอย่าง (ไม่มีค่า) · prod example เขียนว่าห้ามใส่ · `deploy.sh prod` หยุดถ้า `secrets/prod.env` มีค่านี้ · คำสั่งเพิ่ม key บน VM ใน "ข้อควรรู้"
+- **ไฟล์ที่เกี่ยวข้อง:** `k8s/base/backend.yaml`, `k8s/overlays/uat/secret.env.example`, `k8s/overlays/prod/secret.env.example`, `cd/deploy.sh`, `README.md`
+- **เหตุผล:** BE E2 สร้างบัญชีนักศึกษาใหม่ได้เมื่อตั้งค่านี้ (ดู `backend/README.md`) · เป็นรหัสผ่านจึงไม่ใส่ใน ConfigMap · prod ไม่มีค่า = ปลอดภัย
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ตรวจ YAML ด้วย PyYAML + `bash -n` + ทดสอบ pattern ของ grep (มีค่า = หยุด · ว่าง / คอมเมนต์ / ไม่มี = ผ่าน) · ยังไม่ได้รัน kustomize (ไม่มีในเครื่อง) · ผู้ใช้ต้องเพิ่ม key ใน `~/bangmod-cd/secrets/uat.env` บน VM เอง แล้ว `deploy.sh uat` (หรือเพิ่มก่อน push commit นี้ CD จะใช้ค่าใหม่เอง)
 
 ### 2026-11-26 — เตรียม prod ผ่าน bscit + MediaMTX บน Pi เป็น systemd + เช็คลิสต์กล้องวันเดโม
 - **ทำอะไร:** overlay prod: `CORS_ORIGINS=https://bscit.sit.kmutt.ac.th` (เอา localhost ออก) + `MEDIA_BASE_URL=/capstone26/cp26ms3/prod/media` + คอมเมนต์ CORS ที่ค้าง · เพิ่ม `pi/mediamtx.service` · README: หัวข้อ "Deploy prod ครั้งแรก (ผ่าน CD)", "MediaMTX บน Pi เป็น systemd", "เช็คลิสต์ก่อนเดโมกล้อง", สาเหตุที่ต่อแบบวงเดียวกันไม่ติด + คำสั่งตรวจ
