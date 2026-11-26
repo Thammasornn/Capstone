@@ -6,9 +6,9 @@
 
 | โฟลเดอร์ | เนื้อหา | สถานะ |
 |---|---|---|
-| [`frontend/`](frontend/) | Vue 3 + Vite (JavaScript) · Tailwind v4 · Pinia · MSW | R1 ทุกหน้าเรียก API จริง (รวมเริ่ม / จบคาบจากหน้าห้อง) |
-| [`backend/`](backend/) | Spring Boot REST + SSE · PostgreSQL — [`backend/db/`](backend/db/) schema + mock data R1 พร้อมใช้ | API R1 (5.1–5.11, B1–B8) |
-| [`ai-service/`](ai-service/) | Python (FastAPI) · YOLOv8 face-pose → OpenCV SFace | ลงทะเบียนใบหน้า + ตัวอ่านกล้อง realtime (MediaMTX → จับคู่ → เช็คชื่อ) |
+| [`frontend/`](frontend/) | Vue 3 + Vite (JavaScript) · Tailwind v4 · Pinia · MSW | R1 ทุกหน้าเรียก API จริง (รวมเริ่ม / จบคาบจากหน้าห้อง) · กติกาเวลาสายสำเร็จรูป 10 / 15 / 30 นาที ในฟอร์มรายวิชา / คาบ (F1) · หน้าจอนักศึกษาในกลุ่มเรียน (E2) กำลังทำ |
+| [`backend/`](backend/) | Spring Boot REST + SSE · PostgreSQL — [`backend/db/`](backend/db/) schema + mock data R1 พร้อมใช้ | API R1 (5.1–5.11, B1–B8) · เพิ่ม / ถอน / นำเข้านักศึกษาในกลุ่มเรียน `/sections/{id}/enrollments` (E2) |
+| [`ai-service/`](ai-service/) | Python (FastAPI) · YOLOv8 face-pose → OpenCV SFace | ลงทะเบียนใบหน้า (กันรูปถ่าย / ภาพจากหน้าจอ + ทุกรูปต้องเป็นคนเดียวกัน) + ตัวอ่านกล้อง realtime (MediaMTX → จับคู่ → เช็คชื่อ) · `GET /metrics` เวลาแต่ละขั้น · `tools/eval_recognition.py` วัดความแม่นยำ |
 | [`devops/`](devops/) | K3s manifests (namespace `prod` / `uat`), Ingress, MediaMTX | manifests prod / uat · MediaMTX (namespace `media`) · CD: push `Dev` → uat |
 | [`docs/`](docs/) | เอกสารประกอบ — [`docs/database/`](docs/database/) แบบฐานข้อมูล + ER Diagram | — |
 
@@ -33,10 +33,10 @@ Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/uat/` แยก 
 
 หน้า Login แสดงบัญชี**ทั้งหมดที่มีใน DB** ให้กดเลือกได้ จัดกลุ่มตามสถานะใบหน้า / ความยินยอม (frontend `VITE_SHOW_TEST_ACCOUNTS=true` + backend `TEST_ACCOUNTS_ENABLED=true` · local และ uat เท่านั้น)
 
-- เจ้าหน้าที่: `admin@sit.kmutt.ac.th` (admin) · `supawadee.c@sit.kmutt.ac.th` (อ.ดร.สุภาวดี · สอน INT201-001)
-- นักศึกษา: สมาชิกทีม `66130500013`, `66130500036`, `66130500041` (`@st.sit.kmutt.ac.th`) · ลงทะเบียน INT201-001 · **ยังไม่ยินยอม / ไม่มีใบหน้า** → ลงทะเบียนใบหน้าด้วยหน้าตัวเองก่อนทดสอบกล้อง
-- INT201-001 เรียน**ห้อง 4303 (ห้องที่มีกล้อง)** ทุกวันอังคาร 13:00–16:00 · 4 คาบที่ผ่านมามีผลเช็คชื่อให้ dashboard · อยากได้คาบ "ตอนนี้" ไว้ทดสอบกล้อง: login อาจารย์ / admin → หน้าห้อง 4303 → ปุ่ม **"เริ่มคาบตอนนี้"** (จบด้วยปุ่ม "จบคาบ") · หรือรัน `backend/db/03_demo_live_session.sql` (`./dev.sh db` รันให้แล้ว)
-- รายละเอียดข้อมูล: `backend/db/README.md`
+- เจ้าหน้าที่: `admin@sit.kmutt.ac.th` (admin) · `supawadee.c@sit.kmutt.ac.th` (อ.ดร.สุภาวดี · สอนทั้ง 5 วิชา INT201–INT205 กลุ่ม 001)
+- นักศึกษา 17 คน (`@st.sit.kmutt.ac.th`): สมาชิกทีม `66130500013`, `66130500036`, `66130500041` · `66130500288`, `66130500099` (ชื่อ placeholder รอยืนยัน) · dummy `66139900001`–`66139900012` (ชื่อสมมติ) · ทุกคน**ยังไม่ยินยอม / ไม่มีใบหน้า** → ลงทะเบียนใบหน้าด้วยหน้าตัวเองก่อนทดสอบกล้อง
+- **ห้อง 4303 (ห้องที่มีกล้อง)** มี 3 วิชาที่กติกาสายต่างกัน: จันทร์ INT203 (ตรงเวลา 30 นาที) · อังคาร INT201 (15 นาที) · ศุกร์ INT202 (10 นาที) · INT204 ห้อง 4301 · INT205 ห้อง 4302 · 4 คาบล่าสุดของทุกวิชามีผลเช็คชื่อให้ dashboard · อยากได้คาบ "ตอนนี้" ไว้ทดสอบกล้อง: login อาจารย์ / admin → หน้าห้อง 4303 → ปุ่ม **"เริ่มคาบตอนนี้"** (จบด้วยปุ่ม "จบคาบ") · หรือรัน `backend/db/03_demo_live_session.sql` (`./dev.sh db` รันให้แล้ว)
+- รายละเอียดข้อมูล (นักศึกษาแต่ละคนอยู่วิชาไหน, คนที่ตั้งให้เสี่ยง / สาย): `backend/db/README.md`
 
 
 | คำสั่ง | ทำอะไร |
@@ -84,6 +84,12 @@ Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/uat/` แยก 
 อาจารย์ที่ปรึกษา: อ.มนตรี สุภัททธรรม
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-26 — root README ตาม seed ชุดเดโม + ฟีเจอร์ใหม่ (E2, F1, ai-service metrics)
+- **ทำอะไร:** หัวข้อ "บัญชีทดสอบ" เปลี่ยนเป็น seed ชุดใหม่ (`2eef1ff`): อาจารย์สอน INT201–INT205 · นักศึกษา 17 คน · ห้องกล้อง 4303 มี INT203 จ. / INT201 อ. / INT202 ศ. (ตรงเวลา 30 / 15 / 10 นาที) · ตารางโครงสร้าง repo เพิ่ม E2 นักศึกษาในกลุ่มเรียน (backend `7239079` · หน้าจอ FE กำลังทำ), F1 กติกาเวลาสายสำเร็จรูป (`dc727ec`), ai-service `/metrics` + `tools/eval_recognition.py` + กันภาพหลอกตอนลงทะเบียน (`e16d4d0`)
+- **ไฟล์ที่เกี่ยวข้อง:** `README.md`
+- **เหตุผล:** commit บน `Dev` (`e7db958..2eef1ff`) เปลี่ยนข้อมูล mock และเพิ่มฟีเจอร์ แต่ root README ยังเป็นชุดเก่า
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ยืนยันจาก `backend/db/README.md`, `backend/README.md`, `frontend/README.md`, `ai-service/README.md` แล้ว · บรรทัด "Deploy บน Faculty VM" ยังไม่ได้พูดถึง prod ผ่าน bscit (`e153f32` / `4f0c21e` เตรียมไว้) — แก้เมื่อ prod เปิดใช้จริง
 
 ### 2026-11-26 — ข้อมูลเดโม 5 วิชา (DB)
 - **ทำอะไร:** `backend/db/02_seed_mock.sql` มี 5 วิชา (INT201–INT205) 9–13 คนต่อวิชา · นักศึกษา 17 คน (ทีม 3 + `66130500288` / `66130500099` ชื่อ placeholder + dummy 12 คน `661399000xx`) · ห้องกล้อง 4303 มี INT201 อังคาร / INT202 ศุกร์ (ตรงเวลา 10 นาที) / INT203 จันทร์ (ตรงเวลา 30 นาที) ไม่ชนกัน · `03` ไม่สร้างคาบเดโมถ้าห้อง 4303 มีคาบวิชาอื่นอยู่ · `dev.sh`: smoke เลือกห้องที่มีกล้อง และรายชื่อบัญชีตอนเปิดตรงข้อมูลใหม่
