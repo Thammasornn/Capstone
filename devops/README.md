@@ -38,6 +38,8 @@ FE เรียก API แบบ relative (`/prod/api`) แล้ว NGINX ใ�
 | `k8s/sql/uat-reset-passwords.sql` | uat: ตั้งรหัสผ่านทุกบัญชีเป็น `Password@123` (ค่าที่หน้า Login ของ uat กรอกให้) · ไม่มีข้อมูล mock = หยุด |
 | `k8s/sql/prod-first-admin.sql` | prod: สร้าง admin คนแรก รหัสผ่านพิมพ์ตอนรัน (ไม่อยู่ใน git / history) · คำสั่งอยู่หัวไฟล์ |
 | `k8s/sql/prod-first-setup.sql` | prod: ภาคเรียน + ข้อความยินยอม (hash จาก `consent-text.js` ของ `origin/main`) + ห้องเรียน + กล้อง 4303 (ไม่บังคับ) · ไม่มีบัญชี / mock · รันซ้ำได้ · ใช้เปลี่ยน consent เป็น v2 ได้ · คำสั่งอยู่หัวไฟล์ |
+| `k8s/sql/prod-add-lecturer.sql` | prod: เพิ่มอาจารย์ 1 คน รหัสผ่านพิมพ์ตอนรัน (stdin) · มีอยู่แล้ว = ไม่แก้ · คำสั่งอยู่หัวไฟล์ |
+| `k8s/sql/prod-add-students.sql` | prod: สร้างบัญชีนักศึกษาจาก CSV (หัวเดียวกับ template E2) รหัสผ่านชั่วคราวชุดเดียวพิมพ์ตอนรัน · `DRY=true` ลองก่อน · แถวผิด = ไม่บันทึก · มีอยู่แล้ว = ข้าม · ไม่ลงกลุ่มเรียน · คำสั่งอยู่หัวไฟล์ |
 | `cd/deploy.sh` | **CD**: build → push เข้า registry ในเครื่อง → apply → ตรวจผล → rollback ถ้าพัง |
 | `cd/setup.sh` | ติดตั้ง CD บน VM ครั้งแรก (registry, clone แยก, cron) |
 | `pi/mediamtx.service` | systemd unit ของ MediaMTX บน Raspberry Pi (เปิดเองตอนบูต) · ติดตั้งตามหัวข้อ "MediaMTX บน Pi เป็น systemd" |
@@ -258,7 +260,10 @@ VER=$(git -C $R show origin/main:$C/constants.js | sed -n "s/.*CONSENT_VERSION =
   | kubectl -n prod exec -i statefulset/postgres -- psql -U postgres -d bangmod_attendance -v ON_ERROR_STOP=1
 ```
 ⚠️ ข้อความ consent v1 ยังเป็นร่าง (มีช่อง `[ ... ]` · ยังไม่ผ่าน DPO) ใช้กับเดโมเท่านั้น · ข้อความจริงมา: แก้ `consent-text.js` + `CONSENT_VERSION = 'v2'` → merge main → deploy prod → รันขั้น (ข) ซ้ำ (v2 เป็นฉบับปัจจุบัน · v1 ไม่ถูกลบ · คนที่ยินยอม v1 ถูกขอยินยอมใหม่)
-prod ยังไม่มีทางสร้างบัญชีอาจารย์ / นักศึกษา (ไม่มี API · E2 สร้างบัญชีได้เฉพาะ local / uat) → admin สร้างรายวิชาไม่ได้เพราะต้องเลือกอาจารย์ — ต้องตัดสินใจก่อนเดโมบน prod
+(ค) อาจารย์: คำสั่งหัวไฟล์ `k8s/sql/prod-add-lecturer.sql` (ทีละคน · รหัสผ่าน ≥ 12 ตัว พิมพ์ตอนรัน) — ต้องมีก่อน admin สร้างรายวิชา (B5 บังคับเลือกอาจารย์)
+(ง) นักศึกษา: เตรียม CSV `student_code,title,first_name,last_name,email` (template ของหน้า "รายชื่อนักศึกษาในกลุ่มเรียน" ใช้ได้เลย) บน VM แล้วรันคำสั่งหัวไฟล์ `k8s/sql/prod-add-students.sql` ด้วย `DRY=true` ก่อน → ถูกแล้วรันซ้ำด้วย `DRY=false` · รหัสผ่านชั่วคราวชุดเดียว แจกเอง (ยังไม่มีหน้าเปลี่ยนรหัสผ่าน / flag บังคับเปลี่ยน)
+(จ) ลงกลุ่มเรียน: admin สร้างรายวิชาในหน้าเว็บ → อาจารย์ / admin เพิ่มนักศึกษาเข้ากลุ่มที่หน้า "รายชื่อนักศึกษาในกลุ่มเรียน" (เพิ่มเอง หรือนำเข้า CSV เดียวกัน)
+⚠️ ข้อมูลบน prod ของโครงงานนี้ = dummy เท่านั้น (PDPA ตามอาจารย์ที่ปรึกษา) ทั้งอาจารย์และนักศึกษา
 
 **6. ตรวจผล (ข้อ 13–16)**
 ```bash
@@ -448,6 +453,12 @@ kubectl -n uat logs deploy/ai-service | grep -E 'camera|gallery'
 - HTTPS ตรงที่ VM (`https://cp26ms3.sit.kmutt.ac.th/capstone26/cp26ms3/<ns>/` · ใบจาก SITCertAuthCA) เตรียมไว้แล้วแต่ยังไม่เปิด — ขั้นตอนอยู่ในคอมเมนต์ของ `k8s/base/ingress.yaml` · ใช้ได้เฉพาะในคณะ / VPN และเครื่องที่ไม่ได้ติดตั้ง SITCertAuthCA จะขึ้นเตือน
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-26 — SQL เพิ่มอาจารย์ / นักศึกษาบน prod
+- **ทำอะไร:** เพิ่ม `k8s/sql/prod-add-lecturer.sql` (แบบเดียวกับ `prod-first-admin.sql`: ค่าผ่าน `\set`, รหัสผ่าน stdin ≥ 12 ตัว ห้าม `Password@123`, BCrypt cost 10 · อีเมลเป็นอาจารย์อยู่แล้ว = ไม่แก้ · เป็น role อื่น = error) และ `k8s/sql/prod-add-students.sql` (CSV ส่งเป็น base64 ใน `\set` · หัวเดียวกับ template E2 เรียงคอลัมน์แบบไหนก็ได้ · ตรวจรหัส 11 หลัก / email ตรงรหัส / ชื่อ–นามสกุล / ความยาว / ซ้ำในไฟล์ · รหัส+อีเมลมีอยู่แล้ว = ข้าม · รหัสหรืออีเมลชนบัญชีอื่น = error · มี error = ไม่บันทึกทั้งไฟล์ · `dry_run` · สรุป insert / skip / error · faculty + entry_year จากรหัส · ไม่ลงกลุ่มเรียน) · ทั้งสองไฟล์หยุดเมื่อไม่มี schema / DB มีข้อมูล mock · ขั้น 5 ของ "Deploy prod ครั้งแรก" เพิ่ม (ค)–(จ)
+- **ไฟล์ที่เกี่ยวข้อง:** `k8s/sql/prod-add-lecturer.sql`, `k8s/sql/prod-add-students.sql`, `README.md`
+- **เหตุผล:** prod ไม่มี API สร้างบัญชีอาจารย์ / นักศึกษา (E2 สร้างได้เฉพาะ local / uat) → admin สร้างรายวิชาไม่ได้และไม่มีนักศึกษาให้ลงกลุ่ม · ผู้ใช้เลือกให้ทำเป็น SQL
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ทดสอบกับ PostgreSQL ชั่วคราวแบบ prod (`01` + `prod-first-setup` + `prod-first-admin`) + backend จริง: login admin / อาจารย์ / นักศึกษาที่สร้างได้ · admin สร้างรายวิชาโดยเลือกอาจารย์ที่สร้างได้ · อาจารย์เพิ่มนักศึกษาที่ import เข้ากลุ่มผ่าน E2 ได้ (`insert`) · CSV มี BOM / CRLF / ช่องมี `,` ในเครื่องหมายคำพูด / เรียงคอลัมน์ต่าง / แถวว่าง ถูกต้อง · แถวผิด 6 แบบถูกจับ · รันซ้ำ = ข้าม · ยังไม่มีหน้าเปลี่ยนรหัสผ่าน — รหัสชั่วคราวใช้ได้ตลอด
 
 ### 2026-11-26 — SQL ข้อมูลเริ่มต้นของ prod (ภาคเรียน / consent / ห้อง)
 - **ทำอะไร:** เพิ่ม `k8s/sql/prod-first-setup.sql`: ภาคเรียนปัจจุบัน (ค่าใน `\set` · ตรวจว่าวันสิ้นภาคยังไม่ผ่าน), `consent_versions` ฉบับปัจจุบัน (ชื่อฉบับ + sha256 ของ `consent-text.js` จาก `origin/main` ส่งเข้ามาตอนรัน · ฉบับเดิมเลิกเป็นปัจจุบันแต่ไม่ลบ · ชื่อฉบับซ้ำแต่ hash ต่าง = error), ห้อง 4301–4305, กล้อง 4303 (`with_camera` ไม่บังคับ) · หยุดเมื่อไม่มี schema / เป็น DB ที่มีข้อมูล mock · รันซ้ำได้ · ตารางไฟล์ + ขั้น 5 ของ "Deploy prod ครั้งแรก" อัปเดตตาม
