@@ -20,6 +20,34 @@ Main Chat (coordinator) จะส่งสรุปมาให้ sub-chat "sum
 
 ## บันทึก
 
+### 2026-11-26 — E2 / F1–F3 จัดการนักศึกษาในกลุ่ม, seed เดโม, AI anti-spoofing, เตรียม prod (`e7db958..79240fc`)
+> จดจาก commit message และ changelog ใน README (ยังไม่มีรายงานจาก coordinator) · ตอนจดยังไม่ push (`origin/Dev` = `cd04b8b`)
+- **แก้อะไร:**
+  - BE `7239079` (E2): API เพิ่ม / ถอน / นำเข้านักศึกษาในกลุ่มเรียน (`/api/sections/{id}/enrollments`, import csv/txt/xlsx + `dryRun`, template) · action `insert` / `reactivate` / `create` / `skip` / `unmatched` · สร้างบัญชีนักศึกษาใหม่ได้เมื่อตั้ง `NEW_STUDENT_PASSWORD` (local / uat เท่านั้น) · audit ทุกการเพิ่ม / ถอน / นำเข้า
+  - FE `dc727ec` (F1): ตัวเลือก "สาย 10 / 15 / 30 นาที" + กำหนดเองในฟอร์มรายวิชาและฟอร์มคาบ (ค่าเริ่มต้น 15)
+  - FE `e153f32` (F2): prod อยู่ใต้ path ของ bscit (`VITE_BASE=/capstone26/cp26ms3/prod/`, `APP_PATH=/prod/`)
+  - FE `1a86443` (F3): หน้ารายชื่อนักศึกษาในกลุ่มเรียน — เพิ่มทีละหลายคน / วาง, wizard นำเข้าไฟล์, ถอน + เหตุผล, เพิ่มกลับคนที่ถอนแล้ว
+  - DB `2eef1ff`: seed เดโม 5 วิชา (INT201–INT205) นักศึกษา 17 คน กติกาสาย 2 แบบ ห้อง 4303 ใช้ร่วมกันไม่ชนเวลา · `03` ข้ามคาบเดโมถ้าห้อง 4303 ไม่ว่าง
+  - AI `e16d4d0`, `6d16098`: วัดเวลาจริง (`/metrics`), เครื่องมือวัดผลการจดจำใบหน้า, anti-spoofing (MiniFASNet) ตอนลงทะเบียน, คู่มือเก็บข้อมูลภาคสนาม, pytest อยู่ใน `./dev.sh test`
+  - DevOps `4f0c21e`: overlay prod หลัง bscit (`CORS_ORIGINS`, `MEDIA_BASE_URL`, แก้คอมเมนต์ CORS ที่ค้างจากรอบ docs sync), MediaMTX บน Pi เป็น systemd, checklist กล้องเดโม
+  - DevOps `7d1468b`: `NEW_STUDENT_PASSWORD` อ่านจาก secret ของ uat ไม่ตั้งใน prod
+  - DevOps `f739ba9`, `79240fc`: SQL prod ครั้งแรก (ภาคเรียน, `consent_versions`, ห้อง 4301–4305) · เพิ่มอาจารย์ · นำเข้านักศึกษาจาก CSV (มี dry run, ปฏิเสธ DB mock)
+  - docs `35908d1`, `3c92bbe`: README root (seed เดโม, E2, F1, metrics) · โมเดล MiniFASNet + ลำดับอัปเดต uat หลัง push นี้
+- **ปัญหา / conflict ที่เจอ:**
+  - `2eef1ff` แก้ `backend/db/` → push แล้ว **CD จะหยุด (blocked)** จนกว่าผู้ใช้ทำตามลำดับใน `devops/README.md` แล้วสั่ง `ALLOW_DB_CHANGE=1 deploy.sh uat`
+  - เปิด bscit `/prod/` ได้ 503 `no available server` จาก Traefik ของ VM (ไม่ใช่ 404 ของ bscit) → อาจมี Ingress prod ค้าง ต้องตรวจก่อน ห้ามลบเอง
+  - DevOps เตรียม prod แล้วพบว่า `frontend/.env.production` ยังเป็น `VITE_BASE=/prod/` → ส่งต่อให้ FE แก้ใน F2 (`e153f32`)
+  - สเปกไม่ระบุกรณีนักศึกษาที่ยังไม่มีบัญชี → BE ตัดสินเอง: สร้างบัญชีให้เมื่อส่งชื่อ-นามสกุลและตั้ง `NEW_STUDENT_PASSWORD`
+  - reset DB ตาม seed ใหม่ลบใบหน้าเดิม → ทีมต้องลงทะเบียนใบหน้าใหม่ก่อนเดโมกล้อง
+- **ยังค้าง / ต้องทำต่อ:**
+  - uat: รัน SQL ตามลำดับใน `devops/README.md` + `ALLOW_DB_CHANGE=1 deploy.sh uat` · ตั้ง `NEW_STUDENT_PASSWORD` ใน secret ของ uat
+  - prod ยังไม่ deploy: ตรวจ 503 ก่อน แล้วผู้ใช้รัน `deploy.sh prod` เอง + SQL ครั้งแรก
+  - ข้อความ consent v1 ยังเป็นร่าง (ยังไม่ผ่าน DPO) ใช้กับเดโมเท่านั้น
+  - ชื่อของ `66130500288` / `66130500099` ยังเป็น placeholder รอยืนยัน
+  - ค่า "ขาดหลัง" 30 / 45 / 60 นาที FE เสนอเอง รอยืนยันกับระเบียบจริง
+  - ยังไม่ได้วัดความแม่นยำ anti-spoofing กับหน้าจริง · ยังไม่ได้ build image AI จริง · ยังไม่ได้รัน kustomize / ทดสอบบน VM
+  - หัวข้อ "บัญชีทดสอบ" ใน README root ยังเป็นข้อมูลชุดเก่า (ส่งข้อเสนอให้ docs แล้ว)
+
 ### 2026-11-25 — ข้อความ 409 "มีคาบอยู่แล้ว" บอกวันที่จริง (`296bb1d..cd04b8b`)
 - **แก้อะไร:**
   - BE `cd04b8b`: 409 "วันนี้กลุ่มเรียนนี้มีคาบอยู่แล้ว" เดิมขึ้นคำว่า "วันนี้" แม้วันที่ที่ขอเป็นวันอื่น → ตอนนี้บอกวันที่จริง (`yyyy-MM-dd`) · กรณีเริ่มคาบทันที (start-now) ยังใช้ "วันนี้" เหมือนเดิม
