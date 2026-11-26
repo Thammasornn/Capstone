@@ -85,6 +85,12 @@ Deploy บน Faculty VM ด้วย K3s: `/prod/` และ `/uat/` แยก 
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-26 — ข้อมูลเดโม 5 วิชา (DB)
+- **ทำอะไร:** `backend/db/02_seed_mock.sql` มี 5 วิชา (INT201–INT205) 9–13 คนต่อวิชา · นักศึกษา 17 คน (ทีม 3 + `66130500288` / `66130500099` ชื่อ placeholder + dummy 12 คน `661399000xx`) · ห้องกล้อง 4303 มี INT201 อังคาร / INT202 ศุกร์ (ตรงเวลา 10 นาที) / INT203 จันทร์ (ตรงเวลา 30 นาที) ไม่ชนกัน · `03` ไม่สร้างคาบเดโมถ้าห้อง 4303 มีคาบวิชาอื่นอยู่ · `dev.sh`: smoke เลือกห้องที่มีกล้อง และรายชื่อบัญชีตอนเปิดตรงข้อมูลใหม่
+- **ไฟล์ที่เกี่ยวข้อง:** `backend/db/02_seed_mock.sql`, `backend/db/03_demo_live_session.sql`, `backend/db/test/assertions.sql`, `backend/db/README.md`, `dev.sh`, `README.md`
+- **เหตุผล:** เตรียมเดโมส่งโครงงาน — แต่ละวิชามีรายชื่อนักศึกษา และสาธิตกติกาสายที่ต่างกันตามวิชาได้
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** หัวข้อ "บัญชีทดสอบ" ด้านบน (ทีม / INT201-001) ยังเป็นข้อมูลชุดเก่า — ส่งข้อความที่เสนอให้ docs ผ่าน coordinator แล้ว · รายละเอียดอยู่ใน `backend/db/README.md` · commit แก้ `backend/db/` → CD uat หยุดจนกว่าจะ reset uat แล้ว `ALLOW_DB_CHANGE=1`
+
 ### 2026-11-26 — backend: เพิ่ม / ถอนนักศึกษาในกลุ่มเรียน (E2)
 - **ทำอะไร:** API รายชื่อนักศึกษาในกลุ่ม, เพิ่มเอง (รหัส / email · สร้างบัญชีให้ได้ใน local / uat), ถอน (soft), นำเข้าไฟล์ CSV / TXT / XLSX พร้อม template และ dryRun
 - **ไฟล์ที่เกี่ยวข้อง:** `backend/src/main/java/com/faculty/attendance/enrollment/*`, `backend/src/main/resources/application*.yml`, `backend/README.md`

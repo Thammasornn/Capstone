@@ -7,8 +7,8 @@
 |---|---|---|
 | `00_create_database.sql` | สร้าง DB `bangmod_attendance` + ตั้ง timezone `Asia/Bangkok` | ทุก env (ครั้งเดียว) |
 | `01_schema.sql` | ตาราง, constraint, index, trigger, view | ทุก env |
-| `02_seed_mock.sql` | ข้อมูล Mock-Up ชุดเล็กสำหรับทดสอบจริง: admin 1 · อาจารย์ 1 · ทีม 3 คน · INT201-001 ห้อง 4303 (ล้างทุกตารางก่อนใส่) | **local / UAT เท่านั้น** |
-| `03_demo_live_session.sql` | สร้างคาบ INT201-001 ที่ "กำลังเรียนอยู่ตอนนี้" ในห้อง 4303 (เริ่ม 5 นาทีที่แล้ว · ยังไม่มีใครเช็คชื่อ) ไว้ทดสอบกล้อง | local / UAT (ไม่บังคับ) |
+| `02_seed_mock.sql` | ข้อมูลเดโม / ทดสอบจริง: admin 1 · อาจารย์ 1 · นักศึกษา 17 (ทีม 3 + 288 / 099 + dummy 12) · 5 วิชา 9–13 คนต่อวิชา · 3 วิชาในห้องกล้อง 4303 (กติกาสายต่างกัน) (ล้างทุกตารางก่อนใส่) | **local / UAT เท่านั้น** |
+| `03_demo_live_session.sql` | สร้างคาบ INT201-001 ที่ "กำลังเรียนอยู่ตอนนี้" ในห้อง 4303 (เริ่ม 5 นาทีที่แล้ว · ยังไม่มีใครเช็คชื่อ) ไว้ทดสอบกล้อง · ห้อง 4303 มีคาบวิชาอื่นช่วงนั้นอยู่แล้ว = ไม่สร้าง (แจ้ง NOTICE ใช้คาบนั้นแทน) | local / UAT (ไม่บังคับ) |
 | `04_add_team_students.sql` | (สำหรับ DB ที่ seed ด้วย `02` รุ่นเก่า) เพิ่มบัญชีสมาชิกทีม 3 คนโดยไม่ล้างข้อมูล · กับ `02` ชุดใหม่ไม่ต้องใช้ (มีทีมอยู่แล้ว) | local / UAT (ไม่บังคับ · ห้าม Production) |
 | `05_attendance_import.sql` | อัปเดต DB ที่สร้างไว้ก่อน 2026-11-25: ตาราง `attendance_imports` / `attendance_import_rows` + `attendance_records.import_id` + `source = import` · ไม่ลบ / แก้ข้อมูล · รันซ้ำได้ (DB ที่สร้างด้วย `01` ใหม่ไม่ต้องรัน) | uat / prod (ที่มีข้อมูลอยู่แล้ว) |
 | `06_class_session_management.sql` | อัปเดต DB เดิม (หลัง `05`): คอลัมน์ "คาบเรียน" ใน `class_sessions` (`is_overridden`, `original_date`, `makeup_for_session_id`, `is_extra`, `cancel_reason`) + CHECK + index · ไม่ลบ / แก้ข้อมูล · รันซ้ำได้ (DB ที่สร้างด้วย `01` ใหม่ไม่ต้องรัน) | uat / prod (ที่มีข้อมูลอยู่แล้ว) |
@@ -38,16 +38,35 @@ done
 
 `02` และ `03` รันซ้ำได้ — `02` คืนข้อมูลกลับเป็นชุดเดิมทุกครั้ง (วันที่คำนวณจากวันที่รัน), `03` ย้ายคาบเดโมมาที่เวลาปัจจุบัน
 
-**ใส่ข้อมูลชุดนี้ใน uat** (ล้างข้อมูล uat ทั้งหมด รวมใบหน้าที่ลงทะเบียนไว้ — ต้องลงทะเบียนใหม่) · รันบน VM ไม่ต้อง sudo:
+**reset uat ให้เป็นข้อมูลชุดนี้** (ล้างข้อมูล uat ทั้งหมด รวมบัญชีที่เพิ่มเอง ใบหน้า consent รายวิชาที่สร้างเอง) · รันบน VM ไม่ต้อง sudo · สำรองก่อนทุกครั้ง:
 
 ```bash
+mkdir -p ~/backups && F=~/backups/uat-before-reset-$(date +%F-%H%M).dump
+kubectl -n uat exec statefulset/postgres -- pg_dump -U postgres -d bangmod_attendance -Fc > "$F" && chmod 600 "$F" && ls -lh "$F"
 git -C ~/bangmod-cd/repo fetch -q origin
-rm -rf /tmp/seed && mkdir -p /tmp/seed && git -C ~/bangmod-cd/repo archive origin/Dev backend/db | tar -x -C /tmp/seed
-for f in 02_seed_mock.sql 03_demo_live_session.sql test/assertions.sql; do
-  kubectl -n uat exec -i statefulset/postgres -- psql -U postgres -d bangmod_attendance -v ON_ERROR_STOP=1 -q < /tmp/seed/backend/db/$f
-done
-ALLOW_DB_CHANGE=1 ~/bangmod-cd/bin/deploy.sh uat   # CD หยุดเพราะ commit แก้ backend/db/
+rm -rf /tmp/dbup && mkdir -p /tmp/dbup && git -C ~/bangmod-cd/repo archive origin/Dev backend/db devops/k8s/init-db.sh | tar -x -C /tmp/dbup
+# ล้าง schema (init-db.sh / 01 ไม่ลบของเดิม) · ไม่มีข้อมูล mock INT201-001 = หยุด ไม่ลบอะไร
+kubectl -n uat exec -i statefulset/postgres -- psql -U postgres -d bangmod_attendance -v ON_ERROR_STOP=1 <<'SQL'
+BEGIN;
+SET LOCAL lock_timeout = '30s';
+DO $$ BEGIN
+  IF to_regclass('public.sections') IS NOT NULL THEN   -- schema ว่าง (reset ค้างรอบก่อน) = ไปต่อได้
+    IF NOT EXISTS (SELECT 1 FROM public.sections WHERE section_id = md5('section:INT201-001')::uuid) THEN
+      RAISE EXCEPTION 'ไม่พบข้อมูล mock INT201-001 — ไม่ใช่ uat? ไม่ได้ลบอะไร';
+    END IF;
+  END IF;
+END $$;
+DROP SCHEMA public CASCADE;
+CREATE SCHEMA public AUTHORIZATION pg_database_owner;
+GRANT USAGE ON SCHEMA public TO PUBLIC;
+COMMIT;
+SQL
+bash /tmp/dbup/devops/k8s/init-db.sh uat --seed     # timezone → 01 → 02 → 03 → assertions
+kubectl -n uat rollout restart deployment/backend && kubectl -n uat rollout status deployment/backend --timeout=300s
+~/bangmod-cd/bin/deploy.sh status                    # blocked เพราะ commit แก้ backend/db/ → ALLOW_DB_CHANGE=1 ~/bangmod-cd/bin/deploy.sh uat
 ```
+
+ย้อนกลับ: ล้าง schema แบบเดียวกัน แล้ว `kubectl -n uat exec -i statefulset/postgres -- pg_restore -U postgres -d bangmod_attendance --exit-on-error < "$F"` และ restart backend
 
 ทดสอบกล้องครั้งถัดไป: รัน `03_demo_live_session.sql` อีกครั้ง (คาบใหม่ "ตอนนี้" ห้อง 4303 · ล้างผลเช็คชื่อของวันนี้)
 
@@ -93,35 +112,47 @@ kubectl -n uat exec -i statefulset/postgres -- psql -U postgres -d bangmod_atten
 | role | อีเมล | หมายเหตุ |
 |---|---|---|
 | admin | `admin@sit.kmutt.ac.th` | เห็นทุกห้อง / ทุกวิชา |
-| lecturer | `supawadee.c@sit.kmutt.ac.th` | อ.ดร.สุภาวดี · สอน INT201-001 |
-| student | `66130500013@st.sit.kmutt.ac.th` | สมาชิกทีม · ยังไม่ยินยอม / ไม่มีใบหน้า · INT201-001 |
-| student | `66130500036@st.sit.kmutt.ac.th` | เหมือนข้างบน |
-| student | `66130500041@st.sit.kmutt.ac.th` | เหมือนข้างบน · ขาด 2 ครั้ง → กลุ่มเสี่ยงปานกลาง |
+| lecturer | `supawadee.c@sit.kmutt.ac.th` | อ.ดร.สุภาวดี · สอนทั้ง 5 วิชา (INT201–INT205) |
+| student | `66130500013@st.sit.kmutt.ac.th` | สมาชิกทีม · ยังไม่ยินยอม / ไม่มีใบหน้า · INT201, 202, 203, 205 |
+| student | `66130500036@st.sit.kmutt.ac.th` | สมาชิกทีม · INT201–INT204 · INT201 ขาด 1 ครั้ง |
+| student | `66130500041@st.sit.kmutt.ac.th` | สมาชิกทีม · INT201–INT204 · INT201 ขาด 2 ครั้ง → เสี่ยงปานกลาง |
+| student | `66130500288@st.sit.kmutt.ac.th` | **ชื่อ placeholder (รอยืนยัน)** · INT201–INT204 · คาบล่าสุดเข้า +15 นาที: INT202 = สาย, INT203 = ตรงเวลา |
+| student | `66130500099@st.sit.kmutt.ac.th` | **ชื่อ placeholder (รอยืนยัน)** · INT201, 202, 203, 205 |
+| student | `66139900001` … `66139900012` `@st.sit.kmutt.ac.th` | dummy 12 คน (ชื่อสมมติ · รหัสสาขา `99` ไม่มีจริง) · `66139900007` ขาด 3 ครั้งใน INT201 → เสี่ยงสูง |
 
 รหัสผ่านเก็บเป็น BCrypt (`$2a$`, cost 10) จาก `pgcrypto` — ใช้กับ `BCryptPasswordEncoder` ของ Spring Security ได้ตรงๆ
-สมาชิกทีมใช้ชื่อจริง (README ที่ root) · **ไม่มี consent / ข้อมูลใบหน้าใน seed** → ลงทะเบียนผ่านหน้าเว็บด้วยหน้าตัวเอง กล้องจึงจับคู่ได้จริง
+สมาชิกทีมใช้ชื่อจริง (README ที่ root) · คนอื่นเป็นข้อมูลสมมติ (PDPA) · **ไม่มี consent / ข้อมูลใบหน้าใน seed** → ลงทะเบียนผ่านหน้าเว็บด้วยหน้าตัวเอง กล้องจึงจับคู่ได้จริง
 
 ## ข้อมูล Mock-Up
 
-ชุดเล็กสำหรับทดสอบจริงกับกล้อง · **วันที่คำนวณจากวันที่รัน `02`** (รันวันไหนก็มีคาบอดีต / อนาคตเหมือนกัน)
+ชุดเดโมสำหรับนำเสนอ + ทดสอบจริงกับกล้อง · **วันที่คำนวณจากวันที่รัน `02`** (รันวันไหนก็มีคาบอดีต / อนาคตเหมือนกัน)
+
+| วิชา (กลุ่ม 001) | ห้อง | วัน / เวลา | เช็คชื่อ | นักศึกษา |
+|---|---|---|---|---|
+| INT201 Client-Side Web Programming | **4303** (กล้อง) | อังคาร 13:00–16:00 | 13:00–13:30 · ตรงเวลา 15 นาที | 12 |
+| INT202 Server-Side Web Programming | **4303** (กล้อง) | ศุกร์ 09:00–12:00 | 09:00–09:40 · **ตรงเวลา 10 นาที** (เข้มงวด) | 13 |
+| INT203 Database Systems | **4303** (กล้อง) | จันทร์ 09:00–12:00 | 09:00–10:00 · **ตรงเวลา 30 นาที** (ผ่อนปรน) | 13 |
+| INT204 Software Engineering | 4301 | พุธ 09:00–12:00 | 09:00–09:30 · ตรงเวลา 15 นาที | 11 |
+| INT205 Information Security | 4302 | พฤหัส 13:00–16:00 | 13:00–13:45 · ตรงเวลา 15 นาที | 9 |
 
 | อะไร | ค่า |
 |---|---|
 | ภาคเรียน | 2569/1 · ตั้งแต่ 8 สัปดาห์ก่อน ถึง 10 สัปดาห์ข้างหน้า |
-| กลุ่มเรียน | INT201-001 Client-Side Web Programming · อังคาร 13:00–16:00 · **ห้อง 4303** · เช็คชื่อ 13:00–13:30 (ตรงเวลา 15 นาที) · เปิดเช็คชื่อด้วยกล้อง |
-| คาบ | ทุกวันอังคาร เริ่ม 4 สัปดาห์ก่อน: 4 คาบที่ผ่านมา `completed` มีผลเช็คชื่อ · ที่เหลือ `scheduled` |
-| ผลเช็คชื่อ 4 คาบ (เก่า → ใหม่) | 66130500013 ตรง ตรง สาย ตรง · 66130500036 ตรง ขาด ตรง สาย · 66130500041 ขาด สาย ขาด ตรง (เสี่ยงปานกลาง) · มาเรียน = อาจารย์เช็คด้วยมือ (`manual` + audit) · ขาด = `system` |
+| คาบ | ทุกสัปดาห์ตามวันเรียน · 4 คาบล่าสุดก่อนวันนี้ `completed` มีผลเช็คชื่อ · ที่เหลือ `scheduled` · คาบของวันนี้ที่เลิกไปแล้วตอนรัน `02` ไม่สร้าง (ไม่งั้นจะกลายเป็นขาดทั้งห้อง) · ห้อง 4303 ไม่มีเวลาชนกัน และมีคาบทุกจันทร์ / อังคาร / ศุกร์ |
+| ผลเช็คชื่อ | ทุกคนทุกคาบที่จบแล้ว (232 แถว) · มาเรียน = อาจารย์เช็คด้วยมือ (`manual` + audit) · ขาด = `system` · สถานะคิดจากเวลาเข้า + กติกาของวิชานั้น (≤ ตรงเวลา = `on_time` · ≤ ปิดรับ = `late`) เหมือนกล้อง · ประมาณ 75 % ตรง 15 % สาย 10 % ขาด (กำหนดจาก md5 ผลเหมือนเดิมทุกครั้ง) |
+| แถวที่ตั้งไว้ (INT201) | 66130500013 ตรง ตรง สาย ตรง · 66130500036 ตรง ขาด ตรง สาย · 66130500041 ขาด สาย ขาด ตรง (เสี่ยงปานกลาง) · 66139900007 ขาด ขาด ตรง ขาด (เสี่ยงสูง) |
+| สาธิต "สายจริง" | 66130500288 คาบล่าสุดเข้า 09:15 ทั้ง INT202 (ตรงเวลาถึง 09:10 → **สาย**) และ INT203 (ตรงเวลาถึง 09:30 → **ตรงเวลา**) |
 | ห้อง / กล้อง | ห้อง 4301–4305 · **กล้องเฉพาะ 4303** (`CAM-4303-A`, MediaMTX path `room-4303`) · สถานะเริ่มต้น `no_signal` แล้ว ai-service อัปเดตเอง |
 | consent | `v1` (ฉบับปัจจุบัน) อย่างเดียว · ยังไม่มีใครยินยอม |
-| อื่น ๆ | แจ้งเตือน "ยังไม่ได้ลงทะเบียนใบหน้า" ให้ทีม 3 คน · ไม่มี follow-ups / occupancy / งานลบข้อมูล |
+| อื่น ๆ | แจ้งเตือน "ยังไม่ได้ลงทะเบียนใบหน้า" ให้นักศึกษาทุกคน · ไม่มี follow-ups / occupancy / งานลบข้อมูล |
 
 | ตาราง | แถว | ตาราง | แถว |
 |---|---|---|---|
-| users | 5 | attendance_records | 12 (+ ที่กล้อง / อาจารย์บันทึกระหว่างทดสอบ) |
-| student_profiles | 3 | consent_records / face_embeddings | 0 |
-| rooms / cameras | 5 / 1 | audit_logs | 9 |
-| semesters / courses / sections | 1 / 1 / 1 | notifications | 3 |
-| enrollments | 3 | class_sessions | ~11 (ขึ้นกับวันที่รัน) |
+| users | 19 | attendance_records | 232 (+ ที่ job / กล้อง / อาจารย์บันทึกภายหลัง) |
+| student_profiles | 17 | consent_records / face_embeddings | 0 |
+| rooms / cameras | 5 / 1 | audit_logs | ~208 (เท่าจำนวนแถว manual) |
+| semesters / courses / sections | 1 / 5 / 5 | notifications | 17 |
+| enrollments | 58 | class_sessions | ~72 (ขึ้นกับวันที่รัน) |
 
 **ID คงที่ทุก env** — คำนวณจาก `md5('<key>')::uuid` ใช้ใน Postman / mock ฝั่ง Front-End ได้
 
@@ -130,7 +161,7 @@ md5('student:66130500013')::uuid     -- นักศึกษา (= user_id = st
 md5('user:admin@sit.kmutt.ac.th')::uuid
 md5('course:INT201')::uuid
 md5('section:INT201-001')::uuid
-md5('room:4303')::uuid          -- คาบ: md5('session:INT201-001:<YYYY-MM-DD>')::uuid
+md5('room:4303')::uuid          -- คาบ: md5('session:INT201-001:<YYYY-MM-DD>')::uuid (INT202-001 … ก็แบบเดียวกัน)
 ```
 
 ## View สำหรับ API
@@ -176,6 +207,12 @@ spring.jackson.time-zone=Asia/Bangkok
 - ถ้าจะใช้ Flyway: copy `01_schema.sql` เป็น `db/migration/V1__init_schema.sql` (ตัด `BEGIN;` / `COMMIT;` ออก) และวาง `02_seed_mock.sql` ไว้ใน location ที่เปิดเฉพาะ profile `local` / `uat`
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-26 — ข้อมูลเดโม 5 วิชา + นักศึกษา 288 / 099
+- **ทำอะไร:** เขียน `02_seed_mock.sql` ใหม่ให้มี 5 วิชา (INT201–INT205 กลุ่ม 001 อาจารย์ supawadee.c สอนทั้งหมด) 9–13 คนต่อวิชา · นักศึกษา 17 คน: ทีม 3 + `66130500288` / `66130500099` (ชื่อ placeholder) + dummy `66139900001`–`012` (ชื่อสมมติ) · ห้อง 4303 มี INT201 (อังคาร), INT202 (ศุกร์ ตรงเวลา 10 นาที), INT203 (จันทร์ ตรงเวลา 30 นาที) ไม่ชนกัน · INT204 ห้อง 4301, INT205 ห้อง 4302 · ทุกวิชามี 4 คาบที่จบแล้วพร้อมผลเช็คชื่อ (สถานะคิดจากเวลาเข้า + กติกาวิชา) · คาบวันนี้ที่เลิกไปแล้วตอนรันไม่สร้าง · `03`: ห้อง 4303 มีคาบวิชาอื่นช่วงเวลานั้นอยู่แล้ว → แจ้ง NOTICE ไม่สร้าง (ไม่ error · init-db.sh ไปต่อได้) · `assertions.sql`: จำนวนใหม่ (17 / 5 / 232), 4 คาบ completed ต่อวิชา, 9–13 คนต่อวิชา, ห้องไม่ชน (ตารางเรียน + รายคาบ), สถานะตรงกับเวลาเข้า, แถวสาธิตสาย 288 และระดับเสี่ยงใน INT201 · README: ตารางวิชา / บัญชี / จำนวนแถว / ขั้น reset uat ใหม่ (สำรอง → ล้าง schema → init-db.sh) · `dev.sh`: smoke เลือกห้องที่มีกล้อง (lecturer เห็น 3 ห้องแล้ว) และรายชื่อบัญชีที่พิมพ์ตอนเปิดให้ตรงข้อมูลใหม่
+- **ไฟล์ที่เกี่ยวข้อง:** `02_seed_mock.sql`, `03_demo_live_session.sql`, `test/assertions.sql`, `README.md`, `../../dev.sh`
+- **เหตุผล:** เตรียมเดโมส่งโครงงาน (30 พ.ย.) — อาจารย์ที่ปรึกษาต้องการให้แต่ละ class มีรายชื่อนักศึกษาจริง ไม่ใช่ record ว่าง และต้องสาธิตว่ากติกา "สาย" ต่างกันตามวิชา · มีคาบห้อง 4303 ทุก จ. / อ. / ศ. ไว้ทดสอบกล้องก่อนส่ง
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ตรวจกับ PostgreSQL ชั่วคราว: `./dev.sh db --reset` + assertions ผ่าน · `./dev.sh test` ผ่าน · backend จริง + `./dev.sh smoke` 15/15 · `/api/test-accounts` 19 บัญชี · ไม่มี ERROR ใน log · **ชื่อของ 288 / 099 เป็น placeholder รอผู้ใช้ยืนยัน** · commit นี้แก้ `backend/db/` → CD บน uat จะหยุด: reset uat ตามขั้นด้านบนแล้ว `ALLOW_DB_CHANGE=1 ~/bangmod-cd/bin/deploy.sh uat`
 
 ### 2026-11-25 — คาบเรียน (จัดการรายคาบ): schema (D1)
 - **ทำอะไร:** `class_sessions` เพิ่ม `is_overridden`, `original_date`, `makeup_for_session_id` (FK ตัวเอง + CHECK ไม่ชี้ตัวเอง), `is_extra` (CHECK `NOT is_extra OR is_overridden`), `cancel_reason` + index `(section_id, original_date) WHERE original_date IS NOT NULL` · เพิ่ม `06_class_session_management.sql` สำหรับ DB เดิม (รันซ้ำได้ ไม่ลบ / แก้ข้อมูล) · `assertions.sql` ตรวจคอลัมน์ใหม่ 5 ตัว และไม่มีคาบเพิ่มที่ไม่ได้ `is_overridden` (จำนวนตารางยัง 22) · README: ไฟล์ 06 + วิธีอัปเดต uat ลำดับ 05 → 06 → `ALLOW_DB_CHANGE` ครั้งเดียว

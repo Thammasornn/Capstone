@@ -143,9 +143,8 @@ print_accounts() {
   echo
   bold "เปิด http://localhost:$FRONTEND_PORT · รหัสผ่านทุกบัญชี Password@123"
   echo "  admin     admin@sit.kmutt.ac.th"
-  echo "  lecturer  supawadee.c@sit.kmutt.ac.th   (INT201 มีคาบกำลังเรียนในห้อง 4302)"
-  echo "  lecturer  thanakorn.w@sit.kmutt.ac.th"
-  echo "  student   69130500001@st.sit.kmutt.ac.th"
+  echo "  lecturer  supawadee.c@sit.kmutt.ac.th   (สอน INT201–INT205 · คาบเดโมจาก 03 อยู่ในห้อง 4303)"
+  echo "  student   66130500013@st.sit.kmutt.ac.th   (ทีม · 036 / 041 / 288 / 099 / 661399000xx ก็ได้)"
   echo "  /api/internal/** ทดสอบด้วย header  X-Internal-Key: local-test-key"
   echo
 }
@@ -236,7 +235,7 @@ cmd_smoke() {
 
   echo "Room Monitor (B1–B4)"
   local room
-  room="$(curl -s -H "Authorization: Bearer $lect" "$api/rooms" | jq -r '.[0].roomId // empty')"
+  room="$(curl -s -H "Authorization: Bearer $lect" "$api/rooms" | jq -r '[.[] | select(.cameraCode != null)][0].roomId // empty')"   # ห้องที่มีกล้อง (4303)
   expect "GET /rooms (lecturer)" "$([ -n "$room" ] && echo ok)" "ok"
   expect "student ดูห้อง → 403" "$(code -H "Authorization: Bearer $stu" "$api/rooms")" "403"
   expect "GET /rooms/{id} (B4)" "$(code -H "Authorization: Bearer $lect" "$api/rooms/$room")" "200"

@@ -25,27 +25,56 @@ BEGIN
     RAISE EXCEPTION 'class_sessions: an extra session must be overridden';
   END IF;
 
-  -- mock data volumes: 1 admin + 1 lecturer + 3 team students · 1 course / section · camera only in 4303
-  IF (SELECT count(*) FROM users WHERE role = 'admin')    <> 1 THEN RAISE EXCEPTION 'admins';           END IF;
-  IF (SELECT count(*) FROM users WHERE role = 'lecturer') <> 1 THEN RAISE EXCEPTION 'lecturers';        END IF;
-  IF (SELECT count(*) FROM student_profiles)              <> 3 THEN RAISE EXCEPTION 'student_profiles'; END IF;
-  IF (SELECT count(*) FROM sections)                      <> 1 THEN RAISE EXCEPTION 'sections';         END IF;
-  IF (SELECT count(*) FROM cameras)                       <> 1 THEN RAISE EXCEPTION 'cameras';          END IF;
+  -- mock data volumes: 1 admin + 1 lecturer + 17 students · 5 courses / sections · camera only in 4303
+  IF (SELECT count(*) FROM users WHERE role = 'admin')    <> 1  THEN RAISE EXCEPTION 'admins';           END IF;
+  IF (SELECT count(*) FROM users WHERE role = 'lecturer') <> 1  THEN RAISE EXCEPTION 'lecturers';        END IF;
+  IF (SELECT count(*) FROM student_profiles)              <> 17 THEN RAISE EXCEPTION 'student_profiles'; END IF;
+  IF (SELECT count(*) FROM courses)                       <> 5  THEN RAISE EXCEPTION 'courses';          END IF;
+  IF (SELECT count(*) FROM sections)                      <> 5  THEN RAISE EXCEPTION 'sections';         END IF;
+  IF (SELECT count(*) FROM cameras)                       <> 1  THEN RAISE EXCEPTION 'cameras';          END IF;
   IF NOT EXISTS (SELECT 1 FROM cameras c JOIN rooms r USING (room_id)
                   WHERE r.room_code = '4303' AND c.stream_path = 'room-4303') THEN
     RAISE EXCEPTION 'camera must be in room 4303 with stream_path room-4303';
   END IF;
-  IF (SELECT count(*) FROM class_sessions WHERE session_status = 'completed') <> 4 THEN
-    RAISE EXCEPTION 'expected 4 completed sessions';
+  IF (SELECT count(*) FROM student_profiles WHERE student_code IN ('66130500288', '66130500099')) <> 2 THEN
+    RAISE EXCEPTION 'students 66130500288 and 66130500099 must exist';
   END IF;
+
+  -- every course has 9–13 students and exactly 4 completed classes · future classes exist
+  SELECT count(*) INTO n FROM sections s
+   WHERE (SELECT count(*) FROM enrollments e WHERE e.section_id = s.section_id AND e.status = 'active')
+         NOT BETWEEN 9 AND 13;
+  IF n > 0 THEN RAISE EXCEPTION '% sections do not have 9–13 active students', n; END IF;
+  SELECT count(*) INTO n FROM sections s
+   WHERE (SELECT count(*) FROM class_sessions cs
+           WHERE cs.section_id = s.section_id AND cs.session_status = 'completed') <> 4;
+  IF n > 0 THEN RAISE EXCEPTION '% sections do not have exactly 4 completed sessions', n; END IF;
   IF NOT EXISTS (SELECT 1 FROM class_sessions WHERE session_status = 'scheduled' AND session_date > current_date) THEN
     RAISE EXCEPTION 'expected future scheduled sessions';
   END IF;
-  IF EXISTS (SELECT 1 FROM class_sessions cs JOIN rooms r USING (room_id) WHERE r.room_code <> '4303') THEN
-    RAISE EXCEPTION 'every session must be in room 4303 (the camera room)';
+
+  -- at least two courses with different "on time" rules in the camera room (late demo)
+  IF (SELECT count(DISTINCT s.on_time_minutes) FROM sections s JOIN rooms r USING (room_id)
+       WHERE r.room_code = '4303') < 2 THEN
+    RAISE EXCEPTION 'room 4303 needs courses with different on_time_minutes';
   END IF;
 
-  -- every enrolled student has one row per completed session (3 × 4)
+  -- no two classes in the same room overlap (timetable and individual sessions)
+  IF EXISTS (SELECT 1 FROM sections a JOIN sections b
+               ON a.section_id < b.section_id AND a.room_id = b.room_id AND a.semester_id = b.semester_id
+              AND a.start_time < b.end_time AND b.start_time < a.end_time
+             WHERE EXISTS (SELECT 1 FROM section_class_days x JOIN section_class_days y USING (day_of_week)
+                            WHERE x.section_id = a.section_id AND y.section_id = b.section_id)) THEN
+    RAISE EXCEPTION 'two sections share a room at the same time';
+  END IF;
+  IF EXISTS (SELECT 1 FROM class_sessions a JOIN class_sessions b
+               ON a.session_id < b.session_id AND a.room_id = b.room_id AND a.session_date = b.session_date
+              AND a.start_time < b.end_time AND b.start_time < a.end_time
+             WHERE a.session_status <> 'cancelled' AND b.session_status <> 'cancelled') THEN
+    RAISE EXCEPTION 'two sessions share a room at the same time';
+  END IF;
+
+  -- every enrolled student has one row per completed session (58 enrollments × 4)
   SELECT count(*) INTO n
   FROM class_sessions cs
   JOIN enrollments e ON e.section_id = cs.section_id AND e.status = 'active'
@@ -53,8 +82,8 @@ BEGIN
   WHERE cs.session_status = 'completed' AND ar.attendance_id IS NULL;
   IF n > 0 THEN RAISE EXCEPTION '% completed session/student pairs have no attendance row', n; END IF;
   IF (SELECT count(*) FROM attendance_records ar JOIN class_sessions cs USING (session_id)
-       WHERE cs.session_status = 'completed') <> 12 THEN
-    RAISE EXCEPTION 'expected 12 attendance rows on completed sessions';
+       WHERE cs.session_status = 'completed') <> 232 THEN
+    RAISE EXCEPTION 'expected 232 attendance rows on completed sessions';
   END IF;
 
   -- no attendance on cancelled or future sessions
@@ -63,9 +92,31 @@ BEGIN
     RAISE EXCEPTION 'attendance found on cancelled/scheduled sessions';
   END IF;
 
-  -- dashboard spread: one medium-risk student (2 absences), the rest low
-  IF (SELECT count(*) FROM v_student_section_attendance WHERE risk_level = 'medium') <> 1 THEN
-    RAISE EXCEPTION 'expected exactly 1 medium-risk row';
+  -- status follows the check-in time and the session's own rule
+  IF EXISTS (SELECT 1 FROM attendance_records ar JOIN class_sessions cs USING (session_id)
+              WHERE ar.status <> 'absent'
+                AND ar.status <> CASE WHEN (ar.check_in_time AT TIME ZONE 'Asia/Bangkok')::time <= cs.on_time_until
+                                      THEN 'on_time' ELSE 'late' END) THEN
+    RAISE EXCEPTION 'an attendance status does not match its check-in time';
+  END IF;
+  -- late demo: 66130500288 at +15 min = late in INT202 (10 min), on time in INT203 (30 min)
+  IF (SELECT string_agg(co.course_code || '=' || ar.status, ',' ORDER BY co.course_code)
+        FROM attendance_records ar
+        JOIN class_sessions cs USING (session_id)
+        JOIN sections s ON s.section_id = cs.section_id
+        JOIN courses co ON co.course_id = s.course_id
+       WHERE ar.student_id = md5('student:66130500288')::uuid AND co.course_code IN ('INT202', 'INT203')
+         AND cs.session_no = 4) IS DISTINCT FROM 'INT202=late,INT203=on_time' THEN
+    RAISE EXCEPTION 'late demo rows (66130500288 in INT202 / INT203) are wrong';
+  END IF;
+
+  -- dashboard spread in INT201: 013 low · 036 low (1 absence) · 041 medium · 66139900007 high
+  IF (SELECT string_agg(sp.student_code || '=' || v.risk_level, ',' ORDER BY sp.student_code)
+        FROM v_student_section_attendance v JOIN student_profiles sp USING (student_id)
+       WHERE v.section_id = md5('section:INT201-001')::uuid
+         AND sp.student_code IN ('66130500013', '66130500036', '66130500041', '66139900007'))
+     IS DISTINCT FROM '66130500013=low,66130500036=low,66130500041=medium,66139900007=high' THEN
+    RAISE EXCEPTION 'INT201 risk levels are not the expected spread';
   END IF;
 
   -- PDPA: no embeddings without a current 'granted' consent
