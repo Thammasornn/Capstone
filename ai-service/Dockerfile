@@ -9,6 +9,8 @@ RUN apt-get update \
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 COPY *.py ./
+# เครื่องมือวัดผล (tools/eval_recognition.py · รันใน pod ได้ด้วยโมเดลที่ mount ไว้ · ไม่กี่ KB)
+COPY tools/ ./tools/
 RUN useradd --system --uid 10001 app
 USER 10001
 EXPOSE 8080

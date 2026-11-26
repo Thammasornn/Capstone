@@ -185,6 +185,14 @@ cmd_test() {
   step "frontend: format"           bash -c "cd '$ROOT/frontend' && npm run format:check"
   step "frontend: build (prod)"     bash -c "cd '$ROOT/frontend' && npm run build"
   step "frontend: build (uat)"      bash -c "cd '$ROOT/frontend' && npm run build:uat"
+  # ai-service: pytest ไม่ต้องมีโมเดล · ใช้ AI_PYTHON / ai-service/.venv / python3 · ไม่มี deps = ข้าม (ไม่นับว่าไม่ผ่าน)
+  local py="${AI_PYTHON:-}"
+  [ -n "$py" ] || { [ -x "$ROOT/ai-service/.venv/bin/python" ] && py="$ROOT/ai-service/.venv/bin/python"; } || py="$(command -v python3 || true)"
+  if [ -n "$py" ] && "$py" -c "import numpy, cv2, cryptography, pytest, fastapi, multipart, httpx" >/dev/null 2>&1; then
+    step "ai-service: pytest"       bash -c "cd '$ROOT/ai-service' && '$py' -m pytest -q -p no:cacheprovider tests"
+  else
+    printf '\033[33m▸ ai-service: pytest ... ข้าม (ไม่มี python deps · ติดตั้ง: cd ai-service && python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt)\033[0m\n'
+  fi
   echo
   [ "$STEP_FAIL" -eq 0 ] || die "ไม่ผ่าน $STEP_FAIL ข้อ (ดูรายละเอียดด้านบน)"
   ok "ผ่านทั้งหมด · ตรวจฐานข้อมูล: ./dev.sh db · ตรวจ API จริง: ./dev.sh แล้ว ./dev.sh smoke"

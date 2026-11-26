@@ -1,0 +1,7 @@
+# build context = ai-service/ (devops/k8s/build-images.sh) · ไม่เอาไฟล์ที่ไม่ใช้ตอนรันเข้า image
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.venv
+.DS_Store
+tests
