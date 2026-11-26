@@ -37,6 +37,7 @@ FE เรียก API แบบ relative (`/prod/api`) แล้ว NGINX ใ�
 | `k8s/mediamtx/` | MediaMTX (namespace `media`, ใช้ร่วม uat + prod) ดึงภาพกล้องผ่าน RTSPS ทาง Tailscale · apply เอง ไม่อยู่ใน CD · `mediamtx.yml.example` → `mediamtx.yml` (อยู่ใน `.gitignore`) |
 | `k8s/sql/uat-reset-passwords.sql` | uat: ตั้งรหัสผ่านทุกบัญชีเป็น `Password@123` (ค่าที่หน้า Login ของ uat กรอกให้) · ไม่มีข้อมูล mock = หยุด |
 | `k8s/sql/prod-first-admin.sql` | prod: สร้าง admin คนแรก รหัสผ่านพิมพ์ตอนรัน (ไม่อยู่ใน git / history) · คำสั่งอยู่หัวไฟล์ |
+| `k8s/sql/prod-first-setup.sql` | prod: ภาคเรียน + ข้อความยินยอม (hash จาก `consent-text.js` ของ `origin/main`) + ห้องเรียน + กล้อง 4303 (ไม่บังคับ) · ไม่มีบัญชี / mock · รันซ้ำได้ · ใช้เปลี่ยน consent เป็น v2 ได้ · คำสั่งอยู่หัวไฟล์ |
 | `cd/deploy.sh` | **CD**: build → push เข้า registry ในเครื่อง → apply → ตรวจผล → rollback ถ้าพัง |
 | `cd/setup.sh` | ติดตั้ง CD บน VM ครั้งแรก (registry, clone แยก, cron) |
 | `pi/mediamtx.service` | systemd unit ของ MediaMTX บน Raspberry Pi (เปิดเองตอนบูต) · ติดตั้งตามหัวข้อ "MediaMTX บน Pi เป็น systemd" |
@@ -248,7 +249,16 @@ git -C $R fetch -q origin && git -C $R worktree add --detach $W origin/main \
   && $W/devops/k8s/init-db.sh prod; git -C $R worktree remove --force $W
 ```
 
-**5. ข้อมูลเริ่มต้น:** admin คนแรกตามหัวไฟล์ `k8s/sql/prod-first-admin.sql` (ผู้ใช้ตั้งรหัสเอง ≥ 12 ตัว) → SQL `semesters` / `consent_versions` จาก DB · ถ้าจะเดโมกล้องบน prod ต้องมีห้อง + กล้อง `stream_path = room-4303` ใน DB ของ prod ด้วย (MediaMTX ใช้ร่วมกัน · ai-service ของ uat และ prod อ่านกล้องเดียวกันได้ แต่ใช้ CPU 2 เท่า)
+**5. ข้อมูลเริ่มต้น:** (ก) admin คนแรกตามหัวไฟล์ `k8s/sql/prod-first-admin.sql` (ผู้ใช้ตั้งรหัสเอง ≥ 12 ตัว) · (ข) ภาคเรียน / ข้อความยินยอม / ห้อง ด้วย `k8s/sql/prod-first-setup.sql` — ค่าเริ่มต้น 2569/1 2026-08-03 → 2026-12-18 (ตรวจกับปฏิทิน มจธ.) · เปลี่ยนโดยเพิ่ม `\\set sem_start '…'\n` ใน printf · จะเดโมกล้องบน prod เพิ่ม `\\set with_camera true\n` (เพิ่มกล้อง `CAM-4303-A` → `room-4303` · MediaMTX ใช้ร่วมกัน · ai-service ของ uat และ prod อ่านกล้องเดียวกันได้ แต่ใช้ CPU 2 เท่า)
+```bash
+R=~/bangmod-cd/repo; git -C $R fetch -q origin; C=frontend/src/features/face-registration
+SHA=$(git -C $R show origin/main:$C/consent-text.js | sha256sum | cut -c1-64)
+VER=$(git -C $R show origin/main:$C/constants.js | sed -n "s/.*CONSENT_VERSION = '\(v[0-9]*\)'.*/\1/p"); echo "consent $VER $SHA"
+{ printf "\\set consent_version '%s'\n\\set consent_sha '%s'\n" "$VER" "$SHA"; git -C $R show origin/main:devops/k8s/sql/prod-first-setup.sql; } \
+  | kubectl -n prod exec -i statefulset/postgres -- psql -U postgres -d bangmod_attendance -v ON_ERROR_STOP=1
+```
+⚠️ ข้อความ consent v1 ยังเป็นร่าง (มีช่อง `[ ... ]` · ยังไม่ผ่าน DPO) ใช้กับเดโมเท่านั้น · ข้อความจริงมา: แก้ `consent-text.js` + `CONSENT_VERSION = 'v2'` → merge main → deploy prod → รันขั้น (ข) ซ้ำ (v2 เป็นฉบับปัจจุบัน · v1 ไม่ถูกลบ · คนที่ยินยอม v1 ถูกขอยินยอมใหม่)
+prod ยังไม่มีทางสร้างบัญชีอาจารย์ / นักศึกษา (ไม่มี API · E2 สร้างบัญชีได้เฉพาะ local / uat) → admin สร้างรายวิชาไม่ได้เพราะต้องเลือกอาจารย์ — ต้องตัดสินใจก่อนเดโมบน prod
 
 **6. ตรวจผล (ข้อ 13–16)**
 ```bash
@@ -438,6 +448,12 @@ kubectl -n uat logs deploy/ai-service | grep -E 'camera|gallery'
 - HTTPS ตรงที่ VM (`https://cp26ms3.sit.kmutt.ac.th/capstone26/cp26ms3/<ns>/` · ใบจาก SITCertAuthCA) เตรียมไว้แล้วแต่ยังไม่เปิด — ขั้นตอนอยู่ในคอมเมนต์ของ `k8s/base/ingress.yaml` · ใช้ได้เฉพาะในคณะ / VPN และเครื่องที่ไม่ได้ติดตั้ง SITCertAuthCA จะขึ้นเตือน
 
 ## บันทึกการทำงาน (Changelog)
+
+### 2026-11-26 — SQL ข้อมูลเริ่มต้นของ prod (ภาคเรียน / consent / ห้อง)
+- **ทำอะไร:** เพิ่ม `k8s/sql/prod-first-setup.sql`: ภาคเรียนปัจจุบัน (ค่าใน `\set` · ตรวจว่าวันสิ้นภาคยังไม่ผ่าน), `consent_versions` ฉบับปัจจุบัน (ชื่อฉบับ + sha256 ของ `consent-text.js` จาก `origin/main` ส่งเข้ามาตอนรัน · ฉบับเดิมเลิกเป็นปัจจุบันแต่ไม่ลบ · ชื่อฉบับซ้ำแต่ hash ต่าง = error), ห้อง 4301–4305, กล้อง 4303 (`with_camera` ไม่บังคับ) · หยุดเมื่อไม่มี schema / เป็น DB ที่มีข้อมูล mock · รันซ้ำได้ · ตารางไฟล์ + ขั้น 5 ของ "Deploy prod ครั้งแรก" อัปเดตตาม
+- **ไฟล์ที่เกี่ยวข้อง:** `k8s/sql/prod-first-setup.sql`, `README.md`
+- **เหตุผล:** CLAUDE.md ข้อ 17 — prod ไม่มี seed ต้องมีภาคเรียน + consent ก่อนใช้ และไม่มีหน้าเว็บเพิ่มห้อง / ภาคเรียน · ไฟล์อยู่นอก `backend/db/` จึงไม่ทำให้ CD หยุด
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ทดสอบกับ PostgreSQL ชั่วคราว (`01` อย่างเดียวแบบ prod): รันครั้งแรก / ซ้ำ / hash ต่าง (error) / เปลี่ยนเป็น v2 / เปิดกล้อง / ลืมส่งค่า (error) / DB mock (error) · `prod-first-admin.sql` ยังตรง schema (ทดสอบแล้ว) · วันเปิด–ปิดภาคเริ่มต้น (2026-08-03 → 2026-12-18) เป็นค่าประมาณ ต้องตรวจกับปฏิทินจริง · consent v1 ยังเป็นร่าง ใช้กับเดโมเท่านั้น · prod ยังสร้างบัญชีอาจารย์ / นักศึกษาไม่ได้
 
 ### 2026-11-26 — ตารางโมเดล MiniFASNet + ลำดับอัปเดต uat หลัง push ชุด E2 / anti-spoofing / seed เดโม
 - **ทำอะไร:** ตารางโมเดลเพิ่ม `minifasnet_v2.onnx`, `minifasnet_v1se.onnx` (ที่มา / สัญญาอนุญาต / SHA-256 จาก `models/fetch-models.sh`) + คำอธิบาย env `ANTISPOOF` (on / log / off), `ANTISPOOF_MIN_REAL` 0.7 จาก `k8s/base/ai-service.yaml` · หัวข้อใหม่ "ลำดับหลัง push ชุด E2 + anti-spoofing + seed เดโม": a) `NEW_STUDENT_PASSWORD` b) โมเดลด้วย `git archive` → `fetch-models.sh` c) reset DB uat ตาม `backend/db/README.md` d) `ALLOW_DB_CHANGE=1 deploy.sh uat` e) ตรวจผล
