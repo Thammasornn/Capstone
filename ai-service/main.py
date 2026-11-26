@@ -18,13 +18,14 @@ import cv2
 import numpy as np
 from fastapi import FastAPI, Header, HTTPException, Response, UploadFile
 
-import vision
-from camera_worker import BackendClient, Config, Supervisor
-from gallery import GalleryStore, load_key
-from metrics import Timings
-
+# ตั้ง log ก่อน import vision — ไม่งั้น log INFO ตอนโหลดโมเดล (เช่น "anti-spoofing พร้อม") หายไป
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s [%(name)s] %(message)s")
 log = logging.getLogger("ai-service")
+
+import vision  # noqa: E402  (โหลดโมเดลตอน import)
+from camera_worker import BackendClient, Config, Supervisor  # noqa: E402
+from gallery import GalleryStore, load_key  # noqa: E402
+from metrics import Timings  # noqa: E402
 
 MIN_CONF = float(os.getenv("MIN_CONF", "0.8"))
 MIN_FACE_PX = int(os.getenv("MIN_FACE_PX", "112"))
@@ -45,6 +46,9 @@ register_metrics = Timings()
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     global gallery, supervisor
+    log.info("anti-spoofing: %s", "พร้อม · " + ("ปฏิเสธภาพที่คะแนน < %.2f" % ANTISPOOF_MIN_REAL
+                                               if vision.ANTISPOOF_ENFORCE else "โหมด log (ไม่ปฏิเสธ)")
+             if vision.ANTISPOOF_READY else "ปิด (ไม่มีโมเดล หรือ ANTISPOOF=off) — ลงทะเบียนไม่ตรวจภาพหลอก")
     if CAMERA_WORKER:
         if not EMBEDDING_KEY or not INTERNAL_KEY:
             log.error("CAMERA_WORKER=true แต่ไม่มี FACE_EMBEDDING_KEY / INTERNAL_API_KEY — ไม่เปิดตัวอ่านกล้อง")

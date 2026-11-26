@@ -277,3 +277,18 @@ def test_eval_recognition_report(tmp_path):
     assert "| 0.363 | 66.7% (2/3) |" in report and "| 75.0% (3/4) |" in report
     assert "| 0.70 | 0.0% (0/10) | 0.0% (0/1) |" in report
     assert "SFace embedding (ต่อใบหน้า) | 11 |" in report
+
+
+def test_startup_logs_antispoof_state(api, caplog):
+    import logging
+    from fastapi.testclient import TestClient
+    _, fv, main = api
+    caplog.set_level(logging.INFO, logger="ai-service")
+    with TestClient(main.app):
+        pass
+    assert "anti-spoofing: พร้อม · ปฏิเสธภาพที่คะแนน < 0.70" in caplog.text
+    caplog.clear()
+    fv.ANTISPOOF_READY = fv.ANTISPOOF_ENFORCE = False
+    with TestClient(main.app):
+        pass
+    assert "anti-spoofing: ปิด" in caplog.text

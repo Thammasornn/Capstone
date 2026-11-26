@@ -143,6 +143,12 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-27 — log สถานะ anti-spoofing ตอน start ให้เห็นทุกครั้ง
+- **ทำอะไร:** `main.py` ตั้ง `logging.basicConfig` ก่อน `import vision` + log `anti-spoofing: พร้อม · …` / `anti-spoofing: ปิด …` ตอน start · เพิ่ม test (pytest 24 ข้อผ่าน)
+- **ไฟล์ที่เกี่ยวข้อง:** `main.py`, `tests/test_embedding.py`
+- **เหตุผล:** บน uat (pod `2bszb`) `grep anti-spoofing` ไม่เจออะไร — log INFO ของ `vision.py` ตอน import หายเพราะยังไม่ได้ตั้ง logging (เห็นแค่ WARN ผ่าน lastResort) จึงตรวจไม่ได้ว่าเปิด anti-spoofing แล้วหรือยัง
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** pod ai-service 2 ตัวที่ค้างสถานะ Error บน uat (45 ชั่วโมง) ถูก evict เพราะดิสก์ VM เต็ม (`ephemeral-storage` available 0 · 25 พ.ย. 03:49) — แจ้ง DevOps · ทางลดขนาด image ai-service: ใช้ torch แบบ CPU (ยังไม่ได้ทำ)
+
 ### 2026-11-26 — คู่มือวัดผลห้อง 4303 + `/metrics` บน uat + เครื่องมือวัดผลใน image + pytest ใน `dev.sh test`
 - **ทำอะไร:** เพิ่มหัวข้อ "ดูเวลาจริงบน uat (`/metrics`)" และ "วัดผลด้วยข้อมูลจริง" (จำนวนคน / ตำแหน่ง / แสง / ภาพหลอก, ดึงเฟรมจากกล้อง Pi ใน pod, รัน `eval_recognition.py` ใน pod, ตารางผล, PDPA) · ตารางตั้งค่าเพิ่ม `ANTISPOOF*`, `SAME_PERSON_MIN`, `METRICS_LOG_INTERVAL` · `Dockerfile` copy `tools/` + เพิ่ม `.dockerignore` · `dev.sh test` รัน pytest ของ ai-service (ข้ามพร้อมข้อความถ้าเครื่องไม่มี python deps)
 - **ไฟล์ที่เกี่ยวข้อง:** `README.md`, `Dockerfile`, `.dockerignore`, `../dev.sh`
