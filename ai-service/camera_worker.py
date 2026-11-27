@@ -9,8 +9,12 @@
   CameraWorker (1 thread ต่อกล้อง)
     - อ่านเฟรมต่อเนื่อง (ไม่ให้ค้างใน buffer) · ทุก FRAME_INTERVAL วินาทีเอาเฟรมล่าสุดไปตรวจ
     - ตรวจเฉพาะตอนห้องมีคาบ · ส่งจำนวนใบหน้า (faces) ทุก FACES_INTERVAL วินาที
+    - ต่อใบหน้า: YOLO → คุณภาพ (conf / ขนาด / ความสว่าง / เบลอ) → anti-spoofing MiniFASNetV2 → SFace → จับคู่
+      ไม่ผ่านคุณภาพ = ไม่รัน MiniFASNet / SFace (รอเฟรมถัดไป) · โหมด on: ภาพหลอก / ตรวจไม่ได้ = ไม่ส่งต่อ SFace
     - จับคู่ได้ = cosine >= MATCH_THRESHOLD และห่างคนที่ 2 >= MATCH_MARGIN · ต้องเห็นซ้ำ MIN_HITS ครั้งใน HIT_WINDOW วินาที
       แล้วส่ง sighting (คนเดิมไม่ส่งซ้ำภายใน SIGHTING_COOLDOWN วินาที) — กติกาเช็คชื่อทั้งหมดอยู่ที่ backend
+    - liveness หลายเฟรม: ทุกเฟรมที่นับ (MIN_HITS) ต้องผ่าน + ค่าเฉลี่ย >= ANTISPOOF_MIN_REAL (โหมด on)
+      · โหมด log: ส่งตามปกติ แต่ log + นับว่า "ถ้าเปิด on จะไม่ส่ง" (sightings_low_liveness)
   วัดเวลาทุกขั้น (metrics.py) → GET /metrics และ log สรุปทุก METRICS_LOG_INTERVAL วินาที
 ไม่เก็บภาพ · log ไม่มี embedding / ชื่อ (มีแค่ 8 ตัวแรกของ student_id)
 """
@@ -29,6 +33,7 @@ import numpy as np
 
 from gallery import GalleryStore, best_matches
 from metrics import Timings, one_line
+from quality import measure
 
 log = logging.getLogger("camera")
 TH = timezone(timedelta(hours=7))   # เวลาไทย (ไม่มี DST) — backend รับ seenAt เป็นเวลาไทยไม่มี offset
@@ -51,6 +56,12 @@ class Config:
     sighting_cooldown: float = float(os.getenv("SIGHTING_COOLDOWN", "60"))
     min_conf: float = float(os.getenv("CAMERA_MIN_CONF", "0.6"))
     min_face_px: int = int(os.getenv("CAMERA_MIN_FACE_PX", "40"))
+    # ความสว่างกรอบหน้า (0–255): ตัดเฉพาะมืด / จ้าสุด ๆ · เบลอ 0 = ไม่ตรวจ (หน้าเล็กจากกล้องห้องค่าเบลอต่ำเป็นปกติ
+    # ยังไม่มีข้อมูลจริงพอจะตั้งเกณฑ์ — วัดจาก /metrics ก่อน)
+    min_brightness: float = float(os.getenv("CAMERA_MIN_BRIGHTNESS", "30"))
+    max_brightness: float = float(os.getenv("CAMERA_MAX_BRIGHTNESS", "235"))
+    min_blur: float = float(os.getenv("CAMERA_MIN_BLUR", "0"))
+    antispoof_min_real: float = float(os.getenv("ANTISPOOF_MIN_REAL", "0.7"))
     faces_interval: float = float(os.getenv("FACES_INTERVAL", "5"))
     heartbeat_interval: float = float(os.getenv("HEARTBEAT_INTERVAL", "30"))
     signal_timeout: float = float(os.getenv("SIGNAL_TIMEOUT", "10"))
@@ -150,6 +161,7 @@ class CameraWorker(threading.Thread):
             self.last_frame_at = now
             self.metrics.count("frames_grabbed")
             if now < next_process:
+                self.metrics.count("frames_dropped")   # ทิ้งเฟรมระหว่างรอบ (ไม่ decode) · ตรวจแค่เฟรมล่าสุด
                 continue
             next_process = now + self.cfg.frame_interval
             t0 = time.perf_counter()
@@ -183,22 +195,61 @@ class CameraWorker(threading.Thread):
             if not g.active:
                 return
             good = [f for f in faces if f[-1] >= self.cfg.min_conf and min(f[2], f[3]) >= self.cfg.min_face_px]
+            good = [f for f in good if self._quality_ok(frame, f)]
             if not good:
                 return
-            rows = []
+            rows, lives = [], []
             for f in good:
-                with m.timer("feature"):           # ต่อ 1 ใบหน้า (alignCrop + SFace)
-                    rows.append(self.vision.feature(frame, f))
-            m.count("faces_embedded", len(good))
+                ok, live = self._liveness(frame, f)
+                if not ok:                         # โหมด on: ภาพหลอก / ตรวจไม่ได้ → ไม่ส่งต่อ SFace
+                    continue
+                try:
+                    with m.timer("feature"):       # ต่อ 1 ใบหน้า (alignCrop + SFace)
+                        rows.append(self.vision.feature(frame, f))
+                except ValueError:                 # vision.EmbeddingError: embedding เสีย → ข้ามหน้านี้
+                    m.count("faces_bad_embedding")
+                    continue
+                lives.append(live)
+            if not rows:
+                return
+            m.count("faces_embedded", len(rows))
             with m.timer("match"):
                 matches = best_matches(np.stack(rows), g, self.cfg.match_threshold, self.cfg.match_margin)
             m.count("faces_matched", sum(1 for sid, _ in matches if sid is not None))
             seen_at = now_th()
-            for sid, score in matches:
+            for (sid, score), live in zip(matches, lives):
                 if sid is not None:
-                    self._hit(sid, score, now, seen_at, started)
+                    self._hit(sid, score, now, seen_at, started, live)
         finally:
             m.add("frame", (time.perf_counter() - started) * 1000)
+
+    def _quality_ok(self, frame: np.ndarray, face: np.ndarray) -> bool:
+        q = measure(frame, face)
+        if q is None or q[0] < self.cfg.min_blur or not self.cfg.min_brightness <= q[1] <= self.cfg.max_brightness:
+            self.metrics.count("faces_low_quality")
+            return False
+        return True
+
+    def _liveness(self, frame: np.ndarray, face: np.ndarray) -> tuple[bool, float | None]:
+        """(ส่งต่อ SFace ได้ไหม, คะแนน | None) · ตรวจไม่ได้ = None ห้ามถือว่าผ่าน"""
+        v = self.vision
+        if getattr(v, "ANTISPOOF", "off") == "off":
+            return True, None
+        m = self.metrics
+        live = None
+        try:
+            with m.timer("liveness"):              # ต่อ 1 ใบหน้า (crop ×2.7 → 80×80 → MiniFASNetV2)
+                live = v.liveness(frame, face)
+            m.count("faces_liveness_checked")
+        except v.AntiSpoofError as e:
+            m.count("antispoof_errors")
+            self._error(f"ตรวจภาพหลอกไม่ได้: {e}")
+        if live is None or live < self.cfg.antispoof_min_real:
+            m.count("faces_spoof_suspect")
+            if v.ANTISPOOF_ENFORCE:
+                m.count("faces_rejected_spoof")
+                return False, live
+        return True, live
 
     def _report_faces(self, detected: int, now: float):
         if now - self.last_faces_at < self.cfg.faces_interval:
@@ -209,16 +260,31 @@ class CameraWorker(threading.Thread):
         except BackendError as e:
             self._error(str(e))
 
-    def _hit(self, sid: str, score: float, now: float, seen_at: str, started: float | None = None):
+    def _hit(self, sid: str, score: float, now: float, seen_at: str, started: float | None = None,
+             live: float | None = None):
         q = self.hits.setdefault(sid, deque())
-        q.append((now, score, seen_at))
+        q.append((now, score, seen_at, live))
         while q and now - q[0][0] > self.cfg.hit_window:
             q.popleft()
         if len(q) < self.cfg.min_hits or now - self.last_sent.get(sid, -1e9) < self.cfg.sighting_cooldown:
             return
         first_seen = q[0][2]                      # เวลาที่เห็นครั้งแรกในช่วงนี้ (ใช้ตัดสินตรงเวลา / สาย)
         first_at = q[0][0]
-        best = max(s for _, s, _ in q)
+        best = max(h[1] for h in q)
+        live_txt = ""
+        if getattr(self.vision, "ANTISPOOF", "off") != "off":
+            vals = [h[3] for h in q]
+            real = [x for x in vals if x is not None]
+            mean = float(np.mean(real)) if real else None
+            low = len(real) < len(vals) or mean is None or mean < self.cfg.antispoof_min_real
+            live_txt = f" · liveness เฉลี่ย {'-' if mean is None else f'{mean:.2f}'} ({len(real)}/{len(vals)} เฟรม)"
+            if low:
+                self.metrics.count("sightings_low_liveness")
+                if self.vision.ANTISPOOF_ENFORCE:  # ปกติไม่ถึงตรงนี้ (เฟรมไม่ผ่านถูกตัดก่อน SFace) · กันไว้อีกชั้น
+                    q.clear()
+                    log.info("%s: student %s… ไม่ส่ง (ภาพหลอก%s)", self.code, sid[:8], live_txt)
+                    return
+                live_txt += " ⚠ ต่ำกว่าเกณฑ์ (โหมด log ยังส่ง)"
         self.last_sent[sid] = now
         q.clear()
         try:
@@ -229,7 +295,7 @@ class CameraWorker(threading.Thread):
             # เห็นครั้งแรก (เฟรมแรกที่จับคู่ได้) → backend ตอบ sighting แล้ว
             if started is not None:
                 self.metrics.add("sighting", (now - first_at) * 1000 + (time.perf_counter() - started) * 1000)
-            log.info("%s: student %s… score %.3f → %s%s", self.code, sid[:8], best, res.get("result"),
+            log.info("%s: student %s… score %.3f%s → %s%s", self.code, sid[:8], best, live_txt, res.get("result"),
                      f" ({res['reason']})" if res.get("reason") else f" ({res['status']})" if res.get("status") else "")
         except BackendError as e:
             self.last_sent.pop(sid, None)         # ส่งไม่สำเร็จ → ลองใหม่รอบหน้า

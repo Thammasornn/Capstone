@@ -151,7 +151,7 @@ def test_worker_skips_detection_when_no_session():
     store.update(ROOM, {"sessionId": None, "cameraEnabled": False, "students": []})
     vision, backend = FakeVision([face_row(0)]), FakeBackend()
     w = make_worker(vision, backend, store)
-    w.process(np.zeros((10, 10, 3), np.uint8), now=100)
+    w.process(np.full((100, 100, 3), 128, np.uint8), now=100)
     assert vision.calls == 0 and backend.posts == []
     assert w.url.endswith("/room-1")
 
@@ -162,7 +162,7 @@ def test_worker_needs_two_hits_then_respects_cooldown():
     store.update(ROOM, payload(students={a: [axis(0)]}))
     vision, backend = FakeVision([face_row(0), face_row(9)]), FakeBackend()
     w = make_worker(vision, backend, store)
-    frame = np.zeros((10, 10, 3), np.uint8)
+    frame = np.full((100, 100, 3), 128, np.uint8)
 
     w.process(frame, now=100)
     assert backend.sent("/sightings") == []                    # เห็นครั้งแรก ยังไม่ส่ง
@@ -185,11 +185,11 @@ def test_worker_ignores_small_or_low_confidence_faces_and_disabled_camera():
     store.update(ROOM, payload(students={a: [axis(0)]}))
     backend = FakeBackend()
     w = make_worker(FakeVision([face_row(0, w=20), face_row(0, score=0.3)]), backend, store, min_hits=1)
-    w.process(np.zeros((10, 10, 3), np.uint8), now=100)
+    w.process(np.full((100, 100, 3), 128, np.uint8), now=100)
     assert backend.sent("/sightings") == []
     store.update(ROOM, payload(enabled=False, students={a: [axis(0)]}))
     w2 = make_worker(FakeVision([face_row(0)]), backend, store, min_hits=1)
-    w2.process(np.zeros((10, 10, 3), np.uint8), now=100)
+    w2.process(np.full((100, 100, 3), 128, np.uint8), now=100)
     assert backend.sent("/sightings") == []
     assert len(backend.sent("/faces")) == 2                    # ยังรายงานจำนวนใบหน้าแม้ปิดเช็คชื่อด้วยกล้อง
 
@@ -210,7 +210,7 @@ class FakeCapture:
         return True
 
     def retrieve(self):
-        return True, np.zeros((10, 10, 3), np.uint8)
+        return True, np.full((100, 100, 3), 128, np.uint8)
 
     def release(self):
         pass

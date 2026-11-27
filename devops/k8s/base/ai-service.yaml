@@ -33,6 +33,16 @@ spec:
               value: /models/yolov8n-face-pose.pt
             - name: SFACE_MODEL
               value: /models/face_recognition_sface_2021dec.onnx
+            # anti-spoofing MiniFASNetV2 (ลงทะเบียน + กล้องห้อง) · log = บันทึกคะแนน ไม่ปฏิเสธ · on = ปฏิเสธ · off = ไม่ใช้
+            # on แต่ไม่มีไฟล์ / โหลดไม่ได้ = ปฏิเสธทุกภาพ (fail closed) · เปลี่ยนเป็น on หลังวัดคะแนนจริงแล้ว
+            - name: ANTISPOOF
+              value: "log"
+            - name: ANTISPOOF_MIN_REAL
+              value: "0.7"
+            - name: ANTISPOOF_MODEL
+              value: /models/2.7_80x80_MiniFASNetV2.onnx
+            - name: ANTISPOOF_THREADS
+              value: "1"
             - name: INTERNAL_API_KEY
               valueFrom: { secretKeyRef: { name: app-secret, key: INTERNAL_API_KEY } }
             # ---- ตัวอ่านกล้อง (camera_worker.py): MediaMTX → จับคู่ใบหน้า → backend /api/internal/** ----

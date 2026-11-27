@@ -7,7 +7,10 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 \
  && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+# torch แบบ CPU-only ก่อน (VM ไม่มี GPU) — ไม่งั้น ultralytics ดึง torch + CUDA จาก PyPI (หลาย GB · ดิสก์ VM เต็มมาแล้ว)
+# ultralytics เห็นว่ามี torch / torchvision แล้วจะไม่ติดตั้งซ้ำ
+RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch torchvision \
+ && pip install --no-cache-dir -r requirements.txt
 COPY *.py ./
 # เครื่องมือวัดผล (tools/eval_recognition.py · รันใน pod ได้ด้วยโมเดลที่ mount ไว้ · ไม่กี่ KB)
 COPY tools/ ./tools/

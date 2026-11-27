@@ -4,5 +4,7 @@ python-multipart
 ultralytics
 opencv-python-headless
 numpy
+# anti-spoofing MiniFASNetV2 (CPU) · ~1.7 ms/หน้า ด้วย 1 thread
+onnxruntime
 # ถอดรหัส face embedding (AES-GCM) ที่ backend เข้ารหัสไว้ — ตัวอ่านกล้อง
 cryptography

@@ -9,6 +9,9 @@
 # โมเดล (ตรวจแล้ว 2026-11-22 · รายละเอียดและสัญญาอนุญาตใน devops/README.md › ติดตั้งโมเดล AI):
 #   yolov8n-face-pose.pt   derronqi/yolov8-face (GPL-3.0) · YOLOv8n PoseModel · 1 class · 5 จุดบนหน้า
 #   face_recognition_sface_2021dec.onnx   OpenCV Zoo (Apache-2.0) · SFace 128 มิติ
+#   2.7_80x80_MiniFASNetV2.onnx   anti-spoofing (2026-11-27) · Silent-Face-Anti-Spoofing (minivision-ai, Apache-2.0)
+#     แปลงเป็น ONNX โดย uniface · Hugging Face yakhyo/uniface-weights (pin commit) · ไฟล์เดียวกับ minifasnet_v2.onnx เดิม
+#     (hash ตรงกัน) · ไม่มีไฟล์นี้ ai-service ยังขึ้น (โหมด log = ไม่ตรวจ · โหมด on = ปฏิเสธทุกภาพ)
 # =====================================================================
 set -euo pipefail
 
@@ -18,6 +21,7 @@ MODELS_DIR="${MODELS_DIR:-/opt/bangmod/models}"
 MODELS=(
   "yolov8n-face-pose.pt|https://drive.usercontent.google.com/download?id=1qcr9DbgsX3ryrz2uU8w4Xm3cOrRywXqb&export=download&confirm=t|d545bf1add5aa736a4febac4f4f9245a6d596cd0fe70d5d57989fe0cb9e626ca|6389512"
   "face_recognition_sface_2021dec.onnx|https://github.com/opencv/opencv_zoo/raw/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx|0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79|38696353"
+  "2.7_80x80_MiniFASNetV2.onnx|https://huggingface.co/yakhyo/uniface-weights/resolve/cbe2dcc059a4a4e36b786c30b06975efcc28039b/minifasnet_v2.onnx|b32929adc2d9c34b9486f8c4c7bc97c1b69bc0ea9befefc380e4faae4e463907|1743581"
 )
 
 ok()  { printf '\033[32m✓ %s\033[0m\n' "$*"; }
