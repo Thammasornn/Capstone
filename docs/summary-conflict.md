@@ -20,6 +20,29 @@ Main Chat (coordinator) จะส่งสรุปมาให้ sub-chat "sum
 
 ## บันทึก
 
+### 2026-11-27 — ใส่ anti-spoofing (MiniFASNetV2) กลับ ทั้งลงทะเบียน + กล้องห้อง (โหมด log) + torch CPU-only (`3ee286f..864805d`)
+> จดอัตโนมัติจาก commit — รอรายงาน coordinator · push แล้ว: `origin/Dev` `3ee286f` → `864805d` (รวม `15f5992`, `28dfa11` ของรายการก่อนหน้า)
+- **แก้อะไร:**
+  - AI `864805d` (แตะ `devops/` ด้วย):
+    - MiniFASNetV2 รันบน ONNX Runtime CPU (1 session ใช้ร่วมกัน, 1 thread) · preprocessing ตามต้นฉบับ (crop ×2.7, 80×80, BGR, softmax class 1 = จริง) · error ตอนตรวจ → `AntiSpoofError` ไม่ถือว่าเป็นหน้าจริง
+    - `ANTISPOOF` = `log` (ค่าเริ่มต้น) / `on` / `off` · log = ให้คะแนนและบันทึกแต่ไม่ปฏิเสธ · on = ปฏิเสธ และถ้าโหลดโมเดลไม่ได้จะปฏิเสธทุกภาพ (fail closed)
+    - ลงทะเบียน: คุณภาพ (เพิ่มความสว่าง) → liveness → SFace → ตรวจว่าเป็นคนเดียวกัน · `items[].liveness` มีคะแนนจริงแล้ว (รูปแบบ response เดิม)
+    - กล้องห้อง: YOLO → ตรวจคุณภาพ (`CAMERA_MIN/MAX_BRIGHTNESS` 30/235) → liveness → SFace · โหมด on: หน้าที่ไม่ผ่านไม่ถึง SFace และไม่นับ hit · โหมด log: ส่งตามปกติ + นับ `sightings_low_liveness` · body ที่ส่ง backend ไม่เปลี่ยน
+    - `/metrics` เพิ่ม antispoof + process (CPU / RSS) · เครื่องมือ eval รายงาน BPCER / APCER แยกตามชนิดภาพหลอก
+    - `Dockerfile` ติดตั้ง torch แบบ CPU (wheel 200 MB ไม่มี nvidia) แทน wheel PyPI 514 MB + ไลบรารี CUDA
+    - DevOps (ไฟล์ใน commit เดียวกัน): `k8s/base/ai-service.yaml` ตั้ง `ANTISPOOF=log` · `models/fetch-models.sh` เพิ่ม `2.7_80x80_MiniFASNetV2.onnx` (pin hash)
+  - pytest 42 ข้อผ่าน · liveness p50 ~1.7 ms / หน้า บน Mac
+- **ปัญหา / conflict ที่เจอ:**
+  - กลับทิศจากรอบก่อน: `3ee286f` เพิ่งเอา anti-spoofing ออกทั้งหมด → รอบนี้ผู้ใช้สั่งใส่กลับทั้งลงทะเบียนและกล้องห้อง เริ่มโหมด log เพื่อเก็บคะแนนจริงก่อนเปิดปฏิเสธ (ใช้ไฟล์โมเดลใหม่ `2.7_80x80_MiniFASNetV2.onnx` ไม่ใช่ `minifasnet_v2.onnx` / `minifasnet_v1se.onnx` เดิม)
+  - ดิสก์ VM เต็มจน deploy ล้ม → ผู้ใช้อนุญาตเปลี่ยน torch เป็นแบบ CPU (ลดขนาด image) — ปิดเรื่อง "torch แบบ CPU" ที่ค้างจากรายการก่อน
+  - ภาพ noise ได้คะแนน "จริง" 0.97 → ห้ามสรุปความแม่นยำจนกว่าจะวัดกับภาพจริง
+  - commit ของ AI แก้ไฟล์ใน `devops/` เอง และ `devops/README.md` ยังไม่ได้อัปเดตตาม (ตารางโมเดลยังเขียนว่า MiniFASNet เลิกใช้แล้ว)
+- **ยังค้าง / ต้องทำต่อ:**
+  - บน VM: รัน `fetch-models.sh` ใหม่เพื่อให้ได้ `2.7_80x80_MiniFASNetV2.onnx` (โหมด log ไม่มีไฟล์ = ไม่ตรวจ แต่ใช้งานได้) · ไฟล์ `minifasnet_v2.onnx` / `minifasnet_v1se.onnx` เดิมลบได้ (ผู้ใช้ตัดสิน)
+  - ยังไม่ได้วัด: YOLO จริง, docker build, CPU / RAM ก่อน–หลังบน VM, การกันรูปพิมพ์ / จอ / วิดีโอจริงที่ห้อง 4303 (ตามหัวข้อ "Anti-spoofing: จากโหมด log → on" ใน `ai-service/README.md`)
+  - DevOps: อัปเดตตารางโมเดล + env ใน `devops/README.md` (เพิ่ม MiniFASNetV2 กลับ)
+  - ยังค้างจากรายการก่อน: ตรวจ uat หลัง deploy · ตรวจดิสก์ VM / แผนเคลียร์ · `devops/cd/deploy.sh`, `devops/cd/setup.sh` ยังแก้ค้างใน working tree
+
 ### 2026-11-27 — เอา anti-spoofing (MiniFASNet) ออกทั้งหมด (`39d446b..3ee286f`)
 > จดอัตโนมัติจาก commit แล้วเติมจากรายงาน coordinator · push แล้ว: `origin/Dev` `8375493` → `3ee286f` (รวม `a113d09`–`f46e527` ของรายการก่อนหน้า) · ผู้ใช้สั่ง AI และ DevOps โดยตรง (ไม่ผ่าน coordinator) และ coordinator ไม่ได้เป็นคน push รอบนี้ · ไม่แตะ `backend/db/` → CD ไม่ block
 - **แก้อะไร:**
