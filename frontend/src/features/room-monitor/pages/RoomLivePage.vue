@@ -31,6 +31,7 @@ import SessionAdjustMenu from '@/entities/attendance/components/SessionAdjustMen
 import AttendanceImportWizard from '@/entities/attendance/components/AttendanceImportWizard.vue'
 import { describeImportResult } from '@/entities/attendance/import'
 import { endSessionNow, getLiveRoster, getRoom, getRooms } from '../api'
+import { describeStartResult } from '../start-session-plan'
 import { useRoomEvents } from '../composables/useRoomEvents'
 import CameraStatusBadge from '../components/CameraStatusBadge.vue'
 import LiveCameraPlayer from '../components/LiveCameraPlayer.vue'
@@ -160,10 +161,8 @@ const ending = ref(false)
 
 /** @param {import('../api').ClassSessionInfo} info */
 async function onStarted(info) {
-  toast.show(
-    `เริ่มคาบแล้ว · ตรงเวลาถึง ${formatTime(info.onTimeUntil)} · สายถึง ${formatTime(info.lateUntil)}`,
-    { tone: 'success' },
-  )
+  // startMode: created / rescheduled / reopened / moved (ไม่มี = ข้อความแบบเดิม)
+  toast.show(describeStartResult(info), { tone: 'success' })
   await loadRoom()
 }
 

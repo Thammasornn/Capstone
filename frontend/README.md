@@ -78,6 +78,17 @@ docker run -p 8080:80 -e BACKEND_URL=http://10.0.0.5:8081 bangmod-frontend:prod 
 
 ## บันทึกการทำงาน (Changelog)
 
+### 2026-11-27 — frontend: เริ่มคาบตอนนี้ — ยืนยันก่อนเปิดคาบเดิมของวันนี้ + เตือนนอกเวลาเรียน
+- **ทำอะไร:**
+  - `StartSessionDialog` (Room Live): เลือกกลุ่มเรียนแล้วโหลดคาบของกลุ่ม (`GET /sections/{id}/sessions` · `getSectionSessions` ใน `room-monitor/api.js`) หาคาบของวันนี้ตามเวลาไทย (Asia/Bangkok): คาบวันนี้จบแล้ว → ข้อความยืนยัน + ปุ่ม "เปิดคาบอีกครั้ง" · กำลังเรียนห้องอื่น → "ย้ายมาห้องนี้" · กำลังเรียนห้องนี้ / ยกเลิกแล้วมีคาบชดเชย → บอกเหตุผลและปิดปุ่ม · ยกเลิกไว้ (ไม่มีชดเชย) → บอกว่าจะคืนคาบ · โหลดคาบไม่ได้ → ยังกดเริ่มได้ (backend ตรวจซ้ำ)
+  - แสดง "นับเป็นคาบของวันที่ …" เสมอ · วันนี้ไม่อยู่ใน `classDays` หรือห่างจากเวลาเรียนตามตารางเกิน 60 นาที → เตือนสีเหลือง "คาบนี้จะนับเป็นคาบของวันที่ … (1 กลุ่มมีได้ 1 คาบต่อวัน)" ไม่บล็อก
+  - `RoomLivePage`: toast ตาม `startMode` ของ response (created / rescheduled = แบบเดิม · reopened · moved จากห้อง `previousRoomCode`) · ไม่มี field (backend รุ่นเก่า) = ข้อความเดิม
+  - logic อยู่ที่ `room-monitor/start-session-plan.js` (`bangkokClock`, `planStart`, `describeStartResult`) · ไม่เปลี่ยน path / body ของ `POST /rooms/{id}/sessions`
+  - Vitest `tests/unit/start-session.test.js` (12 ข้อ): วันที่หลังเที่ยงคืนเวลาไทย, completed-today, moved, ห้องนี้ / ยกเลิก + ชดเชย = ปิดปุ่ม, เตือนนอกวัน / นอกเวลา (±60 นาที), toast ตาม startMode และ mount dialog จริงกับ MSW (`server.use` เฉพาะใน test เพราะ B1–B8 ไม่มี mock กลาง) ตรวจปุ่ม / ข้อความ / คำขอที่ส่ง
+- **ไฟล์ที่เกี่ยวข้อง:** `src/features/room-monitor/components/StartSessionDialog.vue`, `src/features/room-monitor/start-session-plan.js` (ใหม่), `src/features/room-monitor/api.js`, `src/features/room-monitor/pages/RoomLivePage.vue`, `tests/unit/start-session.test.js` (ใหม่)
+- **เหตุผล:** บน uat มีคนกดเริ่มคาบหลังเที่ยงคืน คาบนั้นจึงนับเป็นของวันใหม่ แล้วเริ่มคาบอีกครั้งในคืนเดียวกันได้ 409 (1 กลุ่ม 1 คาบต่อวัน) — backend จะเปิดคาบเดิม / ย้ายห้องแทน 409 · หน้าเว็บต้องบอกก่อนกด และเตือนกันกดผิดวัน
+- **หมายเหตุ / สิ่งที่ต้องทำต่อ:** ตรวจในเบราว์เซอร์กับ backend จริง (seed + คาบสาธิตวันนี้): ห้อง 4301 เลือก INT201-001 → "วันนี้กลุ่มนี้มีคาบไปแล้ว 09:00–12:00 (ห้อง 4303)" + ปุ่ม "เปิดคาบอีกครั้ง" + เตือนไม่ใช่วันเรียน — ไม่ได้กดจริงเพราะ backend ยังไม่ได้แก้ start-now (ตอนนี้จะได้ 409) · ชื่อ field `startMode` / `previousRoomCode` รอ BE ยืนยัน
+
 ### 2026-11-26 — frontend: หน้ารายชื่อนักศึกษาในกลุ่มเรียน — เพิ่มเอง / นำเข้าไฟล์ / ถอน (F3)
 - **ทำอะไร:**
   - feature ใหม่ `features/section-roster/`: หน้า `SectionRosterPage` (route `section-students`, roles = `COURSE_EDITORS`) เข้าจากปุ่ม "นักศึกษา" ต่อกลุ่มเรียนใน `CourseTable` และลิงก์ในหน้าคาบเรียน (D3) · ตัวกรอง ลงทะเบียนอยู่ (ค่าเริ่มต้น) / ถอนแล้ว / ทั้งหมด + ค้นหารหัส / ชื่อ / อีเมล · ป้ายใบหน้า (ลงทะเบียนแล้ว / ยัง), ความยินยอม (`granted` / `withdrawn` / ยังไม่ยินยอม), บัญชีถูกปิด · จอใหญ่เป็นตาราง มือถือเป็น card · บอกผู้ใช้ว่าคนที่เพิ่มใหม่ลงขาดอัตโนมัติเฉพาะคาบที่เริ่มหลังเพิ่ม

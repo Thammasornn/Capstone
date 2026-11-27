@@ -81,7 +81,18 @@ export function getStartableCourses() {
  * @property {string} lateUntil
  * @property {string} checkInCloses
  * @property {'in_progress'|'completed'} sessionStatus
+ * @property {'created'|'rescheduled'|'reopened'|'moved'} [startMode]  เฉพาะเริ่มคาบ · ไม่มี = backend รุ่นเก่า
+ * @property {string | null} [previousRoomCode]  startMode = moved: ห้องเดิม
  */
+
+/**
+ * คาบทั้งหมดของกลุ่มเรียน (D2: GET /sections/{id}/sessions) — ใช้หาคาบของวันนี้ก่อนเริ่มคาบ
+ * @returns {Promise<{ sessions: Array<{ sessionId: string, sessionDate: string, sessionStatus: string,
+ *   startTime: string, endTime: string, roomId: string, roomCode: string, makeupSessionId: string | null }> }>}
+ */
+export function getSectionSessions(sectionId) {
+  return getJson(`/sections/${sectionId}/sessions`)
+}
 
 /**
  * เริ่มคาบของกลุ่มเรียนนี้ในห้องนี้ "ตอนนี้" (เปิดเช็คชื่อทันที) — POST /rooms/{roomId}/sessions
