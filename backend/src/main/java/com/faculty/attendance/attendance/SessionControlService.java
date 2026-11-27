@@ -35,9 +35,24 @@ public class SessionControlService {
 
     public record StartSessionRequest(UUID sectionId) {}
 
+    /**
+     * startMode (เฉพาะเริ่มคาบ · จบคาบ = null): created = สร้างคาบใหม่ · rescheduled = ย้ายคาบวันนี้ที่ยังไม่ถึงเวลา / ยกเลิก
+     * มาเริ่มตอนนี้ · reopened = เปิดคาบวันนี้ที่จบแล้วอีกครั้ง · moved = ย้ายคาบที่กำลังเรียนจากห้องอื่นมาห้องนี้
+     * previousRoomCode = ห้องเดิมเมื่อคาบถูกย้ายห้อง (null = ห้องเดิม / คาบใหม่)
+     */
     public record ClassSessionInfo(UUID sessionId, UUID sectionId, UUID roomId, LocalDate sessionDate,
                                    LocalTime startTime, LocalTime endTime, LocalTime onTimeUntil, LocalTime lateUntil,
-                                   LocalTime checkInCloses, String sessionStatus) {}
+                                   LocalTime checkInCloses, String sessionStatus, String startMode,
+                                   String previousRoomCode) {}
+
+    /** ผลการตัดสินว่าจะเริ่มคาบตอนนี้แบบไหน (ดู decide) */
+    public enum StartMode {
+        CREATED, RESCHEDULED, REOPENED, MOVED;
+
+        public String json() {
+            return name().toLowerCase(java.util.Locale.ROOT);
+        }
+    }
 
     private static final int LAST_MINUTE = 23 * 60 + 59;
 
@@ -85,31 +100,39 @@ public class SessionControlService {
             repo.roomConflict(roomId, today, t.start(), t.end(), sectionId).ifPresent(other -> {
                 throw conflict("ห้องนี้มีคาบ " + other + " ในช่วงเวลานี้แล้ว");
             });
+            StartMode mode;
+            String action = "session.start_now";
+            String before = null;
+            int removedAbsents = 0;
             if (existing.isEmpty()) {
+                mode = StartMode.CREATED;
                 sessionId = repo.insertInProgress(sectionId, roomId, today, t);
             } else {
                 SessionRow e = existing.get();
-                boolean started = !e.startTime().isAfter(now.toLocalTime());
-                switch (e.sessionStatus()) {
-                    case "completed" -> throw conflict("วันนี้กลุ่มเรียนนี้มีคาบไปแล้ว (1 กลุ่มเรียนมีได้ 1 คาบต่อวัน)");
-                    case "in_progress" -> throw conflict("กลุ่มเรียนนี้มีคาบที่กำลังเรียนอยู่แล้ว");
-                    case "scheduled" -> {
-                        if (started) throw conflict("กลุ่มเรียนนี้มีคาบที่กำลังเรียนอยู่แล้ว");
-                    }
-                    default -> {     // cancelled → ใช้แถวเดิม เปิดเรียนตอนนี้ (ถ้ายังไม่มีคาบชดเชยของคาบนี้)
-                        if (sessions.hasMakeup(e.sessionId())) {
-                            throw conflict("คาบนี้ถูกยกเลิกและมีคาบชดเชยแล้ว ยกเลิกคาบชดเชยก่อน");
-                        }
-                    }
+                mode = decide(e, roomId, now);
+                if (mode == StartMode.RESCHEDULED && "cancelled".equals(e.sessionStatus())
+                        && sessions.hasMakeup(e.sessionId())) {
+                    throw conflict("คาบนี้ถูกยกเลิกและมีคาบชดเชยแล้ว ยกเลิกคาบชดเชยก่อน");
                 }
                 sessionId = e.sessionId();
                 if (!e.roomId().equals(roomId)) previousRoom = e.roomId();
+                before = "{\"room_id\": \"%s\", \"start_time\": \"%s\", \"end_time\": \"%s\", \"session_status\": \"%s\"}"
+                        .formatted(e.roomId(), e.startTime(), e.endTime(), e.sessionStatus());
+                if (mode == StartMode.REOPENED) {
+                    // ขาดที่ระบบใส่ตอนปิดเช็คชื่อรอบก่อน → ลบ ให้กล้อง / job ลงผลใหม่ตามช่วงเช็คชื่อใหม่ · camera / manual / import เก็บไว้
+                    removedAbsents = repo.deleteSystemAbsents(sessionId);
+                    action = "session.reopen";
+                } else if (mode == StartMode.MOVED) {
+                    action = "session.move_room";
+                }
                 repo.moveToNow(sessionId, roomId, t);
             }
-            ClassSessionInfo info = info(sessionId, sectionId, roomId, today, t, "in_progress");
-            audit.log(access.user().userId(), "session.start_now", "class_session", sessionId, null,
-                    "{\"room_id\": \"%s\", \"start_time\": \"%s\", \"end_time\": \"%s\"}"
-                            .formatted(roomId, t.start(), t.end()), ip);
+            String previousCode = previousRoom == null ? null : repo.roomCode(previousRoom).orElse(null);
+            ClassSessionInfo info = new ClassSessionInfo(sessionId, sectionId, roomId, today, t.start(), t.end(),
+                    t.onTimeUntil(), t.lateUntil(), t.closes(), "in_progress", mode.json(), previousCode);
+            audit.log(access.user().userId(), action, "class_session", sessionId, before,
+                    "{\"room_id\": \"%s\", \"start_time\": \"%s\", \"end_time\": \"%s\", \"start_mode\": \"%s\", \"removed_system_absents\": %d}"
+                            .formatted(roomId, t.start(), t.end(), mode.json(), removedAbsents), ip);
             return new Result(info, previousRoom);
         });
 
@@ -118,6 +141,23 @@ public class SessionControlService {
             hub.publish(r.previousRoom(), "session", new SessionEvent(r.info().sessionId(), "in_progress"));
         }
         return r.info();
+    }
+
+    /**
+     * คาบวันนี้ของกลุ่มเรียนมีอยู่แล้ว → เริ่มตอนนี้แบบไหน (ใช้สถานะตามเวลาจริง ไม่ใช่ค่าดิบใน DB · job อัปเดตช้าได้ ≤ 1 นาที)
+     *  - cancelled / scheduled ที่ยังไม่ถึงเวลา → RESCHEDULED (ย้ายมาเริ่มตอนนี้)
+     *  - กำลังเรียนจริง (เริ่มแล้ว ยังไม่เลยเวลาจบ) ห้องเดียวกัน → 409 · ห้องอื่น → MOVED
+     *  - จบแล้ว (completed หรือเลยเวลาจบแต่ job ยังไม่เปลี่ยน) → REOPENED
+     */
+    static StartMode decide(SessionRow e, UUID roomId, LocalDateTime now) {
+        String st = e.sessionStatus();
+        if ("cancelled".equals(st)) return StartMode.RESCHEDULED;
+        boolean started = !e.sessionDate().atTime(e.startTime()).isAfter(now);
+        boolean ended = !e.sessionDate().atTime(e.endTime()).isAfter(now);
+        if ("completed".equals(st) || (started && ended)) return StartMode.REOPENED;
+        if (!started) return StartMode.RESCHEDULED;       // scheduled ยังไม่ถึงเวลา
+        if (e.roomId().equals(roomId)) throw conflict("กลุ่มเรียนนี้มีคาบที่กำลังเรียนอยู่แล้วในห้องนี้");
+        return StartMode.MOVED;
     }
 
     public ClassSessionInfo endNow(UUID sessionId, String ip) {
@@ -167,7 +207,7 @@ public class SessionControlService {
     private static ClassSessionInfo info(UUID sessionId, UUID sectionId, UUID roomId, LocalDate date, Times t,
                                          String status) {
         return new ClassSessionInfo(sessionId, sectionId, roomId, date, t.start(), t.end(), t.onTimeUntil(),
-                t.lateUntil(), t.closes(), status);
+                t.lateUntil(), t.closes(), status, null, null);
     }
 
     private static int minutes(LocalTime from, LocalTime to) {

@@ -94,6 +94,15 @@ public class SessionControlRepository {
                 """, roomId, t.start(), t.end(), t.opens(), t.closes(), t.onTimeUntil(), t.lateUntil(), sessionId);
     }
 
+    /** ลบขาดที่ระบบใส่ (source = system) ของคาบ · ใช้ตอนเปิดคาบที่จบแล้วอีกครั้ง · คืนจำนวนแถว */
+    public int deleteSystemAbsents(UUID sessionId) {
+        return jdbc.update("DELETE FROM attendance_records WHERE session_id = ? AND source = 'system'", sessionId);
+    }
+
+    public Optional<String> roomCode(UUID roomId) {
+        return jdbc.queryForList("SELECT room_code FROM rooms WHERE room_id = ?", String.class, roomId).stream().findFirst();
+    }
+
     public void endAt(UUID sessionId, Times t) {
         jdbc.update("""
                 UPDATE class_sessions SET end_time = ?, check_in_closes = ?, on_time_until = ?, late_until = ?,
