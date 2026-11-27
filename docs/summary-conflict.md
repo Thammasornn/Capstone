@@ -23,7 +23,8 @@ Main Chat (coordinator) จะส่งสรุปมาให้ sub-chat "sum
 ### 2026-11-27 — [สั่งแก้] เปิดคาบเดิมของวันนี้อีกครั้ง / ย้ายห้อง (BE + FE) (ต่อจาก `864805d` · BE `628203e` · FE `6091484`)
 > คำสั่งแก้ · ผู้ใช้สั่ง coordinator → ส่ง BE + FE เมื่อ 2026-11-27 ~23:30 · BE และ FE commit แล้ว · ยังไม่ push (จะเติมช่วงทีหลัง)
 - **commit แล้ว:**
-  - BE `628203e` (พบใน `Dev` ในเครื่อง ขณะที่รายงาน coordinator ยังบอกว่า BE ทำอยู่): คาบที่ completed วันนี้ (หรือเลยเวลาจบแต่ job ยังไม่รัน) → เปิดใหม่ (`moveToNow` + ลบเฉพาะขาดของ system · เก็บ camera / manual / import) · คาบที่กำลังเรียนในห้องอื่น → ย้ายมา (ผลเดิมอยู่ครบ · SSE แจ้งทั้งสองห้อง) · กำลังเรียนในห้องเดียวกัน → 409 · `ClassSessionInfo` เพิ่ม `startMode`, `previousRoomCode` · test ฝั่ง backend ชุดแรก (`decide()`, `startNow` แบบ mock, DB test ผ่าน `TEST_DB_URL`)
+  - BE `628203e`: คาบที่ completed วันนี้ (หรือเลยเวลาจบแต่ job ยังไม่รัน) → `reopened` (`moveToNow` + ลบเฉพาะขาดของ system · เก็บ camera / manual / import · audit `session.reopen`) · คาบที่กำลังเรียนในห้องอื่น → `moved` (ผลเดิมอยู่ครบ · SSE แจ้งทั้งสองห้อง · audit `session.move_room`) · กำลังเรียนในห้องเดียวกัน → 409 · response เพิ่ม `startMode`, `previousRoomCode` · ไม่แตะ `backend/db/` · เพิ่ม `spring-boot-starter-test` (scope test) ใน `pom.xml` + test ชุดแรกของ backend 10 ข้อ (DB test รันเมื่อมี `TEST_DB_URL` เท่านั้น · Docker build ใช้ `-DskipTests`)
+  - coordinator ตรวจรวม `628203e` + `6091484`: `./dev.sh test` ผ่านทั้ง 8 ขั้น · `mvn test` ผ่าน
   - FE `6091484`: `StartSessionDialog` ยืนยันเปิดคาบเดิม / ย้ายห้อง + เตือนเมื่อกดเริ่มนอกวัน / เวลาเรียน (±60 นาที) + toast ตาม `startMode` · 6 ไฟล์ frontend · Vitest 12 ข้อ · `./dev.sh test` ผ่าน · FE เพิ่มเอง: คาบ cancelled ที่มีคาบชดเชยแล้ว = ปิดปุ่ม · cancelled ที่ไม่มีคาบชดเชย = บอกว่าจะคืนคาบ
 - **แก้อะไร (ที่สั่ง):**
   - BE: start-now เปิดคาบเดิมของวันนี้อีกครั้ง (ลบเฉพาะผล "ขาด" ที่ `source = system` · เก็บ camera / manual / import) + ย้ายคาบที่กำลังเรียนจากห้องอื่นมาได้ + response เพิ่ม `startMode` / `previousRoomCode`
@@ -33,8 +34,10 @@ Main Chat (coordinator) จะส่งสรุปมาให้ sub-chat "sum
   - หน้าห้องขึ้น "ไม่มีคาบเรียนตอนนี้" ทั้งที่มีนักศึกษาในห้อง · สาเหตุ (ตรวจบน uat): INT201-001 มีคาบ 27 พ.ย. 00:38–02:33 (กดเริ่มคาบหลังเที่ยงคืน) สถานะ completed ขาด 12 คน → หน้าห้องไม่แสดงคาบ completed · start-now ได้ 409 เพราะ UNIQUE (`section_id`, `session_date`) + กฎ 1 กลุ่ม 1 คาบต่อวัน · extend คาบที่จบแล้วไม่ได้
   - เลือกทาง 2 + ข้อ 4 (เปิดคาบเดิมซ้ำ + ย้ายห้อง) · ทางที่ไม่เลือก: ปลด UNIQUE ให้มีหลายคาบต่อวัน (ใหญ่เกินก่อน deadline 30 พ.ย.)
 - **ยังค้าง / ต้องทำต่อ:**
-  - รอ push → เติมช่วง commit
-  - ยังไม่ได้ทดสอบกดจริงทั้ง flow (FE ทดสอบตอน BE ยังไม่เสร็จ ได้ 409) → ทดสอบรวม BE `628203e` + FE `6091484`
+  - รอผู้ใช้สั่ง push → เติมช่วง commit
+  - test อัตโนมัติผ่านแล้ว แต่ยังไม่ได้กดจริงทั้ง flow บน uat (FE ทดสอบหน้าจอตอน BE ยังไม่เสร็จ ได้ 409)
+  - `./dev.sh test` ยังไม่รัน `mvn test` (แค่ compile) → test ใหม่ของ backend ไม่ถูกรันใน `dev.sh test` / ก่อน push
+  - `docs/database/database-design.md` (~บรรทัด 321) ยังไม่บอก `startMode` / การเปิดคาบซ้ำ — ยังไม่สั่งแก้
   - ยังไม่ตรวจ: `GET /api/courses` ของ admin บน uat คืนแค่ INT201
 
 ### 2026-11-27 — ใส่ anti-spoofing (MiniFASNetV2) กลับ ทั้งลงทะเบียน + กล้องห้อง (โหมด log) + torch CPU-only (`3ee286f..864805d`)
